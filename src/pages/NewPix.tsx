@@ -1,0 +1,398 @@
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { MainLayout } from "@/components/layout/MainLayout";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useToast } from "@/hooks/use-toast";
+import { cn, formatCurrency } from "@/lib/utils";
+import {
+  Key,
+  Copy,
+  QrCode,
+  ArrowLeft,
+  ArrowRight,
+  Loader2,
+  Check,
+  AlertCircle,
+} from "lucide-react";
+
+type PixType = "key" | "copy_paste" | "qrcode";
+type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
+
+interface PixData {
+  type: PixType;
+  keyType?: PixKeyType;
+  key?: string;
+  copyPaste?: string;
+  amount: string;
+  description?: string;
+}
+
+const pixKeyLabels: Record<PixKeyType, string> = {
+  cpf: "CPF",
+  cnpj: "CNPJ",
+  email: "E-mail",
+  phone: "Telefone",
+  random: "Chave Aleatória",
+};
+
+const pixKeyPlaceholders: Record<PixKeyType, string> = {
+  cpf: "000.000.000-00",
+  cnpj: "00.000.000/0000-00",
+  email: "exemplo@email.com",
+  phone: "(11) 99999-9999",
+  random: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+};
+
+export default function NewPix() {
+  const [step, setStep] = useState(1);
+  const [pixData, setPixData] = useState<PixData>({
+    type: "key",
+    keyType: "cpf",
+    amount: "",
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const handleNext = () => {
+    // Validate current step
+    if (step === 1) {
+      if (pixData.type === "key" && !pixData.key) {
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: "Informe a chave Pix",
+        });
+        return;
+      }
+      if (pixData.type === "copy_paste" && !pixData.copyPaste) {
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: "Cole o código Pix",
+        });
+        return;
+      }
+    }
+
+    if (step === 2) {
+      if (!pixData.amount || parseFloat(pixData.amount.replace(",", ".")) <= 0) {
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: "Informe um valor válido",
+        });
+        return;
+      }
+    }
+
+    if (step < 3) {
+      setStep(step + 1);
+    } else {
+      handleConfirmPayment();
+    }
+  };
+
+  const handleConfirmPayment = async () => {
+    setIsLoading(true);
+
+    // Simulate payment processing
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    toast({
+      title: "Pagamento realizado!",
+      description: "Agora anexe o comprovante para finalizar.",
+    });
+
+    // Navigate to receipt capture
+    navigate("/pix/receipt/mock-transaction-id");
+  };
+
+  const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
+
+  return (
+    <MainLayout>
+      <div className="p-6 lg:p-8 max-w-2xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center gap-4 mb-6">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => (step > 1 ? setStep(step - 1) : navigate(-1))}
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold">Novo Pagamento Pix</h1>
+            <p className="text-muted-foreground">Etapa {step} de 3</p>
+          </div>
+        </div>
+
+        {/* Progress */}
+        <div className="flex gap-2 mb-8">
+          {[1, 2, 3].map((s) => (
+            <div
+              key={s}
+              className={cn(
+                "h-1.5 flex-1 rounded-full transition-colors",
+                s <= step ? "bg-primary" : "bg-muted"
+              )}
+            />
+          ))}
+        </div>
+
+        {/* Step 1: Choose Pix Type */}
+        {step === 1 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Tipo de Pagamento</CardTitle>
+              <CardDescription>
+                Escolha como deseja realizar o Pix
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <Tabs
+                value={pixData.type}
+                onValueChange={(v) => setPixData({ ...pixData, type: v as PixType })}
+              >
+                <TabsList className="grid grid-cols-3 w-full">
+                  <TabsTrigger value="key" className="gap-2">
+                    <Key className="h-4 w-4" />
+                    <span className="hidden sm:inline">Chave</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="copy_paste" className="gap-2">
+                    <Copy className="h-4 w-4" />
+                    <span className="hidden sm:inline">Copia e Cola</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="qrcode" className="gap-2">
+                    <QrCode className="h-4 w-4" />
+                    <span className="hidden sm:inline">QR Code</span>
+                  </TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="key" className="space-y-4 mt-6">
+                  <div className="space-y-2">
+                    <Label>Tipo de chave</Label>
+                    <Select
+                      value={pixData.keyType}
+                      onValueChange={(v) =>
+                        setPixData({ ...pixData, keyType: v as PixKeyType })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(pixKeyLabels).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Chave Pix</Label>
+                    <Input
+                      placeholder={
+                        pixKeyPlaceholders[pixData.keyType || "cpf"]
+                      }
+                      value={pixData.key || ""}
+                      onChange={(e) =>
+                        setPixData({ ...pixData, key: e.target.value })
+                      }
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="copy_paste" className="space-y-4 mt-6">
+                  <div className="space-y-2">
+                    <Label>Código Pix Copia e Cola</Label>
+                    <Textarea
+                      placeholder="Cole aqui o código Pix..."
+                      className="min-h-[100px] font-mono text-sm"
+                      value={pixData.copyPaste || ""}
+                      onChange={(e) =>
+                        setPixData({ ...pixData, copyPaste: e.target.value })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Cole o código Pix Copia e Cola completo
+                    </p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="qrcode" className="mt-6">
+                  <div className="border-2 border-dashed border-border rounded-xl p-8 text-center">
+                    <QrCode className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      Clique para abrir a câmera e escanear o QR Code
+                    </p>
+                    <Button variant="outline" className="mt-4">
+                      Abrir Câmera
+                    </Button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Step 2: Amount and Description */}
+        {step === 2 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Valor e Descrição</CardTitle>
+              <CardDescription>
+                Informe o valor do pagamento
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-2">
+                <Label>Valor (R$)</Label>
+                <div className="relative">
+                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-lg font-medium text-muted-foreground">
+                    R$
+                  </span>
+                  <Input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0,00"
+                    className="pl-12 text-2xl font-bold h-14"
+                    value={pixData.amount}
+                    onChange={(e) => {
+                      // Allow only numbers and comma
+                      const value = e.target.value.replace(/[^\d,]/g, "");
+                      setPixData({ ...pixData, amount: value });
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Descrição (opcional)</Label>
+                <Textarea
+                  placeholder="Ex: Pagamento fornecedor, compra de insumos..."
+                  value={pixData.description || ""}
+                  onChange={(e) =>
+                    setPixData({ ...pixData, description: e.target.value })
+                  }
+                />
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Step 3: Confirmation */}
+        {step === 3 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Confirmar Pagamento</CardTitle>
+              <CardDescription>
+                Verifique os dados antes de confirmar
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="bg-muted/50 rounded-xl p-6 space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Tipo</span>
+                  <span className="font-medium capitalize">
+                    {pixData.type === "key"
+                      ? `Chave ${pixKeyLabels[pixData.keyType || "cpf"]}`
+                      : pixData.type === "copy_paste"
+                      ? "Copia e Cola"
+                      : "QR Code"}
+                  </span>
+                </div>
+
+                {pixData.type === "key" && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Chave</span>
+                    <span className="font-medium font-mono text-sm">
+                      {pixData.key}
+                    </span>
+                  </div>
+                )}
+
+                <div className="border-t border-border pt-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Valor</span>
+                    <span className="text-2xl font-bold text-primary">
+                      {formatCurrency(amount)}
+                    </span>
+                  </div>
+                </div>
+
+                {pixData.description && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-muted-foreground">Descrição</span>
+                    <span className="font-medium text-right max-w-[60%]">
+                      {pixData.description}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-start gap-3 p-4 bg-warning/10 rounded-lg">
+                <AlertCircle className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-medium">Atenção</p>
+                  <p className="text-muted-foreground">
+                    Após confirmar o pagamento, você deverá anexar o comprovante
+                    fiscal para finalizar a transação.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Actions */}
+        <div className="flex gap-4 mt-6">
+          {step > 1 && (
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setStep(step - 1)}
+            >
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              Voltar
+            </Button>
+          )}
+          <Button
+            className={cn(
+              "flex-1 bg-gradient-primary hover:opacity-90 shadow-primary",
+              step === 1 && "w-full"
+            )}
+            onClick={handleNext}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processando...
+              </>
+            ) : step === 3 ? (
+              <>
+                <Check className="mr-2 h-4 w-4" />
+                Confirmar Pagamento
+              </>
+            ) : (
+              <>
+                Continuar
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+    </MainLayout>
+  );
+}
