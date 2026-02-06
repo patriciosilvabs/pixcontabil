@@ -25,14 +25,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
-  { value: "inter", label: "Banco Inter" },
-  { value: "gerencianet", label: "Gerencianet / Efí" },
-  { value: "itau", label: "Itaú" },
-  { value: "bradesco", label: "Bradesco" },
-  { value: "santander", label: "Santander" },
-  { value: "sicredi", label: "Sicredi" },
-  { value: "sicoob", label: "Sicoob" },
-  { value: "outros", label: "Outros" },
+  { value: "onz", label: "ONZ / Infopago" },
 ];
 
 const PIX_KEY_TYPES = [
@@ -130,17 +123,9 @@ export default function PixIntegration() {
   // Get default base URL for provider
   const getDefaultBaseUrl = (provider: string, sandbox: boolean): string => {
     const urls: Record<string, { production: string; sandbox: string }> = {
-      inter: {
-        production: "https://cdpj.partners.bancointer.com.br",
-        sandbox: "https://cdpj-sandbox.partners.bancointer.com.br",
-      },
-      gerencianet: {
-        production: "https://pix.api.efipay.com.br/v2",
-        sandbox: "https://pix-h.api.efipay.com.br/v2",
-      },
-      itau: {
-        production: "https://sts.itau.com.br/pix/v2",
-        sandbox: "https://sts-sandbox.itau.com.br/pix/v2",
+      onz: {
+        production: "https://secureapi.bancodigital.onz.software/api/v2",
+        sandbox: "https://secureapi.bancodigital.hmg.onz.software/api/v2",
       },
     };
 

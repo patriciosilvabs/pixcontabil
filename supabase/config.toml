@@ -36,13 +36,22 @@ verify_jwt = false
 [functions.pix-auth]
 verify_jwt = false
 
-[functions.pix-create-cob]
+[functions.pix-pay-dict]
+verify_jwt = false
+
+[functions.pix-pay-qrc]
+verify_jwt = false
+
+[functions.pix-qrc-info]
 verify_jwt = false
 
 [functions.pix-check-status]
 verify_jwt = false
 
 [functions.pix-webhook]
+verify_jwt = false
+
+[functions.pix-receipt]
 verify_jwt = false
 
 [functions.pix-refund]

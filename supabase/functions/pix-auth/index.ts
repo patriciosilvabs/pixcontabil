@@ -15,10 +15,14 @@ interface PixConfig {
   is_sandbox: boolean;
 }
 
-interface TokenResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
+// ONZ Token Response
+interface ONZTokenResponse {
+  tokenType: string;
+  expiresAt: number;
+  refreshExpiresIn: number;
+  notBeforePolicy: number;
+  accessToken: string;
+  scope: string;
 }
 
 Deno.serve(async (req) => {
@@ -52,8 +56,6 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    const userId = claims.claims.sub;
 
     // Get request body
     const { company_id } = await req.json();
@@ -107,23 +109,25 @@ Deno.serve(async (req) => {
 
     const pixConfig = config as PixConfig;
 
-    // Request new token from Pix provider
-    console.log(`[pix-auth] Requesting new token from provider: ${pixConfig.provider}`);
+    // Request new token from ONZ API
+    console.log(`[pix-auth] Requesting new token from ONZ provider`);
 
     const tokenUrl = `${pixConfig.base_url}/oauth/token`;
     
-    const formData = new URLSearchParams();
-    formData.append('grant_type', 'client_credentials');
-    formData.append('client_id', pixConfig.client_id);
-    formData.append('client_secret', pixConfig.client_secret_encrypted); // In production, decrypt this
-    formData.append('scope', 'cob.read cob.write pix.read pix.write webhook.read webhook.write');
+    // ONZ uses JSON body for authentication
+    const tokenPayload = {
+      clientId: pixConfig.client_id,
+      clientSecret: pixConfig.client_secret_encrypted, // In production, decrypt this
+      grantType: "client_credentials",
+      scope: "pix.read pix.write transactions.read account.read webhook.read webhook.write"
+    };
 
     const tokenResponse = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: formData.toString(),
+      body: JSON.stringify(tokenPayload),
     });
 
     if (!tokenResponse.ok) {
@@ -138,11 +142,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    const tokenData: TokenResponse = await tokenResponse.json();
-    console.log('[pix-auth] Token received, expires_in:', tokenData.expires_in);
+    const tokenData: ONZTokenResponse = await tokenResponse.json();
+    console.log('[pix-auth] Token received, expiresAt:', tokenData.expiresAt);
 
+    // ONZ returns expiresAt as Unix timestamp (seconds)
     // Calculate expiration time (subtract 60 seconds for safety margin)
-    const expiresAt = new Date(Date.now() + (tokenData.expires_in - 60) * 1000);
+    const expiresAt = new Date(tokenData.expiresAt * 1000 - 60000);
 
     // Store token in database using service role for insert
     const supabaseAdmin = createClient(
@@ -161,8 +166,8 @@ Deno.serve(async (req) => {
       .from('pix_tokens')
       .insert({
         company_id,
-        access_token: tokenData.access_token,
-        token_type: tokenData.token_type || 'bearer',
+        access_token: tokenData.accessToken,
+        token_type: tokenData.tokenType || 'bearer',
         expires_at: expiresAt.toISOString()
       });
 
@@ -173,9 +178,10 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({
-        access_token: tokenData.access_token,
-        token_type: tokenData.token_type || 'bearer',
-        expires_in: tokenData.expires_in,
+        access_token: tokenData.accessToken,
+        token_type: tokenData.tokenType || 'bearer',
+        expires_at: expiresAt.toISOString(),
+        scope: tokenData.scope,
         cached: false
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

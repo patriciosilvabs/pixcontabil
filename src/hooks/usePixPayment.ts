@@ -3,47 +3,81 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
-interface CreateCobParams {
+interface PayDictParams {
+  pix_key: string;
   valor: number;
   descricao?: string;
-  devedor?: {
-    cpf?: string;
-    cnpj?: string;
-    nome: string;
-  };
-  expiracao?: number;
+  creditor_document?: string;
+  priority?: 'HIGH' | 'NORM';
+  payment_flow?: 'INSTANT' | 'APPROVAL_REQUIRED';
 }
 
-interface CobResult {
+interface PayQrcParams {
+  qr_code: string;
+  valor?: number;
+  descricao?: string;
+  creditor_document?: string;
+  priority?: 'HIGH' | 'NORM';
+  payment_flow?: 'INSTANT' | 'APPROVAL_REQUIRED';
+}
+
+interface QRCInfoParams {
+  qr_code: string;
+}
+
+interface PaymentResult {
   success: boolean;
   transaction_id: string;
-  txid: string;
-  location?: string;
-  pix_copia_cola?: string;
+  end_to_end_id: string;
+  provider_id: number;
   status: string;
-  expiration: string;
+  event_date?: string;
+  idempotency_key?: string;
+  amount?: number;
+}
+
+interface QRCInfoResult {
+  success: boolean;
+  type: string;
+  merchant_name?: string;
+  merchant_city?: string;
+  amount?: number;
+  pix_key?: string;
+  txid?: string;
+  end_to_end_id?: string;
 }
 
 interface PaymentStatus {
-  txid: string;
+  success: boolean;
+  end_to_end_id: string;
+  provider_id: number;
   status: string;
-  paid: boolean;
-  paid_at?: string;
-  e2eid?: string;
-  valor?: string;
+  internal_status: string;
+  is_liquidated: boolean;
+  error_code?: string;
+  amount?: number;
+  creditor?: any;
+  debtor?: any;
+}
+
+interface ReceiptResult {
+  success: boolean;
+  end_to_end_id: string;
+  pdf_base64?: string;
+  content_type: string;
 }
 
 export function usePixPayment() {
   const { currentCompany, session } = useAuth();
   const { toast } = useToast();
-  const [isCreating, setIsCreating] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
-  const [cobData, setCobData] = useState<CobResult | null>(null);
+  const [paymentData, setPaymentData] = useState<PaymentResult | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Create a new Pix charge (Cob)
-  const createCob = useCallback(async (params: CreateCobParams): Promise<CobResult | null> => {
+  // Pay via Pix key (DICT)
+  const payByKey = useCallback(async (params: PayDictParams): Promise<PaymentResult | null> => {
     if (!currentCompany || !session) {
       toast({
         variant: "destructive",
@@ -53,10 +87,10 @@ export function usePixPayment() {
       return null;
     }
 
-    setIsCreating(true);
+    setIsProcessing(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke('pix-create-cob', {
+      const { data, error } = await supabase.functions.invoke('pix-pay-dict', {
         body: {
           company_id: currentCompany.id,
           ...params,
@@ -64,10 +98,10 @@ export function usePixPayment() {
       });
 
       if (error) {
-        console.error('[usePixPayment] Create cob error:', error);
+        console.error('[usePixPayment] Pay by key error:', error);
         toast({
           variant: "destructive",
-          title: "Erro ao criar cobrança Pix",
+          title: "Erro ao iniciar pagamento Pix",
           description: error.message || "Tente novamente mais tarde.",
         });
         return null;
@@ -76,17 +110,23 @@ export function usePixPayment() {
       if (!data.success) {
         toast({
           variant: "destructive",
-          title: "Erro ao criar cobrança",
+          title: "Erro ao iniciar pagamento",
           description: data.error || "Erro desconhecido.",
         });
         return null;
       }
 
-      setCobData(data);
+      setPaymentData(data);
+      
+      toast({
+        title: "Pagamento iniciado!",
+        description: "O pagamento foi enviado para processamento.",
+      });
+      
       return data;
 
-    } catch (error) {
-      console.error('[usePixPayment] Create cob exception:', error);
+    } catch (error: any) {
+      console.error('[usePixPayment] Pay by key exception:', error);
       toast({
         variant: "destructive",
         title: "Erro",
@@ -94,71 +134,164 @@ export function usePixPayment() {
       });
       return null;
     } finally {
-      setIsCreating(false);
+      setIsProcessing(false);
     }
   }, [currentCompany, session, toast]);
 
+  // Pay via QR Code
+  const payByQRCode = useCallback(async (params: PayQrcParams): Promise<PaymentResult | null> => {
+    if (!currentCompany || !session) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Você precisa estar logado e ter uma empresa selecionada.",
+      });
+      return null;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('pix-pay-qrc', {
+        body: {
+          company_id: currentCompany.id,
+          ...params,
+        },
+      });
+
+      if (error) {
+        console.error('[usePixPayment] Pay by QRC error:', error);
+        toast({
+          variant: "destructive",
+          title: "Erro ao iniciar pagamento Pix",
+          description: error.message || "Tente novamente mais tarde.",
+        });
+        return null;
+      }
+
+      if (!data.success) {
+        toast({
+          variant: "destructive",
+          title: "Erro ao iniciar pagamento",
+          description: data.error || "Erro desconhecido.",
+        });
+        return null;
+      }
+
+      setPaymentData(data);
+      
+      toast({
+        title: "Pagamento iniciado!",
+        description: "O pagamento via QR Code foi enviado para processamento.",
+      });
+      
+      return data;
+
+    } catch (error: any) {
+      console.error('[usePixPayment] Pay by QRC exception:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha na comunicação com o servidor.",
+      });
+      return null;
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [currentCompany, session, toast]);
+
+  // Get QR Code info before paying
+  const getQRCodeInfo = useCallback(async (params: QRCInfoParams): Promise<QRCInfoResult | null> => {
+    if (!currentCompany || !session) {
+      return null;
+    }
+
+    try {
+      const { data, error } = await supabase.functions.invoke('pix-qrc-info', {
+        body: {
+          company_id: currentCompany.id,
+          ...params,
+        },
+      });
+
+      if (error || !data.success) {
+        console.error('[usePixPayment] QRC info error:', error || data.error);
+        return null;
+      }
+
+      return data;
+
+    } catch (error: any) {
+      console.error('[usePixPayment] QRC info exception:', error);
+      return null;
+    }
+  }, [currentCompany, session]);
+
   // Check payment status
-  const checkStatus = useCallback(async (txidOrTransactionId: string, isTransactionId = false): Promise<PaymentStatus | null> => {
-    if (!session) return null;
+  const checkStatus = useCallback(async (
+    endToEndIdOrTransactionId: string, 
+    isTransactionId = false
+  ): Promise<PaymentStatus | null> => {
+    if (!currentCompany || !session) return null;
 
     setIsChecking(true);
 
     try {
-      const queryParam = isTransactionId 
-        ? `transaction_id=${txidOrTransactionId}`
-        : `txid=${txidOrTransactionId}`;
+      const body: any = { company_id: currentCompany.id };
+      
+      if (isTransactionId) {
+        body.transaction_id = endToEndIdOrTransactionId;
+      } else {
+        body.end_to_end_id = endToEndIdOrTransactionId;
+      }
 
       const { data, error } = await supabase.functions.invoke('pix-check-status', {
-        body: {},
-        method: 'GET',
+        body,
       });
 
-      // Since invoke doesn't support query params well, we'll use fetch
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pix-check-status?${queryParam}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error('[usePixPayment] Check status error:', errorData);
+      if (error || !data.success) {
+        console.error('[usePixPayment] Check status error:', error || data.error);
         return null;
       }
 
-      const statusData: PaymentStatus = await response.json();
-      setPaymentStatus(statusData);
-      return statusData;
+      setPaymentStatus(data);
+      return data;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('[usePixPayment] Check status exception:', error);
       return null;
     } finally {
       setIsChecking(false);
     }
-  }, [session]);
+  }, [currentCompany, session]);
 
   // Start polling for payment status
-  const startPolling = useCallback((txid: string, intervalMs = 5000, maxAttempts = 60) => {
+  const startPolling = useCallback((endToEndId: string, intervalMs = 5000, maxAttempts = 60) => {
     let attempts = 0;
 
     const poll = async () => {
       attempts++;
       console.log(`[usePixPayment] Polling attempt ${attempts}/${maxAttempts}`);
 
-      const status = await checkStatus(txid);
+      const status = await checkStatus(endToEndId);
 
-      if (status?.paid) {
+      if (status?.is_liquidated) {
         console.log('[usePixPayment] Payment confirmed!');
         stopPolling();
         toast({
           title: "Pagamento confirmado!",
-          description: "O Pix foi recebido com sucesso.",
+          description: "O Pix foi liquidado com sucesso.",
+        });
+        return;
+      }
+
+      if (status?.status === 'CANCELED') {
+        console.log('[usePixPayment] Payment cancelled');
+        stopPolling();
+        toast({
+          variant: "destructive",
+          title: "Pagamento cancelado",
+          description: status.error_code || "O pagamento foi cancelado.",
         });
         return;
       }
@@ -184,6 +317,89 @@ export function usePixPayment() {
       pollingRef.current = null;
     }
   }, []);
+
+  // Get receipt PDF
+  const getReceipt = useCallback(async (
+    endToEndIdOrTransactionId: string,
+    isTransactionId = false
+  ): Promise<ReceiptResult | null> => {
+    if (!currentCompany || !session) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Você precisa estar logado.",
+      });
+      return null;
+    }
+
+    try {
+      const body: any = { company_id: currentCompany.id };
+      
+      if (isTransactionId) {
+        body.transaction_id = endToEndIdOrTransactionId;
+      } else {
+        body.end_to_end_id = endToEndIdOrTransactionId;
+      }
+
+      const { data, error } = await supabase.functions.invoke('pix-receipt', {
+        body,
+      });
+
+      if (error || !data.success) {
+        console.error('[usePixPayment] Get receipt error:', error || data.error);
+        toast({
+          variant: "destructive",
+          title: "Erro ao obter comprovante",
+          description: "Não foi possível baixar o comprovante.",
+        });
+        return null;
+      }
+
+      return data;
+
+    } catch (error: any) {
+      console.error('[usePixPayment] Get receipt exception:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha na comunicação com o servidor.",
+      });
+      return null;
+    }
+  }, [currentCompany, session, toast]);
+
+  // Download receipt as PDF file
+  const downloadReceipt = useCallback(async (
+    endToEndIdOrTransactionId: string,
+    isTransactionId = false
+  ) => {
+    const receipt = await getReceipt(endToEndIdOrTransactionId, isTransactionId);
+    
+    if (receipt?.pdf_base64) {
+      // Convert base64 to blob and download
+      const byteCharacters = atob(receipt.pdf_base64);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `comprovante_pix_${receipt.end_to_end_id}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Comprovante baixado!",
+        description: "O PDF foi salvo na pasta de downloads.",
+      });
+    }
+  }, [getReceipt, toast]);
 
   // Request refund
   const requestRefund = useCallback(async (transactionId: string, valor?: number, motivo?: string) => {
@@ -224,7 +440,7 @@ export function usePixPayment() {
 
       return data;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('[usePixPayment] Refund exception:', error);
       toast({
         variant: "destructive",
@@ -244,15 +460,22 @@ export function usePixPayment() {
 
   return {
     // State
-    isCreating,
+    isProcessing,
     isChecking,
-    cobData,
+    paymentData,
     paymentStatus,
-    // Actions
-    createCob,
+    // Payment actions
+    payByKey,
+    payByQRCode,
+    getQRCodeInfo,
+    // Status actions
     checkStatus,
     startPolling,
     stopPolling,
+    // Receipt actions
+    getReceipt,
+    downloadReceipt,
+    // Refund
     requestRefund,
   };
 }

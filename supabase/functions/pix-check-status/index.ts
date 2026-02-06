@@ -5,25 +5,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface CobStatusResponse {
-  txid: string;
-  revisao: number;
-  status: 'ATIVA' | 'CONCLUIDA' | 'REMOVIDA_PELO_USUARIO_RECEBEDOR' | 'REMOVIDA_PELO_PSP';
-  calendario: {
-    criacao: string;
-    expiracao: number;
-  };
-  valor: {
-    original: string;
-  };
-  chave: string;
-  pix?: Array<{
+interface ONZPaymentDetails {
+  data: {
+    id: number;
+    idempotencyKey: string;
     endToEndId: string;
-    txid: string;
-    valor: string;
-    horario: string;
-    infoPagador?: string;
-  }>;
+    pixKey?: string;
+    transactionType: string;
+    status: 'CANCELED' | 'PROCESSING' | 'LIQUIDATED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
+    errorCode?: string;
+    creditDebitType: 'CREDIT' | 'DEBIT';
+    localInstrument: string;
+    createdAt: string;
+    creditorAccount?: any;
+    debtorAccount?: any;
+    remittanceInformation?: string;
+    txId?: string;
+    payment: {
+      currency: string;
+      amount: number;
+    };
+    refunds?: any[];
+  };
 }
 
 Deno.serve(async (req) => {
@@ -57,57 +60,50 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get query params
+    // Parse URL for query params or get from body
     const url = new URL(req.url);
-    const txid = url.searchParams.get('txid');
-    const transaction_id = url.searchParams.get('transaction_id');
+    let end_to_end_id = url.searchParams.get('end_to_end_id');
+    let idempotency_key = url.searchParams.get('idempotency_key');
+    let transaction_id = url.searchParams.get('transaction_id');
+    let company_id = url.searchParams.get('company_id');
 
-    if (!txid && !transaction_id) {
+    // Also check body for POST requests
+    if (req.method === 'POST') {
+      const body = await req.json();
+      end_to_end_id = end_to_end_id || body.end_to_end_id;
+      idempotency_key = idempotency_key || body.idempotency_key;
+      transaction_id = transaction_id || body.transaction_id;
+      company_id = company_id || body.company_id;
+    }
+
+    // Get transaction from database if transaction_id provided
+    if (transaction_id && !company_id) {
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('company_id, pix_e2eid, external_id')
+        .eq('id', transaction_id)
+        .single();
+
+      if (txData) {
+        company_id = txData.company_id;
+        end_to_end_id = end_to_end_id || txData.pix_e2eid;
+      }
+    }
+
+    if (!company_id || (!end_to_end_id && !idempotency_key)) {
       return new Response(
-        JSON.stringify({ error: 'txid or transaction_id is required' }),
+        JSON.stringify({ error: 'company_id and (end_to_end_id or idempotency_key) are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[pix-check-status] Checking status for txid: ${txid}, transaction_id: ${transaction_id}`);
-
-    // Get transaction from database
-    let query = supabase.from('transactions').select('*, company:companies(*)');
-    
-    if (transaction_id) {
-      query = query.eq('id', transaction_id);
-    } else if (txid) {
-      query = query.eq('pix_txid', txid);
-    }
-
-    const { data: transaction, error: txError } = await query.single();
-
-    if (txError || !transaction) {
-      return new Response(
-        JSON.stringify({ error: 'Transaction not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // If already completed, return cached status
-    if (transaction.status === 'completed') {
-      return new Response(
-        JSON.stringify({
-          txid: transaction.pix_txid,
-          status: 'CONCLUIDA',
-          paid: true,
-          paid_at: transaction.paid_at,
-          e2eid: transaction.pix_e2eid,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    console.log(`[pix-check-status] Checking status for company: ${company_id}, e2eid: ${end_to_end_id}`);
 
     // Get Pix config
     const { data: config, error: configError } = await supabase
       .from('pix_configs')
       .select('*')
-      .eq('company_id', transaction.company_id)
+      .eq('company_id', company_id)
       .eq('is_active', true)
       .single();
 
@@ -125,7 +121,7 @@ Deno.serve(async (req) => {
         'Authorization': authHeader,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ company_id: transaction.company_id }),
+      body: JSON.stringify({ company_id }),
     });
 
     if (!authResponse.ok) {
@@ -137,12 +133,25 @@ Deno.serve(async (req) => {
 
     const { access_token } = await authResponse.json();
 
-    // Check status on Pix provider
-    const statusUrl = `${config.base_url}/cob/${transaction.pix_txid}`;
+    // Build the status URL
+    let statusUrl: string;
+    if (end_to_end_id) {
+      statusUrl = `${config.base_url}/pix/payments/${end_to_end_id}`;
+    } else if (idempotency_key) {
+      statusUrl = `${config.base_url}/pix/payments/idempotencyKey/${idempotency_key}`;
+    } else {
+      return new Response(
+        JSON.stringify({ error: 'end_to_end_id or idempotency_key required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Query status from ONZ
     const statusResponse = await fetch(statusUrl, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
       },
     });
 
@@ -151,66 +160,68 @@ Deno.serve(async (req) => {
       console.error('[pix-check-status] Provider error:', errorText);
       return new Response(
         JSON.stringify({ 
-          error: 'Failed to check status',
-          provider_error: errorText 
+          error: 'Failed to get payment status',
+          provider_error: errorText,
+          status: statusResponse.status
         }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const statusData: CobStatusResponse = await statusResponse.json();
-    console.log('[pix-check-status] Status from provider:', statusData.status);
+    const statusData: ONZPaymentDetails = await statusResponse.json();
+    console.log('[pix-check-status] Status received:', JSON.stringify(statusData));
 
-    // Update transaction if status changed
-    if (statusData.status === 'CONCLUIDA' && transaction.status !== 'completed') {
+    const paymentData = statusData.data;
+
+    // Map ONZ status to our internal status
+    const statusMap: Record<string, string> = {
+      'PROCESSING': 'pending',
+      'LIQUIDATED': 'completed',
+      'CANCELED': 'cancelled',
+      'REFUNDED': 'refunded',
+      'PARTIALLY_REFUNDED': 'partially_refunded'
+    };
+
+    const internalStatus = statusMap[paymentData.status] || 'pending';
+    const isLiquidated = paymentData.status === 'LIQUIDATED';
+
+    // Update transaction in database if status changed
+    if (transaction_id) {
       const supabaseAdmin = createClient(
         Deno.env.get('SUPABASE_URL')!,
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       );
 
-      const pixInfo = statusData.pix?.[0];
-      
-      await supabaseAdmin
-        .from('transactions')
-        .update({
-          status: 'completed',
-          paid_at: pixInfo?.horario || new Date().toISOString(),
-          pix_e2eid: pixInfo?.endToEndId,
-          pix_provider_response: statusData,
-        })
-        .eq('id', transaction.id);
+      const updateData: any = {
+        status: internalStatus,
+        pix_provider_response: statusData,
+      };
 
-      console.log('[pix-check-status] Transaction marked as completed');
-    } else if (
-      (statusData.status === 'REMOVIDA_PELO_USUARIO_RECEBEDOR' || 
-       statusData.status === 'REMOVIDA_PELO_PSP') && 
-      transaction.status === 'pending'
-    ) {
-      const supabaseAdmin = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
+      if (isLiquidated) {
+        updateData.paid_at = new Date().toISOString();
+      }
 
       await supabaseAdmin
         .from('transactions')
-        .update({
-          status: 'cancelled',
-          pix_provider_response: statusData,
-        })
-        .eq('id', transaction.id);
-
-      console.log('[pix-check-status] Transaction cancelled');
+        .update(updateData)
+        .eq('id', transaction_id);
     }
 
     return new Response(
       JSON.stringify({
-        txid: statusData.txid,
-        status: statusData.status,
-        paid: statusData.status === 'CONCLUIDA',
-        paid_at: statusData.pix?.[0]?.horario,
-        e2eid: statusData.pix?.[0]?.endToEndId,
-        valor: statusData.valor.original,
-        pix_data: statusData.pix,
+        success: true,
+        end_to_end_id: paymentData.endToEndId,
+        provider_id: paymentData.id,
+        status: paymentData.status,
+        internal_status: internalStatus,
+        is_liquidated: isLiquidated,
+        error_code: paymentData.errorCode,
+        amount: paymentData.payment?.amount,
+        currency: paymentData.payment?.currency,
+        created_at: paymentData.createdAt,
+        creditor: paymentData.creditorAccount,
+        debtor: paymentData.debtorAccount,
+        refunds: paymentData.refunds,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
