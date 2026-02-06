@@ -1,226 +1,394 @@
 
-# Sistema de Gestão de Pagamentos com Lastro Contábil
+# Integração com API Pix - Padrão BCB (Banco Central do Brasil)
 
-## Visão Geral
-Aplicação web responsiva estilo Banco Digital (Nubank/Inter) para controle de saídas via Pix com rastreabilidade total. O sistema garante que nenhum pagamento seja concluído sem evidência documental classificada contabilmente.
+## Visao Geral
 
----
-
-## Módulo 1: Autenticação e Controle de Acesso (RBAC)
-
-### Funcionalidades
-- **Login seguro** com email/senha
-- **Dois perfis de acesso**:
-  - **Administrador (Dono)**: Acesso completo - saldo, extrato, relatórios, gestão de usuários
-  - **Operador (Funcionário)**: Saldo oculto, pode realizar pagamentos, obrigatório anexar comprovante
-- **Multi-empresa**: Seletor de conta/empresa na tela inicial
-- **Gestão de usuários**: Admins podem criar operadores e definir limites de pagamento
-
-### Experiência do Usuário
-- Tela de login moderna com gradiente estilo fintech
-- Dashboard personalizado conforme perfil do usuário
-- Operadores veem apenas funcionalidades permitidas (saldo sempre oculto)
+Este plano implementa a camada de integracao com provedores Pix que seguem o padrao da API definida pelo Banco Central. A arquitetura sera modular para suportar diferentes PSPs (Prestadores de Servico de Pagamento) como Banco Inter, Gerencianet/Efi, Itau, Bradesco, entre outros.
 
 ---
 
-## Módulo 2: Dashboard e Visão Geral
+## Arquitetura da Integracao
 
-### Para Administradores
-- **Cards com resumo financeiro**: Saldo atual, Total de saídas (dia/mês), Custos vs Despesas
-- **Gráficos visuais**: Pizza (distribuição Custo/Despesa), Linha (evolução mensal)
-- **Lista de últimas transações** com status e usuário responsável
-- **Alertas**: Notas fiscais pendentes de classificação, possíveis duplicidades
-
-### Para Operadores
-- Cards com **saldo oculto** (exibe "---")
-- Atalhos rápidos para: Novo Pix, Histórico de Pagamentos, Comprovantes Pendentes
-- Lista de suas próprias transações do dia
-
----
-
-## Módulo 3: Fluxo de Pagamento Pix
-
-### Tipos de Pagamento Suportados
-- **Chave Pix**: CPF, CNPJ, Email, Telefone, Chave Aleatória
-- **Copia e Cola**: Campo para colar código Pix
-- **QR Code**: Scanner de câmera para ler QR Code
-
-### Fluxo Completo
-1. **Seleção do tipo de Pix** e entrada dos dados
-2. **Confirmação de valores** e dados do favorecido
-3. **Integração com API bancária** para efetuar o pagamento
-4. **Tela de sucesso** com gatilho automático para captura de evidência
-
-### Validações de Segurança
-- Verificação de limite de pagamento do operador
-- Confirmação de dados antes de enviar
-- Log de todas as tentativas (sucesso e falha)
+```text
++------------------+     +-------------------+     +------------------+
+|   Frontend       |     |   Edge Functions  |     |   Provedor Pix   |
+|   (React)        |     |   (Deno)          |     |   (API BCB)      |
++------------------+     +-------------------+     +------------------+
+         |                        |                        |
+         |  1. Criar Pix          |                        |
+         |----------------------->|                        |
+         |                        |  2. OAuth Token        |
+         |                        |----------------------->|
+         |                        |<-----------------------|
+         |                        |                        |
+         |                        |  3. POST /cob          |
+         |                        |----------------------->|
+         |                        |<-----------------------|
+         |                        |                        |
+         |  4. txid + QR Code     |                        |
+         |<-----------------------|                        |
+         |                        |                        |
+         |                        |  5. Webhook (pago)     |
+         |                        |<-----------------------|
+         |                        |                        |
+         |  6. Notificacao        |                        |
+         |<-----------------------|                        |
++------------------+     +-------------------+     +------------------+
+```
 
 ---
 
-## Módulo 4: Captura de Evidência (Comprovante)
+## Modulo 1: Configuracao de Secrets
 
-### Gatilho Automático
-Após confirmação do Pix, o sistema **abre automaticamente** a interface de captura.
+### Secrets Necessarios
+Para integrar com qualquer provedor Pix, serao necessarios:
 
-### Opções de Captura
-- **📸 Foto da Nota Fiscal/Cupom**: Abertura da câmera do dispositivo
-- **📎 Anexar Arquivo**: Upload de PDF, imagem ou print
-- **📋 Comprovante Digital**: Detecção de conteúdo na área de transferência
+| Secret | Descricao |
+|--------|-----------|
+| `PIX_CLIENT_ID` | ID do cliente OAuth2 |
+| `PIX_CLIENT_SECRET` | Chave secreta OAuth2 |
+| `PIX_BASE_URL` | URL base da API do provedor |
+| `PIX_CERTIFICATE` | Certificado mTLS (Base64) |
+| `PIX_CERTIFICATE_KEY` | Chave do certificado (Base64) |
+| `PIX_WEBHOOK_SECRET` | Chave para validar webhooks |
 
-### Classificação Rápida (Obrigatória)
-- Miniatura da imagem capturada
-- **Dois botões grandes**: [💰 CUSTO] ou [📊 DESPESA]
-- Subcategorias aparecem após seleção principal
-
-### Bloqueio de Saída
-- O operador **não consegue fechar a tela** sem anexar e classificar o comprovante
-- Indicador visual de "Comprovante Obrigatório"
+### Observacao sobre mTLS
+A API Pix exige autenticacao mutua TLS (mTLS) com certificado digital. No ambiente Deno/Edge Functions, isso sera tratado atraves de chamadas HTTP com certificados injetados.
 
 ---
 
-## Módulo 5: Processamento Inteligente com IA (OCR)
+## Modulo 2: Edge Function - Autenticacao OAuth2
 
-### Extração Automática de Dados
-Usando Lovable AI, o sistema processa a imagem em background:
-- **CNPJ/CPF** do emissor
-- **Data** da emissão
-- **Valor total**
-- **Chave de Acesso** (NFe/NFCe)
-- **Itens da nota** (quando legível)
+### Arquivo: `supabase/functions/pix-auth/index.ts`
 
-### Categorização por Palavras-Chave
-- Dicionário configurável de keywords
-- Exemplos:
-  - "Farinha", "Moinho", "Trigo" → **Custo > Insumos**
-  - "Energia", "CEMIG", "CPFL" → **Despesa > Utilidades**
-  - "Aluguel", "Locação" → **Despesa > Ocupação**
+Responsabilidades:
+- Obter access_token via `client_credentials`
+- Cache do token ate expiracao
+- Renovacao automatica
 
-### Preenchimento Automático
-- Campos do formulário pré-preenchidos com dados extraídos
-- Usuário apenas **confirma ou corrige** as informações
-- Badge indicando "Preenchido por IA"
+Endpoint interno:
+```text
+POST /pix-auth
+Response: { access_token, expires_in, token_type }
+```
 
----
-
-## Módulo 6: Gestão de Categorias e Plano de Contas
-
-### Estrutura Hierárquica
-- **Custos**: Insumos, Mão de Obra Direta, Embalagens, etc.
-- **Despesas**: Utilidades, Ocupação, Administrativo, Marketing, etc.
-
-### Configurações
-- CRUD completo de categorias
-- Definição de keywords associadas a cada categoria
-- Ativação/Desativação de categorias
+### Fluxo
+1. Verificar se ha token em cache (tabela `pix_tokens`)
+2. Se expirado, solicitar novo via `POST /oauth/token`
+3. Armazenar token com timestamp de expiracao
+4. Retornar token valido
 
 ---
 
-## Módulo 7: Histórico e Extrato
+## Modulo 3: Edge Function - Criar Cobranca (Cob)
 
-### Visualização
-- Lista completa de transações com filtros avançados
-- Filtros: Data, Categoria, Usuário, Status, Valor
-- Cards com: Favorecido, Valor, Data, Categoria, Usuário, Thumbnail do comprovante
+### Arquivo: `supabase/functions/pix-create-cob/index.ts`
 
-### Detalhes da Transação
-- Visualização completa do comprovante em tela cheia
-- Todos os dados extraídos por OCR
-- Logs de auditoria (quem pagou, quem classificou, quando)
-- Metadados: GPS, Timestamp da captura
+Responsabilidades:
+- Criar cobranca imediata (Cob)
+- Gerar QR Code e Pix Copia e Cola
+- Registrar transacao no banco
 
----
+### Endpoint
+```text
+POST /pix-create-cob
+Body: {
+  valor: number,
+  chave: string,
+  descricao?: string,
+  devedor?: { cpf/cnpj, nome }
+}
+```
 
-## Módulo 8: Módulo Contábil e Relatórios
-
-### Relatório PDF Inteligente
-- **Cabeçalho**: Período, Empresa, Total Custos, Total Despesas
-- **Tabela**: Data | Favorecido | Valor | Categoria | Usuário
-- **Anexos visuais**: Comprovantes ao lado dos dados
-- **QR Codes/Links**: Acesso direto à imagem em alta resolução
-
-### Exportações
-- **PDF**: Relatório completo formatado para contador
-- **CSV**: Dados tabulares para Excel
-- **OFX**: Formato bancário para sistemas contábeis
-
-### Filtros de Relatório
-- Por período (dia, semana, mês, personalizado)
-- Por categoria (Custo, Despesa, ou ambos)
-- Por empresa/conta
+### Fluxo
+1. Autenticar via `pix-auth`
+2. Gerar txid unico (35 caracteres alfanumericos)
+3. Chamar `PUT /cob/{txid}` na API do provedor
+4. Receber `location` e dados do QR Code
+5. Salvar transacao no banco com status `pending`
+6. Retornar QR Code + Pix Copia e Cola
 
 ---
 
-## Módulo 9: Compliance e Segurança
+## Modulo 4: Edge Function - Consultar Status
 
-### Metadata de Captura
-- Registro de **GPS** no momento da foto
-- **Timestamp real** (data/hora do dispositivo)
-- Marcação de imagens com metadados para auditoria
+### Arquivo: `supabase/functions/pix-check-status/index.ts`
 
-### Logs de Auditoria
-- Quem realizou o pagamento
-- Quem classificou o documento
-- Histórico de alterações
+Responsabilidades:
+- Consultar status de pagamento
+- Atualizar transacao se paga
 
-### Prevenção de Duplicidade
-- Verificação de **Chave de Acesso** já cadastrada
-- Alerta visual se nota fiscal já existe no sistema
-- Opção de vincular à transação existente
+### Endpoint
+```text
+GET /pix-check-status?txid={txid}
+```
 
----
-
-## Módulo 10: Configurações e Administração
-
-### Gestão de Usuários
-- Lista de operadores com status
-- Criar/Editar/Desativar usuários
-- Definir limites de pagamento por operador
-
-### Gestão de Empresas/Contas
-- Múltiplas contas bancárias
-- Configurações específicas por empresa
-- Logotipos e identidade visual
-
-### Integrações
-- Configuração da API Pix (credenciais)
-- Webhooks para notificações
-- Configurações de Storage para comprovantes
+### Fluxo
+1. Chamar `GET /cob/{txid}` na API
+2. Verificar status (`ATIVA`, `CONCLUIDA`, `REMOVIDA_PELO_USUARIO_RECEBEDOR`)
+3. Atualizar banco de dados se status mudou
 
 ---
 
-## Design Visual
+## Modulo 5: Edge Function - Webhook
 
-### Estilo "Banco Digital"
-- Cores vibrantes (roxo/verde gradiente)
-- Cards com cantos arredondados e sombras suaves
-- Ícones modernos e animações sutis
-- Dark mode opcional
+### Arquivo: `supabase/functions/pix-webhook/index.ts`
 
-### Responsividade
-- Otimizado para uso em celular (operadores em campo)
-- Layout adaptativo para desktop (administradores)
-- Botões grandes e touch-friendly
+Responsabilidades:
+- Receber notificacoes de pagamento
+- Validar assinatura do webhook
+- Atualizar transacao como paga
+- Disparar notificacao para frontend
+
+### Endpoint
+```text
+POST /pix-webhook
+Headers: x-webhook-secret
+Body: { pix: [{ txid, valor, horario, ... }] }
+```
+
+### Fluxo
+1. Validar header de autenticacao
+2. Parsear payload do webhook
+3. Para cada Pix recebido:
+   - Buscar transacao pelo txid/e2eid
+   - Atualizar status para `completed`
+   - Registrar `paid_at`
+4. Retornar 200 OK
+
+### Tipos de Webhook (BCB)
+- `pix`: Pagamento recebido
+- `devolucao`: Devolucao processada
 
 ---
 
-## Arquitetura Técnica
+## Modulo 6: Edge Function - Devolver Pix
 
-### Frontend
-- React + TypeScript + Tailwind CSS
-- Componentes shadcn/ui
-- Recharts para gráficos
+### Arquivo: `supabase/functions/pix-refund/index.ts`
 
-### Backend (Lovable Cloud)
-- Banco de dados PostgreSQL
-- Storage para comprovantes
-- Edge Functions para:
-  - Integração com API Pix
-  - Processamento OCR com Lovable AI
-  - Geração de relatórios PDF
+Responsabilidades:
+- Solicitar devolucao parcial ou total
+- Registrar devolucao no banco
 
-### Segurança
-- Autenticação Supabase
-- RBAC com tabela de roles separada
-- RLS policies rigorosas
-- Secrets gerenciados via Lovable Cloud
+### Endpoint
+```text
+POST /pix-refund
+Body: { e2eid, id, valor }
+```
+
+### Fluxo
+1. Autenticar
+2. Chamar `PUT /pix/{e2eid}/devolucao/{id}`
+3. Registrar na tabela `pix_refunds`
+
+---
+
+## Modulo 7: Tabelas Adicionais
+
+### Nova tabela: `pix_tokens`
+```sql
+CREATE TABLE pix_tokens (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID NOT NULL REFERENCES companies(id),
+  access_token TEXT NOT NULL,
+  token_type TEXT DEFAULT 'bearer',
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Nova tabela: `pix_configs`
+```sql
+CREATE TABLE pix_configs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  company_id UUID UNIQUE NOT NULL REFERENCES companies(id),
+  provider TEXT NOT NULL, -- 'inter', 'gerencianet', 'itau', etc
+  client_id TEXT NOT NULL,
+  client_secret_encrypted TEXT NOT NULL,
+  base_url TEXT NOT NULL,
+  pix_key TEXT NOT NULL,
+  pix_key_type pix_key_type NOT NULL,
+  certificate_encrypted TEXT,
+  webhook_url TEXT,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Nova tabela: `pix_refunds`
+```sql
+CREATE TABLE pix_refunds (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  transaction_id UUID NOT NULL REFERENCES transactions(id),
+  e2eid TEXT NOT NULL,
+  refund_id TEXT NOT NULL,
+  valor NUMERIC NOT NULL,
+  motivo TEXT,
+  status TEXT DEFAULT 'EM_PROCESSAMENTO',
+  refunded_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+```
+
+### Atualizacao da tabela `transactions`
+```sql
+ALTER TABLE transactions ADD COLUMN IF NOT EXISTS
+  pix_txid TEXT,
+  pix_e2eid TEXT,
+  pix_location TEXT,
+  pix_qrcode TEXT,
+  pix_copia_cola TEXT;
+```
+
+---
+
+## Modulo 8: Integracao Frontend
+
+### Atualizacoes em `NewPix.tsx`
+
+1. Ao confirmar pagamento:
+   - Chamar edge function `pix-create-cob`
+   - Exibir QR Code para conferencia
+   - Salvar transacao com status `pending`
+
+2. Polling de status:
+   - Verificar a cada 5s se pagamento foi confirmado
+   - Ou usar Realtime para notificacao instantanea
+
+3. Fluxo atualizado:
+   ```text
+   Etapa 1: Dados do Pix
+   Etapa 2: Valor e Descricao
+   Etapa 3: Confirmacao -> Gera QR Code
+   Etapa 4: Aguardando Pagamento (opcional se for envio)
+   Etapa 5: Captura de Comprovante
+   ```
+
+### Novo componente: `PixQRCodeDisplay`
+- Exibe QR Code gerado
+- Botao para copiar Pix Copia e Cola
+- Timer de expiracao (calendario.expiracao)
+
+---
+
+## Modulo 9: Tratamento de Erros
+
+### Codigos de Erro BCB Suportados
+| Erro | HTTP | Tratamento |
+|------|------|------------|
+| `RequisicaoInvalida` | 400 | Exibir mensagem ao usuario |
+| `AcessoNegado` | 403 | Renovar token e tentar novamente |
+| `NaoEncontrado` | 404 | Transacao nao existe |
+| `CobOperacaoInvalida` | 400 | Validar dados antes de enviar |
+| `ErroInternoDoServidor` | 500 | Retry com backoff |
+| `ServicoIndisponivel` | 503 | Retry com backoff |
+
+### Retry Strategy
+- Max 3 tentativas
+- Backoff exponencial: 1s, 2s, 4s
+- Log de todas as tentativas
+
+---
+
+## Modulo 10: Configuracao do Provedor (Admin)
+
+### Nova pagina: `/settings/pix-integration`
+
+Funcionalidades:
+- Selecionar provedor (dropdown)
+- Inserir credenciais (Client ID, Client Secret)
+- Upload de certificado mTLS
+- Configurar chave Pix padrao
+- Testar conexao
+- Visualizar URL do webhook
+
+### Validacao
+- Testar autenticacao OAuth2
+- Verificar se chave Pix pertence a conta
+
+---
+
+## Resumo dos Arquivos a Criar/Modificar
+
+### Novos Arquivos
+| Arquivo | Descricao |
+|---------|-----------|
+| `supabase/functions/pix-auth/index.ts` | Autenticacao OAuth2 |
+| `supabase/functions/pix-create-cob/index.ts` | Criar cobranca |
+| `supabase/functions/pix-check-status/index.ts` | Consultar status |
+| `supabase/functions/pix-webhook/index.ts` | Receber webhooks |
+| `supabase/functions/pix-refund/index.ts` | Devolucoes |
+| `src/components/pix/PixQRCodeDisplay.tsx` | Exibir QR Code |
+| `src/pages/settings/PixIntegration.tsx` | Config do provedor |
+| `src/hooks/usePixPayment.ts` | Hook para pagamentos |
+
+### Arquivos a Modificar
+| Arquivo | Modificacao |
+|---------|-------------|
+| `src/pages/NewPix.tsx` | Integrar com edge functions |
+| `supabase/config.toml` | Adicionar novas functions |
+| Migracao SQL | Novas tabelas e colunas |
+
+---
+
+## Secao Tecnica - Detalhes de Implementacao
+
+### Geracao do txid
+Conforme padrao BCB, o txid deve ter entre 26 e 35 caracteres alfanumericos:
+```typescript
+function generateTxId(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 35; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+```
+
+### Formato de Cobranca Imediata (Cob)
+```json
+{
+  "calendario": {
+    "expiracao": 3600
+  },
+  "valor": {
+    "original": "100.00"
+  },
+  "chave": "chave-pix-do-recebedor",
+  "solicitacaoPagador": "Descricao do pagamento",
+  "infoAdicionais": [
+    { "nome": "Pedido", "valor": "12345" }
+  ]
+}
+```
+
+### Resposta esperada
+```json
+{
+  "txid": "abc123...",
+  "revisao": 0,
+  "loc": {
+    "id": 1,
+    "location": "pix.provider.com/qr/v2/abc123..."
+  },
+  "location": "pix.provider.com/qr/v2/abc123...",
+  "status": "ATIVA",
+  "calendario": { ... },
+  "valor": { ... },
+  "chave": "...",
+  "pixCopiaECola": "00020126..."
+}
+```
+
+---
+
+## Proximos Passos Apos Aprovacao
+
+1. Solicitar secrets do provedor Pix (PIX_CLIENT_ID, PIX_CLIENT_SECRET, etc)
+2. Criar migracao SQL para novas tabelas
+3. Implementar edge functions na ordem: auth -> create-cob -> webhook -> check-status -> refund
+4. Atualizar frontend para usar as novas functions
+5. Configurar webhook no painel do provedor
+6. Testar fluxo completo em sandbox
