@@ -1,97 +1,135 @@
 
+# Configuração da Integração Pix com ONZ Sandbox
 
-# Configurar Primeiro Usuário como Proprietário/Admin
+## Resumo
+Você recebeu credenciais de sandbox da ONZ para testar a integração Pix. Este plano detalha como configurar essas credenciais no PixFlow.
 
-## Situação Atual
+---
 
-O usuário `patriciobarbosadasilva@gmail.com` foi criado com sucesso, porém:
-- A tabela `user_roles` está vazia (sem role atribuída)
-- Nenhuma empresa foi criada
-- Nenhuma associação empresa-usuário existe
+## Informações Recebidas (do Email)
 
-Isso causa problemas de acesso porque o sistema verifica roles e associações de empresa para liberar funcionalidades.
+| Item | Valor |
+|------|-------|
+| **Portal Finance (Sandbox)** | https://finance.bancodigital.hmg.onz.software/ |
+| **Login Finance** | 00904831388 |
+| **Senha Finance** | @patricio11 |
+| **Senha de Transação** | 1234 |
+| **API QRCodes** | https://api.pix-h.amplea.coop.br |
+| **API de Contas (Base URL)** | https://secureapi.bancodigital.hmg.onz.software/api/v2 |
+| **Chave Pix (testes)** | a848179b-3d62-431c-b563-4d30e24f9316 |
+| **Senha certificado PFX** | onzsoftware |
 
-## Plano de Implementação
+---
 
-### 1. Inserir Dados Iniciais via Migração SQL
+## Passo a Passo de Configuração
 
-Criar uma migração que:
+### Passo 1: Gerar Credenciais de API no Portal ONZ
 
-**a) Atribuir role de admin ao usuário**
-```sql
-INSERT INTO user_roles (user_id, role)
-VALUES ('51d2d0ca-94ae-42e7-b56f-627be7df0a50', 'admin');
-```
+1. Acesse o Portal Finance: https://finance.bancodigital.hmg.onz.software/
+2. Faça login com:
+   - **CPF**: 00904831388
+   - **Senha**: @patricio11
+3. Navegue até **Configurações** ou **API/Integrações**
+4. Crie novas credenciais de API com as permissões:
+   - Pix (Leitura, Escrita, Criação)
+   - Contas (Leitura)
+   - Transações (Leitura)
+   - Webhooks (Leitura, Escrita)
+5. **IMPORTANTE**: Copie e salve o **Client ID** e **Client Secret** gerados - o secret só aparece uma vez!
 
-**b) Criar empresa padrão**
-```sql
-INSERT INTO companies (name, email, is_active)
-VALUES ('Minha Empresa', 'patriciobarbosadasilva@gmail.com', true)
-RETURNING id;
-```
+### Passo 2: Configurar no PixFlow
 
-**c) Vincular usuário à empresa**
-```sql
-INSERT INTO company_members (user_id, company_id, is_active)
-VALUES ('51d2d0ca-94ae-42e7-b56f-627be7df0a50', <company_id>, true);
-```
+Na página **Integração Pix** (`/settings/pix-integration`), preencha:
 
-### 2. Implementar Lógica de "Primeiro Usuário é Admin"
+| Campo | Valor |
+|-------|-------|
+| **Provedor** | ONZ / Infopago |
+| **Ambiente** | Sandbox (Testes) - deixar ativado |
+| **URL Base da API** | `https://secureapi.bancodigital.hmg.onz.software/api/v2` (preenchido automaticamente) |
+| **Client ID** | (gerado no passo 1) |
+| **Client Secret** | (gerado no passo 1) |
+| **Tipo de Chave** | Chave Aleatória |
+| **Chave Pix** | `a848179b-3d62-431c-b563-4d30e24f9316` |
 
-Para garantir que futuros cadastros também funcionem corretamente, implementar um trigger que:
+### Passo 3: Configurar Webhook no Portal ONZ
 
-- Verifica se é o primeiro usuário do sistema
-- Se for, atribui role `admin` automaticamente
-- Se não for, atribui role `operator` por padrão
+1. No Portal Finance, vá até **Webhooks**
+2. Desative a opção **"Pausar envio dos webhooks"**
+3. Configure um novo webhook:
+   - **URL**: `https://ntvgthwqxixkoemyxhqo.supabase.co/functions/v1/pix-webhook`
+   - **Método**: POST
+   - **Eventos**: Transferência, Recebimento, Devolução
+4. Se quiser adicionar segurança extra, configure um header:
+   - **Header**: `x-webhook-secret`
+   - **Valor**: (crie uma senha e anote)
 
-```sql
-CREATE OR REPLACE FUNCTION handle_first_user_role()
-RETURNS TRIGGER AS $$
-DECLARE
-    user_count INTEGER;
-BEGIN
-    -- Contar usuários existentes
-    SELECT COUNT(*) INTO user_count FROM auth.users;
-    
-    -- Se for o primeiro usuário, é admin
-    IF user_count = 1 THEN
-        INSERT INTO user_roles (user_id, role)
-        VALUES (NEW.id, 'admin');
-    ELSE
-        INSERT INTO user_roles (user_id, role)
-        VALUES (NEW.id, 'operator');
-    END IF;
-    
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-```
+### Passo 4: Testar a Conexão
 
-### 3. Criar Trigger no auth.users
+1. Clique em **"Testar Conexão"** na página de configuração
+2. Se aparecer "Conexão bem-sucedida!", a integração está funcionando
+3. Faça um pagamento de teste pequeno (ex: R$ 0,01)
 
-```sql
-CREATE TRIGGER on_auth_user_created_role
-    AFTER INSERT ON auth.users
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_first_user_role();
+---
+
+## Diagrama do Fluxo
+
+```text
+┌──────────────┐    1. Gerar credenciais    ┌─────────────────┐
+│  Portal ONZ  │ ◄────────────────────────► │  Client ID +    │
+│  (Sandbox)   │                             │  Client Secret  │
+└──────────────┘                             └────────┬────────┘
+                                                      │
+                                                      ▼ 2. Configurar
+┌──────────────┐    3. Testar conexão       ┌─────────────────┐
+│   PixFlow    │ ◄────────────────────────► │   pix-auth      │
+│  Config Page │                             │   Edge Func     │
+└──────────────┘                             └─────────────────┘
+       │                                              │
+       │ 4. Webhook                                   │
+       ▼                                              ▼
+┌──────────────┐                             ┌─────────────────┐
+│  Portal ONZ  │ ─────── Notificações ─────► │   pix-webhook   │
+│  Webhooks    │                             │   Edge Func     │
+└──────────────┘                             └─────────────────┘
 ```
 
 ---
 
-## Resumo das Alterações
+## Seção Técnica
 
-| Arquivo/Recurso | Alteração |
-|-----------------|-----------|
-| Migração SQL | Inserir role admin para o usuário atual |
-| Migração SQL | Criar empresa padrão |
-| Migração SQL | Vincular usuário à empresa |
-| Trigger SQL | Auto-atribuir role no cadastro de novos usuários |
+### Campos da Tabela `pix_configs`
 
-## Resultado Esperado
+| Campo | Tipo | Descrição |
+|-------|------|-----------|
+| `provider` | string | `"onz"` |
+| `client_id` | string | ID gerado no portal |
+| `client_secret_encrypted` | string | Secret gerado (armazenado em texto por enquanto) |
+| `base_url` | string | `https://secureapi.bancodigital.hmg.onz.software/api/v2` |
+| `pix_key` | string | `a848179b-3d62-431c-b563-4d30e24f9316` |
+| `pix_key_type` | string | `"random"` |
+| `is_sandbox` | boolean | `true` |
+| `is_active` | boolean | `true` |
 
-Após a implementação:
-- Você terá acesso completo como administrador
-- O dashboard exibirá a visão de admin com todos os recursos
-- A empresa aparecerá no seletor do menu lateral
-- Novos usuários receberão role `operator` automaticamente
+### Endpoint de Autenticação ONZ
 
+A edge function `pix-auth` já está configurada para o formato ONZ:
+
+```text
+POST {base_url}/oauth/token
+Body: {
+  "clientId": "...",
+  "clientSecret": "...",
+  "grantType": "client_credentials",
+  "scope": "pix.read pix.write transactions.read account.read webhook.read webhook.write"
+}
+```
+
+### Sobre o Certificado PFX
+
+Para sandbox, geralmente não é necessário certificado mTLS. A senha `onzsoftware` é para uso futuro em produção, se exigido.
+
+---
+
+## Próximo Passo
+
+Acesse o Portal Finance da ONZ, gere as credenciais de API (Client ID e Client Secret), e preencha na página de Integração Pix. Me avise quando tiver as credenciais!
