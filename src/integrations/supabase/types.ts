@@ -245,6 +245,200 @@ export type Database = {
           },
         ]
       }
+      pix_configs: {
+        Row: {
+          base_url: string
+          certificate_encrypted: string | null
+          certificate_key_encrypted: string | null
+          client_id: string
+          client_secret_encrypted: string
+          company_id: string
+          created_at: string
+          id: string
+          is_active: boolean | null
+          is_sandbox: boolean | null
+          pix_key: string
+          pix_key_type: Database["public"]["Enums"]["pix_key_type"]
+          provider: string
+          updated_at: string
+          webhook_secret: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          base_url: string
+          certificate_encrypted?: string | null
+          certificate_key_encrypted?: string | null
+          client_id: string
+          client_secret_encrypted: string
+          company_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          is_sandbox?: boolean | null
+          pix_key: string
+          pix_key_type: Database["public"]["Enums"]["pix_key_type"]
+          provider: string
+          updated_at?: string
+          webhook_secret?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          base_url?: string
+          certificate_encrypted?: string | null
+          certificate_key_encrypted?: string | null
+          client_id?: string
+          client_secret_encrypted?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean | null
+          is_sandbox?: boolean | null
+          pix_key?: string
+          pix_key_type?: Database["public"]["Enums"]["pix_key_type"]
+          provider?: string
+          updated_at?: string
+          webhook_secret?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pix_configs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pix_refunds: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          e2eid: string
+          error_code: string | null
+          error_message: string | null
+          id: string
+          motivo: string | null
+          refund_id: string
+          refunded_at: string | null
+          status: string
+          transaction_id: string
+          valor: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          e2eid: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          motivo?: string | null
+          refund_id: string
+          refunded_at?: string | null
+          status?: string
+          transaction_id: string
+          valor: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          e2eid?: string
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          motivo?: string | null
+          refund_id?: string
+          refunded_at?: string | null
+          status?: string
+          transaction_id?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pix_refunds_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pix_tokens: {
+        Row: {
+          access_token: string
+          company_id: string
+          created_at: string
+          expires_at: string
+          id: string
+          token_type: string | null
+        }
+        Insert: {
+          access_token: string
+          company_id: string
+          created_at?: string
+          expires_at: string
+          id?: string
+          token_type?: string | null
+        }
+        Update: {
+          access_token?: string
+          company_id?: string
+          created_at?: string
+          expires_at?: string
+          id?: string
+          token_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pix_tokens_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pix_webhook_logs: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          error_message: string | null
+          event_type: string
+          id: string
+          ip_address: string | null
+          payload: Json
+          processed: boolean | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          event_type: string
+          id?: string
+          ip_address?: string | null
+          payload: Json
+          processed?: boolean | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          error_message?: string | null
+          event_type?: string
+          id?: string
+          ip_address?: string | null
+          payload?: Json
+          processed?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pix_webhook_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -365,9 +559,16 @@ export type Database = {
           external_id: string | null
           id: string
           paid_at: string | null
+          pix_copia_cola: string | null
           pix_copy_paste: string | null
+          pix_e2eid: string | null
+          pix_expiration: string | null
           pix_key: string | null
           pix_key_type: Database["public"]["Enums"]["pix_key_type"] | null
+          pix_location: string | null
+          pix_provider_response: Json | null
+          pix_qrcode: string | null
+          pix_txid: string | null
           pix_type: Database["public"]["Enums"]["pix_type"]
           status: Database["public"]["Enums"]["transaction_status"]
           updated_at: string
@@ -387,9 +588,16 @@ export type Database = {
           external_id?: string | null
           id?: string
           paid_at?: string | null
+          pix_copia_cola?: string | null
           pix_copy_paste?: string | null
+          pix_e2eid?: string | null
+          pix_expiration?: string | null
           pix_key?: string | null
           pix_key_type?: Database["public"]["Enums"]["pix_key_type"] | null
+          pix_location?: string | null
+          pix_provider_response?: Json | null
+          pix_qrcode?: string | null
+          pix_txid?: string | null
           pix_type: Database["public"]["Enums"]["pix_type"]
           status?: Database["public"]["Enums"]["transaction_status"]
           updated_at?: string
@@ -409,9 +617,16 @@ export type Database = {
           external_id?: string | null
           id?: string
           paid_at?: string | null
+          pix_copia_cola?: string | null
           pix_copy_paste?: string | null
+          pix_e2eid?: string | null
+          pix_expiration?: string | null
           pix_key?: string | null
           pix_key_type?: Database["public"]["Enums"]["pix_key_type"] | null
+          pix_location?: string | null
+          pix_provider_response?: Json | null
+          pix_qrcode?: string | null
+          pix_txid?: string | null
           pix_type?: Database["public"]["Enums"]["pix_type"]
           status?: Database["public"]["Enums"]["transaction_status"]
           updated_at?: string
