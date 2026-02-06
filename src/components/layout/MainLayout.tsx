@@ -28,6 +28,7 @@ import {
   X,
   DollarSign,
   BarChart3,
+  Link2,
 } from "lucide-react";
 
 interface MainLayoutProps {
@@ -47,6 +48,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     { name: "Relatórios", href: "/reports", icon: FileText, adminOnly: true },
     { name: "Usuários", href: "/users", icon: Users, adminOnly: true },
     { name: "Empresas", href: "/companies", icon: Building2, adminOnly: true },
+    { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, adminOnly: true },
     { name: "Configurações", href: "/settings", icon: Settings },
   ];
 

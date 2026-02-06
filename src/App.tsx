@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import NewPix from "./pages/NewPix";
 import ReceiptCapture from "./pages/ReceiptCapture";
 import Transactions from "./pages/Transactions";
+import PixIntegration from "./pages/settings/PixIntegration";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -55,6 +56,14 @@ const App = () => (
               element={
                 <AuthGuard>
                   <Transactions />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/settings/pix-integration"
+              element={
+                <AuthGuard requireAdmin>
+                  <PixIntegration />
                 </AuthGuard>
               }
             />
