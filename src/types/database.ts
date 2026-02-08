@@ -4,7 +4,7 @@ export type AppRole = "admin" | "operator";
 
 export type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
 
-export type PixType = "key" | "copy_paste" | "qrcode";
+export type PixType = "key" | "copy_paste" | "qrcode" | "boleto";
 
 export type TransactionStatus = "pending" | "completed" | "cancelled" | "failed";
 

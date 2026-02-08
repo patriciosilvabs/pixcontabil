@@ -7,7 +7,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
-import NewPix from "./pages/NewPix";
+import NewPayment from "./pages/NewPayment";
 import ReceiptCapture from "./pages/ReceiptCapture";
 import Transactions from "./pages/Transactions";
 import Categories from "./pages/Categories";
@@ -44,7 +44,7 @@ const App = () => (
               path="/pix/new"
               element={
                 <AuthGuard>
-                  <NewPix />
+                  <NewPayment />
                 </AuthGuard>
               }
             />
