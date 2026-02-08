@@ -15,6 +15,7 @@ import {
   Copy,
   QrCode,
   FileText,
+  ScanBarcode,
   ArrowLeft,
   ArrowRight,
   Loader2,
@@ -256,6 +257,22 @@ export default function NewPayment() {
                 </TabsContent>
 
                 <TabsContent value="boleto" className="space-y-4 mt-6">
+                  <div className="border-2 border-dashed border-border rounded-xl p-8 text-center">
+                    <ScanBarcode className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+                    <p className="text-muted-foreground">
+                      Escaneie o código de barras com a câmera do seu dispositivo
+                    </p>
+                    <Button variant="outline" className="mt-4">
+                      Abrir Câmera
+                    </Button>
+                  </div>
+
+                  <div className="relative flex items-center gap-4">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-xs text-muted-foreground">ou digite manualmente</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+
                   <div className="space-y-2">
                     <Label>Linha Digitável</Label>
                     <Input
