@@ -1,193 +1,74 @@
 
-# Criação das Páginas Administrativas Faltantes
+# Transformar "Novo Pix" em "Novo Pagamento" (com Boleto)
 
 ## Resumo
-Implementar as 5 páginas que aparecem no menu lateral mas ainda não existem: **Categorias**, **Relatórios**, **Usuários**, **Empresas** e **Configurações**.
+Renomear a pagina de "Novo Pix" para "Novo Pagamento" e adicionar a opcao de pagamento via **Boleto**, alem das 3 opcoes ja existentes (Chave Pix, Copia e Cola, QR Code).
 
 ---
 
-## Páginas a Criar
+## Alteracoes
 
-| Página | Rota | Acesso | Função |
-|--------|------|--------|--------|
-| Categorias | `/categories` | Admin | CRUD de categorias (Custos vs Despesas) |
-| Relatórios | `/reports` | Admin | Relatórios financeiros e exportação |
-| Usuários | `/users` | Admin | Gerenciar usuários e permissões |
-| Empresas | `/companies` | Admin | CRUD de empresas |
-| Configurações | `/settings` | Todos | Configurações da conta e sistema |
+### 1. Renomear pagina e rota
+- **Arquivo**: `src/pages/NewPix.tsx` -- renomear para `src/pages/NewPayment.tsx`
+- Titulo: "Novo Pagamento Pix" vira **"Novo Pagamento"**
+- Descricao do Step 1: "Escolha como deseja realizar o Pix" vira **"Escolha a forma de pagamento"**
 
----
+### 2. Adicionar tipo "boleto"
+- O tipo de pagamento passa de `"key" | "copy_paste" | "qrcode"` para `"key" | "copy_paste" | "qrcode" | "boleto"`
+- Novo campo no state: `boletoCode?: string` (linha digitavel do boleto)
+- Nova aba no TabsList com 4 colunas (grid-cols-4) e icone `FileText`
 
-## Detalhamento por Página
+### 3. Tab de Boleto (Step 1)
+- Campo: **Linha Digitavel** (input com mascara ou textarea)
+- Placeholder: "Cole aqui a linha digitavel do boleto..."
+- Texto auxiliar explicando o formato
 
-### 1. Categorias (`/categories`)
-**Funcionalidades:**
-- Listar todas as categorias da empresa
-- Criar nova categoria (nome, classificação: Custo/Despesa)
-- Editar categoria existente
-- Desativar categoria
-- Filtrar por classificação (Custos / Despesas)
-- Keywords para auto-classificação OCR
+### 4. Validacao
+- Step 1: se tipo = "boleto" e nao preencheu a linha digitavel, mostrar erro
+- Step 2 (valor): para boleto, o valor pode vir preenchido automaticamente (futuro) mas por ora e manual
 
-**Componentes:**
-- Tabela com colunas: Nome, Classificação, Status, Ações
-- Modal de criação/edição
-- Filtros por tipo
+### 5. Confirmacao (Step 3)
+- Mostrar "Boleto" como tipo quando selecionado
+- Mostrar a linha digitavel no resumo
 
----
+### 6. Menu lateral
+- `MainLayout.tsx`: renomear "Novo Pix" para **"Novo Pagamento"**
+- Manter a rota `/pix/new` (ou mudar para `/payment/new` -- vou manter `/pix/new` por ora para nao quebrar nada)
 
-### 2. Relatórios (`/reports`)
-**Funcionalidades:**
-- Resumo financeiro por período
-- Gráfico de Custos vs Despesas
-- Tabela de transações por categoria
-- Exportar para CSV/PDF
-- Filtros de data (hoje, semana, mês, personalizado)
+### 7. Rota no App.tsx
+- Atualizar o import de `NewPix` para `NewPayment`
 
-**Componentes:**
-- Cards de resumo (total saídas, custos, despesas)
-- Gráficos (já temos Recharts instalado)
-- Tabela detalhada
-- Botões de exportação
+### 8. Banco de dados
+- A tabela `transactions` ja tem `pix_type` como enum. Sera necessario adicionar `'boleto'` ao enum `pix_type` via migration.
+- Adicionar coluna `boleto_code` (text, nullable) na tabela `transactions` para armazenar a linha digitavel.
 
 ---
 
-### 3. Usuários (`/users`)
-**Funcionalidades:**
-- Listar usuários da empresa
-- Convidar novo usuário
-- Alterar role (admin/operador)
-- Definir limite de pagamento por usuário
-- Desativar usuário
+## Secao Tecnica
 
-**Componentes:**
-- Lista de usuários com avatar
-- Badge de role (Admin/Operador)
-- Modal de convite
-- Input para limite de pagamento
+### Arquivos a modificar
+| Arquivo | Acao |
+|---------|------|
+| `src/pages/NewPix.tsx` | Renomear para `NewPayment.tsx`, adicionar tab boleto |
+| `src/components/layout/MainLayout.tsx` | Renomear link "Novo Pix" para "Novo Pagamento" |
+| `src/App.tsx` | Atualizar import |
+| `src/types/database.ts` | Adicionar `"boleto"` ao tipo `PixType` |
+| Migration SQL | `ALTER TYPE pix_type ADD VALUE 'boleto'`; adicionar coluna `boleto_code` |
 
----
-
-### 4. Empresas (`/companies`)
-**Funcionalidades:**
-- Listar todas as empresas
-- Criar nova empresa
-- Editar dados (nome, CNPJ, endereço)
-- Upload de logo
-- Desativar empresa
-
-**Componentes:**
-- Cards de empresas
-- Modal de criação/edição
-- Upload de imagem
-
----
-
-### 5. Configurações (`/settings`)
-**Funcionalidades:**
-- Dados do perfil (nome, email, telefone)
-- Alterar senha
-- Upload de foto de perfil
-- Links para sub-páginas (Integração Pix, etc)
-- Tema claro/escuro (futuro)
-
-**Componentes:**
-- Form de perfil
-- Seção de segurança
-- Menu de navegação para sub-configurações
-
----
-
-## Estrutura de Arquivos
-
-```text
-src/pages/
-├── Categories.tsx          (CRIAR)
-├── Reports.tsx             (CRIAR)
-├── Users.tsx               (CRIAR)
-├── Companies.tsx           (CRIAR)
-├── Settings.tsx            (CRIAR)
-└── settings/
-    └── PixIntegration.tsx  (já existe)
-```
-
----
-
-## Fluxo de Implementação
-
-```text
-                    ┌─────────────────┐
-                    │   App.tsx       │
-                    │  (add rotas)    │
-                    └────────┬────────┘
-                             │
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-        ▼                    ▼                    ▼
-┌───────────────┐  ┌───────────────┐   ┌───────────────┐
-│  Categories   │  │    Reports    │   │    Settings   │
-│  (CRUD cats)  │  │  (gráficos)   │   │  (perfil)     │
-└───────────────┘  └───────────────┘   └───────────────┘
-        │
-        ├──────────────────────────────────────────┐
-        │                                          │
-        ▼                                          ▼
-┌───────────────┐                        ┌───────────────┐
-│    Users      │                        │   Companies   │
-│ (membros)     │                        │  (empresas)   │
-└───────────────┘                        └───────────────┘
-```
-
----
-
-## Seção Técnica
-
-### Tabelas Utilizadas
-- `categories` - Já existe, com RLS configurado
-- `profiles` - Já existe, para dados do usuário
-- `companies` - Já existe, CRUD de empresas
-- `company_members` - Já existe, relação user-empresa
-- `user_roles` - Já existe, roles de usuário
-- `transactions` - Para relatórios agregados
-
-### Padrão de Código
-Cada página seguirá o mesmo padrão da `PixIntegration.tsx`:
-- Usar `MainLayout` para layout consistente
-- Cards com `CardHeader` e `CardContent`
-- Estados de loading com `Loader2`
-- Toast para feedback
-- Hooks do React Query para dados (quando necessário)
-
-### Rotas a Adicionar (App.tsx)
-
+### Novo tipo
 ```typescript
-// Páginas admin-only
-<Route path="/categories" element={<AuthGuard requireAdmin><Categories /></AuthGuard>} />
-<Route path="/reports" element={<AuthGuard requireAdmin><Reports /></AuthGuard>} />
-<Route path="/users" element={<AuthGuard requireAdmin><Users /></AuthGuard>} />
-<Route path="/companies" element={<AuthGuard requireAdmin><Companies /></AuthGuard>} />
-
-// Página para todos
-<Route path="/settings" element={<AuthGuard><Settings /></AuthGuard>} />
+type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
 ```
 
----
+### Layout das tabs (4 colunas)
+```text
+┌──────────┬──────────────┬──────────┬──────────┐
+│  Chave   │ Copia e Cola │ QR Code  │  Boleto  │
+└──────────┴──────────────┴──────────┴──────────┘
+```
 
-## Ordem de Implementação
-
-1. **Settings** - Página mais simples, serve de hub
-2. **Categories** - CRUD básico, essencial para classificação
-3. **Companies** - CRUD de empresas
-4. **Users** - Gerenciamento de membros
-5. **Reports** - Mais complexa, usa dados agregados
-
----
-
-## Próximos Passos
-
-Após aprovar, implementarei todas as 5 páginas com:
-- Layout consistente com o resto do app
-- Integração com Supabase (dados reais)
-- Componentes shadcn/ui
-- Validação de formulários
-- Feedback visual (loading, toasts)
+### Migration SQL
+```sql
+ALTER TYPE pix_type ADD VALUE 'boleto';
+ALTER TABLE transactions ADD COLUMN boleto_code text;
+```
