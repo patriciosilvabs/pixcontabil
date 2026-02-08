@@ -549,6 +549,7 @@ export type Database = {
           bank_account_id: string | null
           beneficiary_document: string | null
           beneficiary_name: string | null
+          boleto_code: string | null
           category_id: string | null
           classified_at: string | null
           classified_by: string | null
@@ -578,6 +579,7 @@ export type Database = {
           bank_account_id?: string | null
           beneficiary_document?: string | null
           beneficiary_name?: string | null
+          boleto_code?: string | null
           category_id?: string | null
           classified_at?: string | null
           classified_by?: string | null
@@ -607,6 +609,7 @@ export type Database = {
           bank_account_id?: string | null
           beneficiary_document?: string | null
           beneficiary_name?: string | null
+          boleto_code?: string | null
           category_id?: string | null
           classified_at?: string | null
           classified_by?: string | null
@@ -699,7 +702,7 @@ export type Database = {
       app_role: "admin" | "operator"
       classification_type: "cost" | "expense"
       pix_key_type: "cpf" | "cnpj" | "email" | "phone" | "random"
-      pix_type: "key" | "copy_paste" | "qrcode"
+      pix_type: "key" | "copy_paste" | "qrcode" | "boleto"
       receipt_status: "pending" | "processing" | "completed" | "failed"
       transaction_status: "pending" | "completed" | "failed" | "cancelled"
     }
@@ -832,7 +835,7 @@ export const Constants = {
       app_role: ["admin", "operator"],
       classification_type: ["cost", "expense"],
       pix_key_type: ["cpf", "cnpj", "email", "phone", "random"],
-      pix_type: ["key", "copy_paste", "qrcode"],
+      pix_type: ["key", "copy_paste", "qrcode", "boleto"],
       receipt_status: ["pending", "processing", "completed", "failed"],
       transaction_status: ["pending", "completed", "failed", "cancelled"],
     },

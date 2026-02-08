@@ -42,7 +42,7 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: Home },
-    { name: "Novo Pix", href: "/pix/new", icon: Send },
+    { name: "Novo Pagamento", href: "/pix/new", icon: Send },
     { name: "Histórico", href: "/transactions", icon: History },
     { name: "Categorias", href: "/categories", icon: FolderOpen, adminOnly: true },
     { name: "Relatórios", href: "/reports", icon: FileText, adminOnly: true },
