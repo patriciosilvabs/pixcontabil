@@ -1,74 +1,46 @@
 
-# Transformar "Novo Pix" em "Novo Pagamento" (com Boleto)
+# Adicionar aba Boleto na página Novo Pagamento
 
-## Resumo
-Renomear a pagina de "Novo Pix" para "Novo Pagamento" e adicionar a opcao de pagamento via **Boleto**, alem das 3 opcoes ja existentes (Chave Pix, Copia e Cola, QR Code).
+## O que falta
+O arquivo `NewPayment.tsx` foi renomeado mas o conteudo interno nao mudou. Precisa:
 
----
-
-## Alteracoes
-
-### 1. Renomear pagina e rota
-- **Arquivo**: `src/pages/NewPix.tsx` -- renomear para `src/pages/NewPayment.tsx`
-- Titulo: "Novo Pagamento Pix" vira **"Novo Pagamento"**
-- Descricao do Step 1: "Escolha como deseja realizar o Pix" vira **"Escolha a forma de pagamento"**
-
-### 2. Adicionar tipo "boleto"
-- O tipo de pagamento passa de `"key" | "copy_paste" | "qrcode"` para `"key" | "copy_paste" | "qrcode" | "boleto"`
-- Novo campo no state: `boletoCode?: string` (linha digitavel do boleto)
-- Nova aba no TabsList com 4 colunas (grid-cols-4) e icone `FileText`
-
-### 3. Tab de Boleto (Step 1)
-- Campo: **Linha Digitavel** (input com mascara ou textarea)
-- Placeholder: "Cole aqui a linha digitavel do boleto..."
-- Texto auxiliar explicando o formato
-
-### 4. Validacao
-- Step 1: se tipo = "boleto" e nao preencheu a linha digitavel, mostrar erro
-- Step 2 (valor): para boleto, o valor pode vir preenchido automaticamente (futuro) mas por ora e manual
-
-### 5. Confirmacao (Step 3)
-- Mostrar "Boleto" como tipo quando selecionado
-- Mostrar a linha digitavel no resumo
-
-### 6. Menu lateral
-- `MainLayout.tsx`: renomear "Novo Pix" para **"Novo Pagamento"**
-- Manter a rota `/pix/new` (ou mudar para `/payment/new` -- vou manter `/pix/new` por ora para nao quebrar nada)
-
-### 7. Rota no App.tsx
-- Atualizar o import de `NewPix` para `NewPayment`
-
-### 8. Banco de dados
-- A tabela `transactions` ja tem `pix_type` como enum. Sera necessario adicionar `'boleto'` ao enum `pix_type` via migration.
-- Adicionar coluna `boleto_code` (text, nullable) na tabela `transactions` para armazenar a linha digitavel.
+1. **Tipo**: Mudar de `"key" | "copy_paste" | "qrcode"` para incluir `"boleto"`
+2. **State**: Adicionar campo `boletoCode` no `PixData`
+3. **Titulo**: Trocar "Novo Pagamento Pix" por "Novo Pagamento"
+4. **Descricao Step 1**: Trocar "Escolha como deseja realizar o Pix" por "Escolha a forma de pagamento"
+5. **Tabs**: De `grid-cols-3` para `grid-cols-4`, adicionar aba Boleto com icone `FileText`
+6. **TabsContent boleto**: Campo "Linha Digitavel" com input mono
+7. **Validacao Step 1**: Se tipo = boleto e sem codigo, mostrar erro
+8. **Confirmacao Step 3**: Mostrar "Boleto" e a linha digitavel no resumo
+9. **Export**: Renomear funcao de `NewPix` para `NewPayment`
 
 ---
 
 ## Secao Tecnica
 
-### Arquivos a modificar
-| Arquivo | Acao |
-|---------|------|
-| `src/pages/NewPix.tsx` | Renomear para `NewPayment.tsx`, adicionar tab boleto |
-| `src/components/layout/MainLayout.tsx` | Renomear link "Novo Pix" para "Novo Pagamento" |
-| `src/App.tsx` | Atualizar import |
-| `src/types/database.ts` | Adicionar `"boleto"` ao tipo `PixType` |
-| Migration SQL | `ALTER TYPE pix_type ADD VALUE 'boleto'`; adicionar coluna `boleto_code` |
+### Arquivo unico a modificar
+`src/pages/NewPayment.tsx`
 
-### Novo tipo
+### Alteracoes especificas
+
+**Imports**: Adicionar `FileText` do lucide-react
+
+**Tipo PixType (linha 24)**:
 ```typescript
 type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
 ```
 
-### Layout das tabs (4 colunas)
+**Interface PixData**: Adicionar `boletoCode?: string`
+
+**Validacao (handleNext)**: Adicionar check para boleto sem codigo
+
+**TabsList**: `grid-cols-4` com nova aba:
 ```text
-┌──────────┬──────────────┬──────────┬──────────┐
-│  Chave   │ Copia e Cola │ QR Code  │  Boleto  │
-└──────────┴──────────────┴──────────┴──────────┘
+┌────────┬─────────────┬─────────┬────────┐
+│ Chave  │ Copia e Cola│ QR Code │ Boleto │
+└────────┴─────────────┴─────────┴────────┘
 ```
 
-### Migration SQL
-```sql
-ALTER TYPE pix_type ADD VALUE 'boleto';
-ALTER TABLE transactions ADD COLUMN boleto_code text;
-```
+**TabsContent boleto**: Input para linha digitavel (47-48 digitos)
+
+**Step 3 confirmacao**: Exibir "Boleto" como tipo e mostrar a linha digitavel truncada
