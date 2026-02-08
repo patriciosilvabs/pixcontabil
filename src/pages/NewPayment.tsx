@@ -14,6 +14,7 @@ import {
   Key,
   Copy,
   QrCode,
+  FileText,
   ArrowLeft,
   ArrowRight,
   Loader2,
@@ -21,14 +22,15 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-type PixType = "key" | "copy_paste" | "qrcode";
+type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
 
-interface PixData {
-  type: PixType;
+interface PaymentData {
+  type: PaymentType;
   keyType?: PixKeyType;
   key?: string;
   copyPaste?: string;
+  boletoCode?: string;
   amount: string;
   description?: string;
 }
@@ -49,9 +51,9 @@ const pixKeyPlaceholders: Record<PixKeyType, string> = {
   random: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
 };
 
-export default function NewPix() {
+export default function NewPayment() {
   const [step, setStep] = useState(1);
-  const [pixData, setPixData] = useState<PixData>({
+  const [pixData, setPixData] = useState<PaymentData>({
     type: "key",
     keyType: "cpf",
     amount: "",
@@ -76,6 +78,14 @@ export default function NewPix() {
           variant: "destructive",
           title: "Erro",
           description: "Cole o código Pix",
+        });
+        return;
+      }
+      if (pixData.type === "boleto" && !pixData.boletoCode) {
+        toast({
+          variant: "destructive",
+          title: "Erro",
+          description: "Informe a linha digitável do boleto",
         });
         return;
       }
@@ -129,7 +139,7 @@ export default function NewPix() {
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Novo Pagamento Pix</h1>
+            <h1 className="text-2xl font-bold">Novo Pagamento</h1>
             <p className="text-muted-foreground">Etapa {step} de 3</p>
           </div>
         </div>
@@ -153,15 +163,15 @@ export default function NewPix() {
             <CardHeader>
               <CardTitle>Tipo de Pagamento</CardTitle>
               <CardDescription>
-                Escolha como deseja realizar o Pix
+                Escolha a forma de pagamento
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               <Tabs
                 value={pixData.type}
-                onValueChange={(v) => setPixData({ ...pixData, type: v as PixType })}
+                onValueChange={(v) => setPixData({ ...pixData, type: v as PaymentType })}
               >
-                <TabsList className="grid grid-cols-3 w-full">
+                <TabsList className="grid grid-cols-4 w-full">
                   <TabsTrigger value="key" className="gap-2">
                     <Key className="h-4 w-4" />
                     <span className="hidden sm:inline">Chave</span>
@@ -173,6 +183,10 @@ export default function NewPix() {
                   <TabsTrigger value="qrcode" className="gap-2">
                     <QrCode className="h-4 w-4" />
                     <span className="hidden sm:inline">QR Code</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="boleto" className="gap-2">
+                    <FileText className="h-4 w-4" />
+                    <span className="hidden sm:inline">Boleto</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -238,6 +252,23 @@ export default function NewPix() {
                     <Button variant="outline" className="mt-4">
                       Abrir Câmera
                     </Button>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="boleto" className="space-y-4 mt-6">
+                  <div className="space-y-2">
+                    <Label>Linha Digitável</Label>
+                    <Input
+                      placeholder="00000.00000 00000.000000 00000.000000 0 00000000000000"
+                      className="font-mono text-sm"
+                      value={pixData.boletoCode || ""}
+                      onChange={(e) =>
+                        setPixData({ ...pixData, boletoCode: e.target.value })
+                      }
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Digite ou cole a linha digitável do código de barras (47 ou 48 dígitos)
+                    </p>
                   </div>
                 </TabsContent>
               </Tabs>
@@ -308,6 +339,8 @@ export default function NewPix() {
                       ? `Chave ${pixKeyLabels[pixData.keyType || "cpf"]}`
                       : pixData.type === "copy_paste"
                       ? "Copia e Cola"
+                      : pixData.type === "boleto"
+                      ? "Boleto"
                       : "QR Code"}
                   </span>
                 </div>
@@ -317,6 +350,15 @@ export default function NewPix() {
                     <span className="text-muted-foreground">Chave</span>
                     <span className="font-medium font-mono text-sm">
                       {pixData.key}
+                    </span>
+                  </div>
+                )}
+
+                {pixData.type === "boleto" && (
+                  <div className="flex justify-between items-start">
+                    <span className="text-muted-foreground">Linha Digitável</span>
+                    <span className="font-medium font-mono text-sm text-right max-w-[60%] break-all">
+                      {pixData.boletoCode}
                     </span>
                   </div>
                 )}
