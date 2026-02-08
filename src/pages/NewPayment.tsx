@@ -157,7 +157,7 @@ export default function NewPayment() {
           ))}
         </div>
 
-        {/* Step 1: Choose Pix Type */}
+        {/* Step 1: Choose Payment Type */}
         {step === 1 && (
           <Card>
             <CardHeader>
