@@ -1,135 +1,193 @@
 
-# Configuração da Integração Pix com ONZ Sandbox
+# Criação das Páginas Administrativas Faltantes
 
 ## Resumo
-Você recebeu credenciais de sandbox da ONZ para testar a integração Pix. Este plano detalha como configurar essas credenciais no PixFlow.
+Implementar as 5 páginas que aparecem no menu lateral mas ainda não existem: **Categorias**, **Relatórios**, **Usuários**, **Empresas** e **Configurações**.
 
 ---
 
-## Informações Recebidas (do Email)
+## Páginas a Criar
 
-| Item | Valor |
-|------|-------|
-| **Portal Finance (Sandbox)** | https://finance.bancodigital.hmg.onz.software/ |
-| **Login Finance** | 00904831388 |
-| **Senha Finance** | @patricio11 |
-| **Senha de Transação** | 1234 |
-| **API QRCodes** | https://api.pix-h.amplea.coop.br |
-| **API de Contas (Base URL)** | https://secureapi.bancodigital.hmg.onz.software/api/v2 |
-| **Chave Pix (testes)** | a848179b-3d62-431c-b563-4d30e24f9316 |
-| **Senha certificado PFX** | onzsoftware |
+| Página | Rota | Acesso | Função |
+|--------|------|--------|--------|
+| Categorias | `/categories` | Admin | CRUD de categorias (Custos vs Despesas) |
+| Relatórios | `/reports` | Admin | Relatórios financeiros e exportação |
+| Usuários | `/users` | Admin | Gerenciar usuários e permissões |
+| Empresas | `/companies` | Admin | CRUD de empresas |
+| Configurações | `/settings` | Todos | Configurações da conta e sistema |
 
 ---
 
-## Passo a Passo de Configuração
+## Detalhamento por Página
 
-### Passo 1: Gerar Credenciais de API no Portal ONZ
+### 1. Categorias (`/categories`)
+**Funcionalidades:**
+- Listar todas as categorias da empresa
+- Criar nova categoria (nome, classificação: Custo/Despesa)
+- Editar categoria existente
+- Desativar categoria
+- Filtrar por classificação (Custos / Despesas)
+- Keywords para auto-classificação OCR
 
-1. Acesse o Portal Finance: https://finance.bancodigital.hmg.onz.software/
-2. Faça login com:
-   - **CPF**: 00904831388
-   - **Senha**: @patricio11
-3. Navegue até **Configurações** ou **API/Integrações**
-4. Crie novas credenciais de API com as permissões:
-   - Pix (Leitura, Escrita, Criação)
-   - Contas (Leitura)
-   - Transações (Leitura)
-   - Webhooks (Leitura, Escrita)
-5. **IMPORTANTE**: Copie e salve o **Client ID** e **Client Secret** gerados - o secret só aparece uma vez!
-
-### Passo 2: Configurar no PixFlow
-
-Na página **Integração Pix** (`/settings/pix-integration`), preencha:
-
-| Campo | Valor |
-|-------|-------|
-| **Provedor** | ONZ / Infopago |
-| **Ambiente** | Sandbox (Testes) - deixar ativado |
-| **URL Base da API** | `https://secureapi.bancodigital.hmg.onz.software/api/v2` (preenchido automaticamente) |
-| **Client ID** | (gerado no passo 1) |
-| **Client Secret** | (gerado no passo 1) |
-| **Tipo de Chave** | Chave Aleatória |
-| **Chave Pix** | `a848179b-3d62-431c-b563-4d30e24f9316` |
-
-### Passo 3: Configurar Webhook no Portal ONZ
-
-1. No Portal Finance, vá até **Webhooks**
-2. Desative a opção **"Pausar envio dos webhooks"**
-3. Configure um novo webhook:
-   - **URL**: `https://ntvgthwqxixkoemyxhqo.supabase.co/functions/v1/pix-webhook`
-   - **Método**: POST
-   - **Eventos**: Transferência, Recebimento, Devolução
-4. Se quiser adicionar segurança extra, configure um header:
-   - **Header**: `x-webhook-secret`
-   - **Valor**: (crie uma senha e anote)
-
-### Passo 4: Testar a Conexão
-
-1. Clique em **"Testar Conexão"** na página de configuração
-2. Se aparecer "Conexão bem-sucedida!", a integração está funcionando
-3. Faça um pagamento de teste pequeno (ex: R$ 0,01)
+**Componentes:**
+- Tabela com colunas: Nome, Classificação, Status, Ações
+- Modal de criação/edição
+- Filtros por tipo
 
 ---
 
-## Diagrama do Fluxo
+### 2. Relatórios (`/reports`)
+**Funcionalidades:**
+- Resumo financeiro por período
+- Gráfico de Custos vs Despesas
+- Tabela de transações por categoria
+- Exportar para CSV/PDF
+- Filtros de data (hoje, semana, mês, personalizado)
+
+**Componentes:**
+- Cards de resumo (total saídas, custos, despesas)
+- Gráficos (já temos Recharts instalado)
+- Tabela detalhada
+- Botões de exportação
+
+---
+
+### 3. Usuários (`/users`)
+**Funcionalidades:**
+- Listar usuários da empresa
+- Convidar novo usuário
+- Alterar role (admin/operador)
+- Definir limite de pagamento por usuário
+- Desativar usuário
+
+**Componentes:**
+- Lista de usuários com avatar
+- Badge de role (Admin/Operador)
+- Modal de convite
+- Input para limite de pagamento
+
+---
+
+### 4. Empresas (`/companies`)
+**Funcionalidades:**
+- Listar todas as empresas
+- Criar nova empresa
+- Editar dados (nome, CNPJ, endereço)
+- Upload de logo
+- Desativar empresa
+
+**Componentes:**
+- Cards de empresas
+- Modal de criação/edição
+- Upload de imagem
+
+---
+
+### 5. Configurações (`/settings`)
+**Funcionalidades:**
+- Dados do perfil (nome, email, telefone)
+- Alterar senha
+- Upload de foto de perfil
+- Links para sub-páginas (Integração Pix, etc)
+- Tema claro/escuro (futuro)
+
+**Componentes:**
+- Form de perfil
+- Seção de segurança
+- Menu de navegação para sub-configurações
+
+---
+
+## Estrutura de Arquivos
 
 ```text
-┌──────────────┐    1. Gerar credenciais    ┌─────────────────┐
-│  Portal ONZ  │ ◄────────────────────────► │  Client ID +    │
-│  (Sandbox)   │                             │  Client Secret  │
-└──────────────┘                             └────────┬────────┘
-                                                      │
-                                                      ▼ 2. Configurar
-┌──────────────┐    3. Testar conexão       ┌─────────────────┐
-│   PixFlow    │ ◄────────────────────────► │   pix-auth      │
-│  Config Page │                             │   Edge Func     │
-└──────────────┘                             └─────────────────┘
-       │                                              │
-       │ 4. Webhook                                   │
-       ▼                                              ▼
-┌──────────────┐                             ┌─────────────────┐
-│  Portal ONZ  │ ─────── Notificações ─────► │   pix-webhook   │
-│  Webhooks    │                             │   Edge Func     │
-└──────────────┘                             └─────────────────┘
+src/pages/
+├── Categories.tsx          (CRIAR)
+├── Reports.tsx             (CRIAR)
+├── Users.tsx               (CRIAR)
+├── Companies.tsx           (CRIAR)
+├── Settings.tsx            (CRIAR)
+└── settings/
+    └── PixIntegration.tsx  (já existe)
+```
+
+---
+
+## Fluxo de Implementação
+
+```text
+                    ┌─────────────────┐
+                    │   App.tsx       │
+                    │  (add rotas)    │
+                    └────────┬────────┘
+                             │
+        ┌────────────────────┼────────────────────┐
+        │                    │                    │
+        ▼                    ▼                    ▼
+┌───────────────┐  ┌───────────────┐   ┌───────────────┐
+│  Categories   │  │    Reports    │   │    Settings   │
+│  (CRUD cats)  │  │  (gráficos)   │   │  (perfil)     │
+└───────────────┘  └───────────────┘   └───────────────┘
+        │
+        ├──────────────────────────────────────────┐
+        │                                          │
+        ▼                                          ▼
+┌───────────────┐                        ┌───────────────┐
+│    Users      │                        │   Companies   │
+│ (membros)     │                        │  (empresas)   │
+└───────────────┘                        └───────────────┘
 ```
 
 ---
 
 ## Seção Técnica
 
-### Campos da Tabela `pix_configs`
+### Tabelas Utilizadas
+- `categories` - Já existe, com RLS configurado
+- `profiles` - Já existe, para dados do usuário
+- `companies` - Já existe, CRUD de empresas
+- `company_members` - Já existe, relação user-empresa
+- `user_roles` - Já existe, roles de usuário
+- `transactions` - Para relatórios agregados
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `provider` | string | `"onz"` |
-| `client_id` | string | ID gerado no portal |
-| `client_secret_encrypted` | string | Secret gerado (armazenado em texto por enquanto) |
-| `base_url` | string | `https://secureapi.bancodigital.hmg.onz.software/api/v2` |
-| `pix_key` | string | `a848179b-3d62-431c-b563-4d30e24f9316` |
-| `pix_key_type` | string | `"random"` |
-| `is_sandbox` | boolean | `true` |
-| `is_active` | boolean | `true` |
+### Padrão de Código
+Cada página seguirá o mesmo padrão da `PixIntegration.tsx`:
+- Usar `MainLayout` para layout consistente
+- Cards com `CardHeader` e `CardContent`
+- Estados de loading com `Loader2`
+- Toast para feedback
+- Hooks do React Query para dados (quando necessário)
 
-### Endpoint de Autenticação ONZ
+### Rotas a Adicionar (App.tsx)
 
-A edge function `pix-auth` já está configurada para o formato ONZ:
+```typescript
+// Páginas admin-only
+<Route path="/categories" element={<AuthGuard requireAdmin><Categories /></AuthGuard>} />
+<Route path="/reports" element={<AuthGuard requireAdmin><Reports /></AuthGuard>} />
+<Route path="/users" element={<AuthGuard requireAdmin><Users /></AuthGuard>} />
+<Route path="/companies" element={<AuthGuard requireAdmin><Companies /></AuthGuard>} />
 
-```text
-POST {base_url}/oauth/token
-Body: {
-  "clientId": "...",
-  "clientSecret": "...",
-  "grantType": "client_credentials",
-  "scope": "pix.read pix.write transactions.read account.read webhook.read webhook.write"
-}
+// Página para todos
+<Route path="/settings" element={<AuthGuard><Settings /></AuthGuard>} />
 ```
-
-### Sobre o Certificado PFX
-
-Para sandbox, geralmente não é necessário certificado mTLS. A senha `onzsoftware` é para uso futuro em produção, se exigido.
 
 ---
 
-## Próximo Passo
+## Ordem de Implementação
 
-Acesse o Portal Finance da ONZ, gere as credenciais de API (Client ID e Client Secret), e preencha na página de Integração Pix. Me avise quando tiver as credenciais!
+1. **Settings** - Página mais simples, serve de hub
+2. **Categories** - CRUD básico, essencial para classificação
+3. **Companies** - CRUD de empresas
+4. **Users** - Gerenciamento de membros
+5. **Reports** - Mais complexa, usa dados agregados
+
+---
+
+## Próximos Passos
+
+Após aprovar, implementarei todas as 5 páginas com:
+- Layout consistente com o resto do app
+- Integração com Supabase (dados reais)
+- Componentes shadcn/ui
+- Validação de formulários
+- Feedback visual (loading, toasts)
