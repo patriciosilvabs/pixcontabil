@@ -10,6 +10,11 @@ import Dashboard from "./pages/Dashboard";
 import NewPix from "./pages/NewPix";
 import ReceiptCapture from "./pages/ReceiptCapture";
 import Transactions from "./pages/Transactions";
+import Categories from "./pages/Categories";
+import Reports from "./pages/Reports";
+import Users from "./pages/Users";
+import Companies from "./pages/Companies";
+import Settings from "./pages/Settings";
 import PixIntegration from "./pages/settings/PixIntegration";
 import NotFound from "./pages/NotFound";
 
@@ -56,6 +61,46 @@ const App = () => (
               element={
                 <AuthGuard>
                   <Transactions />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/categories"
+              element={
+                <AuthGuard requireAdmin>
+                  <Categories />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/reports"
+              element={
+                <AuthGuard requireAdmin>
+                  <Reports />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <AuthGuard requireAdmin>
+                  <Users />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/companies"
+              element={
+                <AuthGuard requireAdmin>
+                  <Companies />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <AuthGuard>
+                  <Settings />
                 </AuthGuard>
               }
             />
