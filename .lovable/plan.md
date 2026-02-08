@@ -1,46 +1,38 @@
 
-# Adicionar aba Boleto na página Novo Pagamento
 
-## O que falta
-O arquivo `NewPayment.tsx` foi renomeado mas o conteudo interno nao mudou. Precisa:
+# Adicionar botao de camera na aba Boleto
 
-1. **Tipo**: Mudar de `"key" | "copy_paste" | "qrcode"` para incluir `"boleto"`
-2. **State**: Adicionar campo `boletoCode` no `PixData`
-3. **Titulo**: Trocar "Novo Pagamento Pix" por "Novo Pagamento"
-4. **Descricao Step 1**: Trocar "Escolha como deseja realizar o Pix" por "Escolha a forma de pagamento"
-5. **Tabs**: De `grid-cols-3` para `grid-cols-4`, adicionar aba Boleto com icone `FileText`
-6. **TabsContent boleto**: Campo "Linha Digitavel" com input mono
-7. **Validacao Step 1**: Se tipo = boleto e sem codigo, mostrar erro
-8. **Confirmacao Step 3**: Mostrar "Boleto" e a linha digitavel no resumo
-9. **Export**: Renomear funcao de `NewPix` para `NewPayment`
+## Resumo
+Adicionar uma opcao de escanear codigo de barras com a camera na aba Boleto, similar ao que ja existe na aba QR Code.
 
----
+## Alteracao
 
-## Secao Tecnica
+### Arquivo: `src/pages/NewPayment.tsx`
 
-### Arquivo unico a modificar
-`src/pages/NewPayment.tsx`
+Na aba Boleto (linhas 258-273), adicionar uma secao com botao "Abrir Camera" acima do campo de digitacao manual, seguindo o mesmo padrao visual da aba QR Code:
 
-### Alteracoes especificas
+1. Adicionar import do icone `Camera` do lucide-react (ou reutilizar `QrCode`)
+2. Inserir um bloco com borda tracejada, icone de camera/codigo de barras, texto explicativo e botao "Abrir Camera" antes do campo "Linha Digitavel"
+3. Adicionar um separador visual com texto "ou digite manualmente" entre o botao da camera e o input
 
-**Imports**: Adicionar `FileText` do lucide-react
-
-**Tipo PixType (linha 24)**:
-```typescript
-type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
-```
-
-**Interface PixData**: Adicionar `boletoCode?: string`
-
-**Validacao (handleNext)**: Adicionar check para boleto sem codigo
-
-**TabsList**: `grid-cols-4` com nova aba:
+### Layout final da aba Boleto
 ```text
-┌────────┬─────────────┬─────────┬────────┐
-│ Chave  │ Copia e Cola│ QR Code │ Boleto │
-└────────┴─────────────┴─────────┴────────┘
+┌─────────────────────────────────────┐
+│        [icone codigo de barras]     │
+│                                     │
+│   Escaneie o codigo de barras       │
+│   com a camera do seu dispositivo   │
+│                                     │
+│        [ Abrir Camera ]             │
+├─────────────────────────────────────┤
+│      ─── ou digite manualmente ───  │
+├─────────────────────────────────────┤
+│  Linha Digitavel                    │
+│  [ 00000.00000 00000.000000 ... ]   │
+│  47 ou 48 digitos                   │
+└─────────────────────────────────────┘
 ```
 
-**TabsContent boleto**: Input para linha digitavel (47-48 digitos)
+### Icone
+Usar o icone `ScanBarcode` do lucide-react (mais adequado para codigo de barras) -- adicionar ao import existente.
 
-**Step 3 confirmacao**: Exibir "Boleto" como tipo e mostrar a linha digitavel truncada
