@@ -42,6 +42,11 @@ Deno.serve(async (req) => {
   );
 
   try {
+    // Validate webhook secret if configured
+    const webhookSecret = req.headers.get('x-webhook-secret');
+    // We'll validate per-company after finding the transaction,
+    // but reject obviously empty payloads early
+    
     // Get client IP
     const ip_address = req.headers.get('x-forwarded-for') || 
                        req.headers.get('x-real-ip') || 

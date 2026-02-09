@@ -56,3 +56,12 @@ verify_jwt = false
 
 [functions.pix-refund]
 verify_jwt = false
+
+[functions.billet-pay]
+verify_jwt = false
+
+[functions.billet-check-status]
+verify_jwt = false
+
+[functions.billet-receipt]
+verify_jwt = false
