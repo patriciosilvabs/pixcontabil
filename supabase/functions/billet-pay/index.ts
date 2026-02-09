@@ -5,30 +5,34 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface PayDictRequest {
+interface BilletPayRequest {
   company_id: string;
-  pix_key: string;
-  valor: number;
-  descricao?: string;
-  creditor_document?: string;
-  priority?: 'HIGH' | 'NORM';
+  digitable_code: string;
+  description: string;
   payment_flow?: 'INSTANT' | 'APPROVAL_REQUIRED';
-  expiration?: number; // seconds, default 600
-  end_to_end_id?: string; // optional, for consultation discharge
+  amount?: number;
 }
 
-interface ONZPaymentResponse {
-  endToEndId: string;
-  eventDate: string;
+interface ONZBilletResponse {
   id: number;
-  payment: {
+  status: string;
+  digitableCode: string;
+  barCode?: string;
+  dueDate?: string;
+  payment?: {
     currency: string;
     amount: number;
   };
-  type: string;
+  creditor?: {
+    name?: string;
+    document?: string;
+  };
+  debtor?: {
+    name?: string;
+    document?: string;
+  };
 }
 
-// Generate idempotency key
 function generateIdempotencyKey(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
@@ -44,7 +48,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Authenticate user
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -61,7 +64,7 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    
+
     if (authError || !claims?.claims) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
@@ -71,30 +74,25 @@ Deno.serve(async (req) => {
 
     const userId = claims.claims.sub as string;
 
-    // Get request body
-    const body: PayDictRequest = await req.json();
-    const { 
-      company_id, 
-      pix_key, 
-      valor, 
-      descricao, 
-      creditor_document,
-      priority = 'NORM',
+    const body: BilletPayRequest = await req.json();
+    const {
+      company_id,
+      digitable_code,
+      description,
       payment_flow = 'INSTANT',
-      expiration = 600,
-      end_to_end_id,
+      amount,
     } = body;
 
-    if (!company_id || !pix_key || !valor) {
+    if (!company_id || !digitable_code || !description) {
       return new Response(
-        JSON.stringify({ error: 'company_id, pix_key and valor are required' }),
+        JSON.stringify({ error: 'company_id, digitable_code and description are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[pix-pay-dict] Initiating payment via Pix key: ${pix_key}, valor: ${valor}`);
+    console.log(`[billet-pay] Initiating billet payment, code: ${digitable_code.substring(0, 10)}...`);
 
-    // Get Pix config
+    // Get Pix config (same config for billets)
     const { data: config, error: configError } = await supabase
       .from('pix_configs')
       .select('*')
@@ -104,12 +102,12 @@ Deno.serve(async (req) => {
 
     if (configError || !config) {
       return new Response(
-        JSON.stringify({ error: 'Pix configuration not found' }),
+        JSON.stringify({ error: 'API configuration not found for this company' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get auth token
+    // Get auth token via pix-auth
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: {
@@ -121,47 +119,35 @@ Deno.serve(async (req) => {
 
     if (!authResponse.ok) {
       const authErrorText = await authResponse.text();
-      console.error('[pix-pay-dict] Auth failed:', authErrorText);
+      console.error('[billet-pay] Auth failed:', authErrorText);
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with Pix provider' }),
+        JSON.stringify({ error: 'Failed to authenticate with provider' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
 
-    // Generate idempotency key
     const idempotencyKey = generateIdempotencyKey();
-    console.log(`[pix-pay-dict] Generated idempotency key: ${idempotencyKey}`);
+    console.log(`[billet-pay] Idempotency key: ${idempotencyKey}`);
 
-    // Build ONZ payment payload
-    const paymentPayload: any = {
-      pixKey: pix_key,
-      priority: priority,
+    // Build ONZ payload
+    const billetPayload: any = {
+      digitableCode: digitable_code.replace(/\D/g, ''),
+      description: description.substring(0, 140),
       paymentFlow: payment_flow,
-      expiration: expiration,
-      payment: {
-        currency: 'BRL',
-        amount: valor
-      }
     };
 
-    if (descricao) {
-      paymentPayload.description = descricao.substring(0, 140);
+    if (amount && amount > 0) {
+      billetPayload.payment = {
+        currency: 'BRL',
+        amount,
+      };
     }
 
-    if (creditor_document) {
-      paymentPayload.creditorDocument = creditor_document.replace(/\D/g, '');
-    }
+    console.log('[billet-pay] Sending to ONZ:', JSON.stringify(billetPayload));
 
-    if (end_to_end_id) {
-      paymentPayload.endToEndId = end_to_end_id;
-    }
-
-    console.log('[pix-pay-dict] Sending to ONZ:', JSON.stringify(paymentPayload));
-
-    // Make payment request to ONZ
-    const paymentUrl = `${config.base_url}/pix/payments/dict`;
+    const paymentUrl = `${config.base_url}/billets/payments`;
     const paymentResponse = await fetch(paymentUrl, {
       method: 'POST',
       headers: {
@@ -169,42 +155,45 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
         'x-idempotency-key': idempotencyKey,
       },
-      body: JSON.stringify(paymentPayload),
+      body: JSON.stringify(billetPayload),
     });
 
     if (!paymentResponse.ok) {
       const errorText = await paymentResponse.text();
-      console.error('[pix-pay-dict] Provider error:', errorText);
+      console.error('[billet-pay] Provider error:', errorText);
       return new Response(
-        JSON.stringify({ 
-          error: 'Failed to initiate Pix payment',
+        JSON.stringify({
+          error: 'Failed to initiate billet payment',
           provider_error: errorText,
-          status: paymentResponse.status
+          status: paymentResponse.status,
         }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const paymentData: ONZPaymentResponse = await paymentResponse.json();
-    console.log('[pix-pay-dict] Payment initiated:', JSON.stringify(paymentData));
+    const billetData: ONZBilletResponse = await paymentResponse.json();
+    console.log('[billet-pay] Payment initiated:', JSON.stringify(billetData));
 
-    // Save transaction in database using service role
+    // Save transaction
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
+    const finalAmount = billetData.payment?.amount || amount || 0;
+
     const transactionData = {
       company_id,
       created_by: userId,
-      amount: valor,
-      status: 'pending',
-      pix_type: 'key' as const,
-      pix_key: pix_key,
-      description: descricao,
-      pix_e2eid: paymentData.endToEndId,
-      external_id: paymentData.id.toString(),
-      pix_provider_response: paymentData,
+      amount: finalAmount,
+      status: 'pending' as const,
+      pix_type: 'boleto' as const,
+      boleto_code: digitable_code,
+      description,
+      external_id: billetData.id.toString(),
+      beneficiary_name: billetData.creditor?.name,
+      beneficiary_document: billetData.creditor?.document,
+      pix_provider_response: billetData,
     };
 
     const { data: newTransaction, error: insertError } = await supabaseAdmin
@@ -214,25 +203,25 @@ Deno.serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error('[pix-pay-dict] Failed to create transaction:', insertError);
+      console.error('[billet-pay] Failed to create transaction:', insertError);
       return new Response(
         JSON.stringify({ error: 'Failed to save transaction' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Log to audit
+    // Audit log
     await supabaseAdmin.from('audit_logs').insert({
       user_id: userId,
       company_id,
       entity_type: 'transaction',
       entity_id: newTransaction.id,
-      action: 'pix_payment_initiated',
-      new_data: { 
-        endToEndId: paymentData.endToEndId, 
-        valor, 
-        pix_key,
-        status: 'pending' 
+      action: 'billet_payment_initiated',
+      new_data: {
+        billet_id: billetData.id,
+        amount: finalAmount,
+        digitable_code: digitable_code.substring(0, 10) + '...',
+        status: 'pending',
       },
     });
 
@@ -240,17 +229,18 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         transaction_id: newTransaction.id,
-        end_to_end_id: paymentData.endToEndId,
-        provider_id: paymentData.id,
-        event_date: paymentData.eventDate,
-        status: 'PROCESSING',
+        billet_id: billetData.id,
+        status: billetData.status || 'PROCESSING',
+        amount: finalAmount,
+        due_date: billetData.dueDate,
+        creditor: billetData.creditor,
         idempotency_key: idempotencyKey,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('[pix-pay-dict] Error:', error);
+    console.error('[billet-pay] Error:', error);
     return new Response(
       JSON.stringify({ error: 'Internal server error', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -9,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { usePixPayment } from "@/hooks/usePixPayment";
+import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Key,
@@ -62,6 +64,8 @@ export default function NewPayment() {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { payByKey, payByQRCode, isProcessing: isPixProcessing } = usePixPayment();
+  const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing } = useBilletPayment();
 
   const handleNext = () => {
     // Validate current step
@@ -113,16 +117,58 @@ export default function NewPayment() {
   const handleConfirmPayment = async () => {
     setIsLoading(true);
 
-    // Simulate payment processing
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
 
-    toast({
-      title: "Pagamento realizado!",
-      description: "Agora anexe o comprovante para finalizar.",
-    });
+      if (pixData.type === 'boleto') {
+        const result = await payBillet({
+          digitable_code: pixData.boletoCode || '',
+          description: pixData.description || 'Pagamento de boleto',
+          amount: amount > 0 ? amount : undefined,
+        });
 
-    // Navigate to receipt capture
-    navigate("/pix/receipt/mock-transaction-id");
+        if (result) {
+          startBilletPolling(result.billet_id.toString());
+          navigate(`/pix/receipt/${result.transaction_id}`);
+        }
+      } else if (pixData.type === 'key') {
+        const result = await payByKey({
+          pix_key: pixData.key || '',
+          valor: amount,
+          descricao: pixData.description,
+        });
+
+        if (result) {
+          navigate(`/pix/receipt/${result.transaction_id}`);
+        }
+      } else if (pixData.type === 'copy_paste') {
+        const result = await payByQRCode({
+          qr_code: pixData.copyPaste || '',
+          valor: amount,
+          descricao: pixData.description,
+        });
+
+        if (result) {
+          navigate(`/pix/receipt/${result.transaction_id}`);
+        }
+      } else {
+        // QR Code scan - mock for now
+        toast({
+          title: "Pagamento realizado!",
+          description: "Agora anexe o comprovante para finalizar.",
+        });
+        navigate("/pix/receipt/mock-transaction-id");
+      }
+    } catch (error) {
+      console.error('[NewPayment] Payment error:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha ao processar o pagamento.",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
@@ -431,7 +477,7 @@ export default function NewPayment() {
               step === 1 && "w-full"
             )}
             onClick={handleNext}
-            disabled={isLoading}
+            disabled={isLoading || isPixProcessing || isBilletProcessing}
           >
             {isLoading ? (
               <>
