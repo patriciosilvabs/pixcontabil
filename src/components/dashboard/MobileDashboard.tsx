@@ -1,0 +1,80 @@
+import React from "react";
+import { Link } from "react-router-dom";
+import { useAuth } from "@/contexts/AuthContext";
+import { Card, CardContent } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Eye, EyeOff, QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface MobileDashboardProps {
+  balanceVisible: boolean;
+  onToggleBalance: () => void;
+}
+
+const quickActions = [
+  { label: "MENU PIX", icon: Wallet, href: "/pix/new?tab=key", color: "text-primary" },
+  { label: "PAGAR QR CODE", icon: QrCode, href: "/pix/new?tab=qrcode", color: "text-primary" },
+  { label: "COPIA E COLA", icon: ClipboardPaste, href: "/pix/new?tab=copy_paste", color: "text-primary" },
+  { label: "COM CHAVE", icon: Key, href: "/pix/new?tab=key", color: "text-primary" },
+  { label: "FAVORECIDOS", icon: Star, href: "/transactions", color: "text-primary" },
+  { label: "AGENDADAS", icon: CalendarClock, href: "/transactions", color: "text-primary" },
+  { label: "BOLETO", icon: FileText, href: "/pix/new?tab=boleto", color: "text-primary" },
+  { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new", color: "text-primary" },
+];
+
+export function MobileDashboard({ balanceVisible, onToggleBalance }: MobileDashboardProps) {
+  return (
+    <div className="px-4 pb-24 space-y-6">
+      {/* Balance Card */}
+      <Card className="overflow-hidden shadow-md">
+        <CardContent className="p-5">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+              Saldo Disponível
+            </span>
+            <button onClick={onToggleBalance} className="text-muted-foreground hover:text-foreground transition-colors">
+              {balanceVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-3xl font-bold font-mono-numbers tracking-tight">
+            {balanceVisible ? "R$ 0,00" : "••••••"}
+          </p>
+          <Progress value={0} className="mt-4 h-1.5 [&>div]:bg-gradient-bank-header" />
+        </CardContent>
+      </Card>
+
+      {/* Quick Actions Grid */}
+      <div className="grid grid-cols-4 gap-3">
+        {quickActions.map((action) => (
+          <Link
+            key={action.label}
+            to={action.href}
+            className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-secondary hover:bg-secondary/80 transition-colors"
+          >
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <action.icon className={cn("h-5 w-5", action.color)} />
+            </div>
+            <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
+              {action.label}
+            </span>
+          </Link>
+        ))}
+      </div>
+
+      {/* Recent Transactions */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold uppercase tracking-wide">Transações Recentes</h2>
+          <Link to="/transactions" className="text-xs font-semibold text-primary uppercase">
+            Extrato Completo
+          </Link>
+        </div>
+        <Card>
+          <CardContent className="p-6 flex items-center justify-center">
+            <p className="text-sm text-muted-foreground">Nenhum dado encontrado</p>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

@@ -1,8 +1,11 @@
+import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { Link } from "react-router-dom";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileDashboard } from "@/components/dashboard/MobileDashboard";
 import {
   DollarSign,
   TrendingDown,
@@ -63,6 +66,17 @@ const mockRecentTransactions = [
 
 export function AdminDashboard() {
   const { profile, currentCompany } = useAuth();
+  const isMobile = useIsMobile();
+  const [balanceVisible, setBalanceVisible] = React.useState(true);
+
+  if (isMobile) {
+    return (
+      <MobileDashboard
+        balanceVisible={balanceVisible}
+        onToggleBalance={() => setBalanceVisible((v) => !v)}
+      />
+    );
+  }
 
   return (
     <div className="p-6 lg:p-8 space-y-6">

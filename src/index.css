@@ -66,6 +66,7 @@
     --gradient-accent: linear-gradient(135deg, hsl(158 64% 52%), hsl(170 70% 45%));
     --gradient-hero: linear-gradient(135deg, hsl(270 91% 20%), hsl(290 80% 35%), hsl(270 91% 55%));
     --gradient-card: linear-gradient(180deg, hsl(270 91% 55%), hsl(280 80% 45%));
+    --gradient-bank-header: linear-gradient(180deg, hsl(145 60% 32%), hsl(145 55% 40%));
     
     /* Shadows */
     --shadow-sm: 0 1px 2px 0 hsl(250 20% 10% / 0.05);
@@ -140,6 +141,7 @@
     --gradient-accent: linear-gradient(135deg, hsl(158 64% 45%), hsl(170 70% 40%));
     --gradient-hero: linear-gradient(135deg, hsl(250 20% 6%), hsl(270 50% 15%), hsl(290 50% 20%));
     --gradient-card: linear-gradient(180deg, hsl(270 91% 45%), hsl(280 80% 35%));
+    --gradient-bank-header: linear-gradient(180deg, hsl(145 60% 28%), hsl(145 55% 36%));
     
     /* Dark Shadows */
     --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.3);
@@ -207,6 +209,10 @@
   
   .bg-gradient-card {
     background: var(--gradient-card);
+  }
+
+  .bg-gradient-bank-header {
+    background: var(--gradient-bank-header);
   }
   
   /* Shadow utilities */
