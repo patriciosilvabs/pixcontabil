@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
-  { value: "onz", label: "ONZ / Infopago" },
+  { value: "efi", label: "EFI Pay (Efí)" },
 ];
 
 const PIX_KEY_TYPES = [
@@ -150,9 +150,9 @@ export default function PixIntegration() {
   // Get default base URL for provider
   const getDefaultBaseUrl = (provider: string, sandbox: boolean): string => {
     const urls: Record<string, { production: string; sandbox: string }> = {
-      onz: {
-        production: "https://secureapi.bancodigital.onz.software/api/v2",
-        sandbox: "https://secureapi.bancodigital.hmg.onz.software/api/v2",
+      efi: {
+        production: "https://pix.api.efipay.com.br",
+        sandbox: "https://pix-h.api.efipay.com.br",
       },
     };
 
@@ -396,10 +396,10 @@ export default function PixIntegration() {
                   <Input
                     value={config.client_id}
                     onChange={(e) => setConfig({ ...config, client_id: e.target.value })}
-                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                    placeholder="Client_Id_xxxxxxxxxxxxxxx"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Formato UUID (ex: 12345678-abcd-efgh-ijkl-123456789012). Consulte o portal ONZ.
+                    Obtido no painel EFI Pay &gt; API &gt; Aplicações.
                   </p>
                 </div>
 
@@ -425,23 +425,29 @@ export default function PixIntegration() {
               </div>
 
               <div className="space-y-2">
-                <Label>Certificado mTLS (Base64)</Label>
+                <Label>Certificado mTLS - PEM (Base64)</Label>
                 <Textarea
                   value={config.certificate_encrypted || ""}
                   onChange={(e) => setConfig({ ...config, certificate_encrypted: e.target.value })}
-                  placeholder="Cole aqui o certificado .crt em Base64 (obrigatório para ONZ)"
+                  placeholder="Cole aqui o certificado .pem em Base64 (obrigatório para EFI Pay). Converta o .p12 para .pem antes."
                   rows={3}
                 />
+                <p className="text-xs text-muted-foreground">
+                  A EFI fornece um arquivo .p12. Converta para .pem com: openssl pkcs12 -in certificado.p12 -out certificado.pem -nodes
+                </p>
               </div>
 
               <div className="space-y-2">
-                <Label>Chave do Certificado (Base64)</Label>
+                <Label>Chave Privada do Certificado - PEM (Base64, opcional)</Label>
                 <Textarea
                   value={config.certificate_key_encrypted || ""}
                   onChange={(e) => setConfig({ ...config, certificate_key_encrypted: e.target.value })}
-                  placeholder="Cole aqui a chave do certificado .key em Base64 (obrigatório para ONZ)"
+                  placeholder="Se o .pem acima contiver cert+key, deixe em branco. Caso contrário, cole a chave privada aqui."
                   rows={3}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Opcional se o PEM acima já incluir o certificado e a chave privada juntos.
+                </p>
               </div>
             </CardContent>
           </Card>

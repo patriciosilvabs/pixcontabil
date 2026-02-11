@@ -5,30 +5,25 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
 };
 
-// ONZ Webhook payload structure
-interface ONZWebhookPayload {
-  data: {
-    id: number;
-    idempotencyKey: string;
+// EFI/BCB Webhook payload
+interface EFIWebhookPayload {
+  pix: Array<{
     endToEndId: string;
-    pixKey?: string;
-    transactionType: string;
-    status: 'CANCELED' | 'PROCESSING' | 'LIQUIDATED' | 'REFUNDED' | 'PARTIALLY_REFUNDED';
-    errorCode?: string;
-    creditDebitType: 'CREDIT' | 'DEBIT';
-    localInstrument: string;
-    createdAt: string;
-    creditorAccount?: any;
-    debtorAccount?: any;
-    remittanceInformation?: string;
-    txId?: string;
-    payment: {
-      currency: string;
-      amount: number;
-    };
-    refunds?: any[];
-  };
-  type: 'TRANSFER' | 'RECEIVE' | 'REFUND' | 'CASHOUT' | 'INFRACTION';
+    txid?: string;
+    chave: string;
+    valor: string;
+    horario: string;
+    infoPagador?: string;
+    devolucoes?: Array<{
+      id: string;
+      rtrId: string;
+      valor: string;
+      horario: { solicitacao: string; liquidacao?: string };
+      status: string;
+      motivo?: string;
+    }>;
+    componentesValor?: any;
+  }>;
 }
 
 Deno.serve(async (req) => {
@@ -42,203 +37,125 @@ Deno.serve(async (req) => {
   );
 
   try {
-    // Validate webhook secret if configured
-    const webhookSecret = req.headers.get('x-webhook-secret');
-    // We'll validate per-company after finding the transaction,
-    // but reject obviously empty payloads early
-    
-    // Get client IP
-    const ip_address = req.headers.get('x-forwarded-for') || 
-                       req.headers.get('x-real-ip') || 
-                       'unknown';
+    const ip_address = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
 
-    // Parse webhook payload
-    const payload: ONZWebhookPayload = await req.json();
-    console.log('[pix-webhook] Received webhook:', JSON.stringify(payload));
+    const payload: EFIWebhookPayload = await req.json();
+    console.log('[pix-webhook] Received EFI webhook:', JSON.stringify(payload));
 
-    // Log the webhook
-    const { error: logError } = await supabaseAdmin
-      .from('pix_webhook_logs')
-      .insert({
-        event_type: payload.type,
-        payload: payload,
-        ip_address,
-        processed: false,
-      });
-
-    if (logError) {
-      console.error('[pix-webhook] Failed to log webhook:', logError);
-    }
-
-    const paymentData = payload.data;
-    const webhookType = payload.type;
-
-    if (!paymentData?.endToEndId) {
-      console.error('[pix-webhook] Missing endToEndId in payload');
+    if (!payload.pix || !Array.isArray(payload.pix)) {
+      console.error('[pix-webhook] Invalid payload: missing pix array');
       return new Response(
-        JSON.stringify({ error: 'Missing endToEndId' }),
+        JSON.stringify({ error: 'Invalid payload' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Map ONZ status to internal status
-    const statusMap: Record<string, string> = {
-      'PROCESSING': 'pending',
-      'LIQUIDATED': 'completed',
-      'CANCELED': 'cancelled',
-      'REFUNDED': 'refunded',
-      'PARTIALLY_REFUNDED': 'partially_refunded'
-    };
+    for (const pixEvent of payload.pix) {
+      const { endToEndId, txid, valor, horario, infoPagador, chave, devolucoes } = pixEvent;
 
-    const internalStatus = statusMap[paymentData.status] || 'pending';
+      // Log the webhook event
+      await supabaseAdmin.from('pix_webhook_logs').insert({
+        event_type: devolucoes && devolucoes.length > 0 ? 'REFUND' : 'PIX',
+        payload: pixEvent,
+        ip_address,
+        processed: false,
+      });
 
-    // Find transaction by endToEndId
-    const { data: transaction, error: txError } = await supabaseAdmin
-      .from('transactions')
-      .select('id, company_id, status')
-      .eq('pix_e2eid', paymentData.endToEndId)
-      .single();
+      if (!endToEndId) {
+        console.warn('[pix-webhook] Missing endToEndId, skipping');
+        continue;
+      }
 
-    if (txError || !transaction) {
-      // Also try by external_id (provider's id)
-      const { data: txById } = await supabaseAdmin
+      // Find transaction by e2eId
+      const { data: transaction } = await supabaseAdmin
         .from('transactions')
         .select('id, company_id, status')
-        .eq('external_id', paymentData.id.toString())
+        .eq('pix_e2eid', endToEndId)
         .single();
 
-      if (!txById) {
-        console.log('[pix-webhook] Transaction not found for e2eid:', paymentData.endToEndId);
-        
-        // For RECEIVE webhooks (cash-in), create a new transaction
-        if (webhookType === 'RECEIVE' && paymentData.creditDebitType === 'CREDIT') {
-          console.log('[pix-webhook] Creating new transaction for incoming payment');
-          
-          // We need to find a company to associate - use the first active company with pix config
-          const { data: configs } = await supabaseAdmin
-            .from('pix_configs')
-            .select('company_id')
-            .eq('is_active', true)
-            .limit(1);
+      if (transaction) {
+        // Update existing transaction
+        const updateData: any = {
+          status: 'completed',
+          paid_at: horario || new Date().toISOString(),
+          pix_provider_response: pixEvent,
+        };
 
-          if (configs && configs.length > 0) {
-            const newTransaction = {
-              company_id: configs[0].company_id,
-              amount: paymentData.payment.amount,
-              status: internalStatus,
-              pix_type: 'key' as const,
-              pix_key: paymentData.pixKey,
-              pix_e2eid: paymentData.endToEndId,
-              external_id: paymentData.id.toString(),
-              description: paymentData.remittanceInformation,
-              beneficiary_name: paymentData.debtorAccount?.name,
-              beneficiary_document: paymentData.debtorAccount?.document,
-              paid_at: paymentData.status === 'LIQUIDATED' ? new Date().toISOString() : null,
-              pix_provider_response: payload,
-            };
+        if (txid) updateData.pix_txid = txid;
 
-            await supabaseAdmin.from('transactions').insert(newTransaction);
-            console.log('[pix-webhook] Created new incoming transaction');
+        await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
+
+        // Audit log
+        await supabaseAdmin.from('audit_logs').insert({
+          company_id: transaction.company_id,
+          entity_type: 'transaction',
+          entity_id: transaction.id,
+          action: 'pix_webhook_received',
+          old_data: { status: transaction.status },
+          new_data: { status: 'completed', endToEndId, valor },
+        });
+
+        console.log(`[pix-webhook] Updated transaction ${transaction.id} to completed`);
+      } else {
+        // Incoming payment - create new transaction
+        console.log(`[pix-webhook] No transaction found for e2eId ${endToEndId}, creating incoming payment`);
+
+        // Find company by pix key
+        const { data: configs } = await supabaseAdmin
+          .from('pix_configs')
+          .select('company_id')
+          .eq('pix_key', chave)
+          .eq('is_active', true)
+          .limit(1);
+
+        if (configs && configs.length > 0) {
+          await supabaseAdmin.from('transactions').insert({
+            company_id: configs[0].company_id,
+            created_by: '00000000-0000-0000-0000-000000000000',
+            amount: parseFloat(valor),
+            status: 'completed',
+            pix_type: 'key',
+            pix_key: chave,
+            pix_e2eid: endToEndId,
+            pix_txid: txid,
+            description: infoPagador || 'Recebimento Pix',
+            paid_at: horario || new Date().toISOString(),
+            pix_provider_response: pixEvent,
+          });
+          console.log('[pix-webhook] Created incoming transaction');
+        }
+      }
+
+      // Handle refunds in the event
+      if (devolucoes && devolucoes.length > 0 && transaction) {
+        for (const dev of devolucoes) {
+          const { data: existingRefund } = await supabaseAdmin
+            .from('pix_refunds')
+            .select('id')
+            .eq('e2eid', endToEndId)
+            .eq('refund_id', dev.id || dev.rtrId)
+            .single();
+
+          if (!existingRefund) {
+            await supabaseAdmin.from('pix_refunds').insert({
+              transaction_id: transaction.id,
+              e2eid: endToEndId,
+              refund_id: dev.id || dev.rtrId || `REF_${Date.now()}`,
+              valor: parseFloat(dev.valor),
+              motivo: dev.motivo,
+              status: dev.status || 'DEVOLVIDO',
+              refunded_at: dev.horario?.liquidacao || new Date().toISOString(),
+            });
           }
         }
-
-        // Update webhook log as processed
-        await supabaseAdmin
-          .from('pix_webhook_logs')
-          .update({ processed: true })
-          .eq('payload->data->endToEndId', paymentData.endToEndId);
-
-        return new Response(
-          JSON.stringify({ success: true, message: 'Webhook processed' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
       }
 
-      // Update transaction found by external_id
-      const updateData: any = {
-        status: internalStatus,
-        pix_provider_response: payload,
-        pix_e2eid: paymentData.endToEndId,
-      };
-
-      if (paymentData.status === 'LIQUIDATED') {
-        updateData.paid_at = new Date().toISOString();
-      }
-
+      // Mark webhook as processed
       await supabaseAdmin
-        .from('transactions')
-        .update(updateData)
-        .eq('id', txById.id);
-
-      // Log audit
-      await supabaseAdmin.from('audit_logs').insert({
-        company_id: txById.company_id,
-        entity_type: 'transaction',
-        entity_id: txById.id,
-        action: `pix_webhook_${webhookType.toLowerCase()}`,
-        old_data: { status: txById.status },
-        new_data: { status: internalStatus, provider_status: paymentData.status },
-      });
-
-    } else {
-      // Update existing transaction
-      const updateData: any = {
-        status: internalStatus,
-        pix_provider_response: payload,
-      };
-
-      if (paymentData.status === 'LIQUIDATED') {
-        updateData.paid_at = new Date().toISOString();
-      }
-
-      await supabaseAdmin
-        .from('transactions')
-        .update(updateData)
-        .eq('id', transaction.id);
-
-      // Log audit
-      await supabaseAdmin.from('audit_logs').insert({
-        company_id: transaction.company_id,
-        entity_type: 'transaction',
-        entity_id: transaction.id,
-        action: `pix_webhook_${webhookType.toLowerCase()}`,
-        old_data: { status: transaction.status },
-        new_data: { status: internalStatus, provider_status: paymentData.status },
-      });
-
-      console.log(`[pix-webhook] Updated transaction ${transaction.id} to status: ${internalStatus}`);
+        .from('pix_webhook_logs')
+        .update({ processed: true })
+        .eq('payload->endToEndId', endToEndId);
     }
-
-    // Handle refund webhooks
-    if (webhookType === 'REFUND' && paymentData.refunds && paymentData.refunds.length > 0) {
-      for (const refund of paymentData.refunds) {
-        // Check if refund already exists
-        const { data: existingRefund } = await supabaseAdmin
-          .from('pix_refunds')
-          .select('id')
-          .eq('e2eid', paymentData.endToEndId)
-          .eq('refund_id', refund.id || refund.rtrId)
-          .single();
-
-        if (!existingRefund && transaction) {
-          await supabaseAdmin.from('pix_refunds').insert({
-            transaction_id: transaction.id,
-            e2eid: paymentData.endToEndId,
-            refund_id: refund.id || refund.rtrId || `REF_${Date.now()}`,
-            valor: refund.amount || refund.valor,
-            motivo: refund.motivo || refund.reason,
-            status: refund.status || 'DEVOLVIDO',
-            refunded_at: new Date().toISOString(),
-          });
-        }
-      }
-    }
-
-    // Mark webhook as processed
-    await supabaseAdmin
-      .from('pix_webhook_logs')
-      .update({ processed: true })
-      .eq('payload->data->endToEndId', paymentData.endToEndId);
 
     return new Response(
       JSON.stringify({ success: true }),
@@ -247,17 +164,6 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('[pix-webhook] Error:', error);
-
-    // Log error
-    await supabaseAdmin
-      .from('pix_webhook_logs')
-      .update({ 
-        processed: false, 
-        error_message: error.message 
-      })
-      .order('created_at', { ascending: false })
-      .limit(1);
-
     return new Response(
       JSON.stringify({ error: 'Internal server error', details: error.message }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

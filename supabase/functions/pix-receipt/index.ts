@@ -11,7 +11,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Authenticate user
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -36,7 +35,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Parse URL for params or get from body
     const url = new URL(req.url);
     let end_to_end_id = url.searchParams.get('end_to_end_id');
     let company_id = url.searchParams.get('company_id');
@@ -49,7 +47,6 @@ Deno.serve(async (req) => {
       transaction_id = transaction_id || body.transaction_id;
     }
 
-    // Get transaction to find e2eid and company
     if (transaction_id && (!end_to_end_id || !company_id)) {
       const { data: txData } = await supabase
         .from('transactions')
@@ -70,9 +67,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-receipt] Getting receipt for e2eid: ${end_to_end_id}`);
+    console.log(`[pix-receipt] Getting EFI receipt for e2eId: ${end_to_end_id}`);
 
-    // Get Pix config
     const { data: config, error: configError } = await supabase
       .from('pix_configs')
       .select('*')
@@ -87,40 +83,34 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id }),
     });
 
     if (!authResponse.ok) {
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with Pix provider' }),
+        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
 
-    // Create mTLS HTTP client
     let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+    if (config.certificate_encrypted) {
       try {
-        httpClient = Deno.createHttpClient({
-          cert: atob(config.certificate_encrypted),
-          key: atob(config.certificate_key_encrypted),
-        });
+        const certPem = atob(config.certificate_encrypted);
+        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
       } catch (e) {
         console.error('[pix-receipt] Failed to create mTLS client:', e);
       }
     }
 
-    // Get receipt from ONZ
-    const receiptUrl = `${config.base_url}/pix/payments/receipt/${end_to_end_id}`;
+    // EFI receipt endpoint
+    const receiptUrl = `${config.base_url}/v2/gn/receipts/${end_to_end_id}`;
     const fetchOptions: any = {
       method: 'GET',
       headers: {
@@ -135,13 +125,9 @@ Deno.serve(async (req) => {
 
     if (!receiptResponse.ok) {
       const errorText = await receiptResponse.text();
-      console.error('[pix-receipt] Provider error:', errorText);
+      console.error('[pix-receipt] EFI error:', errorText);
       return new Response(
-        JSON.stringify({ 
-          error: 'Failed to get receipt',
-          provider_error: errorText,
-          status: receiptResponse.status
-        }),
+        JSON.stringify({ error: 'Failed to get receipt', provider_error: errorText, status: receiptResponse.status }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -149,12 +135,11 @@ Deno.serve(async (req) => {
     const receiptData = await receiptResponse.json();
     console.log('[pix-receipt] Receipt received');
 
-    // Return the PDF as base64
     return new Response(
       JSON.stringify({
         success: true,
         end_to_end_id,
-        pdf_base64: receiptData.data?.pdf,
+        pdf_base64: receiptData.pdf || receiptData.data?.pdf,
         content_type: 'application/pdf',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -5,44 +5,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface QRCInfoRequest {
-  company_id: string;
-  qr_code: string;
-}
-
-interface ONZQRCInfoResponse {
-  type: string;
-  merchantCategoryCode?: string;
-  transactionCurrency?: string;
-  countryCode?: string;
-  merchantName?: string;
-  merchantCity?: string;
-  url?: string;
-  transactionAmount?: number;
-  txid?: string;
-  chave?: string;
-  payload?: any;
-  endToEndId?: string;
-  statusCode: number;
-}
-
-// Generate idempotency key
-function generateIdempotencyKey(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 35; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Authenticate user
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -67,8 +35,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get request body
-    const body: QRCInfoRequest = await req.json();
+    const body = await req.json();
     const { company_id, qr_code } = body;
 
     if (!company_id || !qr_code) {
@@ -78,9 +45,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-qrc-info] Verifying QR Code for company: ${company_id}`);
+    console.log(`[pix-qrc-info] Decoding QR Code via EFI for company: ${company_id}`);
 
-    // Get Pix config
     const { data: config, error: configError } = await supabase
       .from('pix_configs')
       .select('*')
@@ -95,49 +61,41 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id }),
     });
 
     if (!authResponse.ok) {
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with Pix provider' }),
+        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
-    const idempotencyKey = generateIdempotencyKey();
 
-    // Create mTLS HTTP client
     let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+    if (config.certificate_encrypted) {
       try {
-        httpClient = Deno.createHttpClient({
-          cert: atob(config.certificate_encrypted),
-          key: atob(config.certificate_key_encrypted),
-        });
+        const certPem = atob(config.certificate_encrypted);
+        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
       } catch (e) {
         console.error('[pix-qrc-info] Failed to create mTLS client:', e);
       }
     }
 
-    // Query QR Code info from ONZ
-    const infoUrl = `${config.base_url}/pix/payments/qrc/info`;
+    // EFI QR Code decode endpoint
+    const infoUrl = `${config.base_url}/v2/gn/qrcode/decode`;
     const fetchOptions: any = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
-        'x-idempotency-key': idempotencyKey,
       },
-      body: JSON.stringify({ qrCode: qr_code }),
+      body: JSON.stringify({ qrcode: qr_code }),
     };
     if (httpClient) fetchOptions.client = httpClient;
 
@@ -146,33 +104,27 @@ Deno.serve(async (req) => {
 
     if (!infoResponse.ok) {
       const errorText = await infoResponse.text();
-      console.error('[pix-qrc-info] Provider error:', errorText);
+      console.error('[pix-qrc-info] EFI error:', errorText);
       return new Response(
-        JSON.stringify({ 
-          error: 'Failed to verify QR Code',
-          provider_error: errorText,
-          status: infoResponse.status
-        }),
+        JSON.stringify({ error: 'Failed to decode QR Code', provider_error: errorText, status: infoResponse.status }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const qrcInfo: ONZQRCInfoResponse = await infoResponse.json();
-    console.log('[pix-qrc-info] QR Code info received:', JSON.stringify(qrcInfo));
+    const qrcInfo = await infoResponse.json();
+    console.log('[pix-qrc-info] QR Code decoded:', JSON.stringify(qrcInfo));
 
     return new Response(
       JSON.stringify({
         success: true,
-        type: qrcInfo.type,
-        merchant_name: qrcInfo.merchantName,
-        merchant_city: qrcInfo.merchantCity,
-        amount: qrcInfo.transactionAmount,
+        type: qrcInfo.tipo || qrcInfo.type,
+        merchant_name: qrcInfo.nome || qrcInfo.merchantName,
+        merchant_city: qrcInfo.cidade || qrcInfo.merchantCity,
+        amount: qrcInfo.valor ? parseFloat(qrcInfo.valor) : qrcInfo.transactionAmount,
         pix_key: qrcInfo.chave,
         txid: qrcInfo.txid,
         end_to_end_id: qrcInfo.endToEndId,
-        country_code: qrcInfo.countryCode,
-        currency: qrcInfo.transactionCurrency,
-        payload: qrcInfo.payload,
+        payload: qrcInfo,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
