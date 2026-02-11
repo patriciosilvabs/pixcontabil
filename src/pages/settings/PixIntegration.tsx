@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -62,6 +62,8 @@ export default function PixIntegration() {
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
   const [showSecrets, setShowSecrets] = useState(false);
+  const [hasLoadedInitial, setHasLoadedInitial] = useState(false);
+  const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   
   const [config, setConfig] = useState<PixConfig>({
     provider: "",
@@ -114,11 +116,36 @@ export default function PixIntegration() {
         // No config found, use defaults
       } finally {
         setIsLoading(false);
+        setHasLoadedInitial(true);
       }
     }
 
     loadConfig();
   }, [currentCompany]);
+
+  // Auto-save with debounce
+  const autoSave = useCallback(() => {
+    if (!hasLoadedInitial || !currentCompany || !config.provider) return;
+    
+    if (autoSaveTimerRef.current) {
+      clearTimeout(autoSaveTimerRef.current);
+    }
+    
+    autoSaveTimerRef.current = setTimeout(() => {
+      handleSave(false);
+    }, 1500);
+  }, [hasLoadedInitial, currentCompany, config]);
+
+  useEffect(() => {
+    if (hasLoadedInitial) {
+      autoSave();
+    }
+    return () => {
+      if (autoSaveTimerRef.current) {
+        clearTimeout(autoSaveTimerRef.current);
+      }
+    };
+  }, [config, autoSave, hasLoadedInitial]);
 
   // Get default base URL for provider
   const getDefaultBaseUrl = (provider: string, sandbox: boolean): string => {
@@ -193,17 +220,6 @@ export default function PixIntegration() {
   // Save config
   const handleSave = async (showNotification = true) => {
     if (!currentCompany) return;
-
-    // Validate UUID format for client_id (warn but don't block)
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (config.client_id && !uuidRegex.test(config.client_id)) {
-      toast({
-        variant: "destructive",
-        title: "Client ID inválido",
-        description: "O Client ID deve estar no formato UUID (ex: 12345678-abcd-efgh-ijkl-123456789012). Verifique no portal ONZ.",
-      });
-      return;
-    }
 
     setIsSaving(true);
 
