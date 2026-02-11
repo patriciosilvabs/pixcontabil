@@ -1,115 +1,91 @@
 
-# Criar Edge Function de Boleto e Revisar Funcoes Existentes
+# Redesign do Layout Mobile - Estilo Banco Digital
 
-## Resumo
-Criar as edge functions para pagamento de boleto via API ONZ e corrigir divergencias nas funcoes existentes comparando com a documentacao oficial.
+## Objetivo
+Redesenhar a versao mobile do dashboard e navegacao para seguir o layout da referencia (estilo Infopago/banco digital), com header verde, card de saldo, grid de acoes rapidas 4x2, transacoes recentes e bottom tab bar.
 
-## Parte 1: Novas Edge Functions para Boleto
+## Mudancas Principais
 
-### 1.1 - `billet-pay` (POST /billets/payments)
-Novo arquivo: `supabase/functions/billet-pay/index.ts`
+### 1. Bottom Tab Bar (Mobile)
+Criar componente `src/components/layout/BottomTabBar.tsx`
+- 3 abas fixas na parte inferior: Home (icone casa), Menu (icone grid), Transacoes (icone setas)
+- Aba ativa com destaque verde (botao circular elevado para Home)
+- Visivel apenas em mobile (hidden lg:)
+- Navegacao: `/` , `/menu` , `/transactions`
 
-- Recebe: `company_id`, `digitable_code` (linha digitavel), `description`, `payment_flow`, `amount` (opcional)
-- Autentica via `pix-auth` (mesmo token OAuth2 serve para billets)
-- Envia para ONZ: `POST /billets/payments` com header `x-idempotency-key`
-- Payload ONZ:
+### 2. Header Mobile Redesenhado
+Atualizar `MainLayout.tsx` no mobile:
+- Remover sidebar/hamburger menu no mobile
+- Header com fundo gradiente verde (inspirado na referencia)
+- Lado esquerdo: avatar do usuario
+- Centro: logo "PIXFLOW" + nome da empresa selecionada
+- Lado direito: icone de visibilidade (mostrar/ocultar saldo) + notificacoes
+- Abaixo: linha com numero da conta e nome da empresa
+
+### 3. Dashboard Mobile Redesenhado
+Atualizar `OperatorDashboard.tsx` e `AdminDashboard.tsx` para mobile:
+
+**Card de Saldo:**
+- Card com fundo branco, borda arredondada
+- "SALDO DISPONIVEL" em texto pequeno
+- Valor grande "R$ 0,00" (ou saldo real quando disponivel)
+- Barra de progresso verde na parte inferior do card
+- Botao de olho para ocultar/mostrar valor
+
+**Grid de Funcoes Principais (4 colunas x 2 linhas):**
+- 8 botoes com icones e labels:
+  - MENU PIX | PAGAR QR CODE | COPIA E COLA | COM CHAVE
+  - FAVORECIDOS | TRANSACOES AGENDADAS | BOLETO | TRANSFERIR
+- Cards com fundo cinza claro, cantos arredondados, icones acima do texto
+- Links para as respectivas paginas
+
+**Transacoes Recentes:**
+- Titulo "TRANSACOES RECENTES" em bold
+- Lista de transacoes ou "Nenhum dado encontrado"
+- Link "EXTRATO COMPLETO" ao final
+
+### 4. Pagina de Menu (`/menu`)
+Criar `src/pages/MobileMenu.tsx`
+- Lista completa de opcoes de navegacao para mobile
+- Categorias, Relatorios, Usuarios, Empresas (admin only)
+- Configuracoes, Integracao Pix
+- Perfil do usuario com botao de logout
+
+### 5. Ajustes no Roteamento
+Atualizar `App.tsx`:
+- Adicionar rota `/menu` protegida
+
+## Detalhes Tecnicos
+
+### Cores do Header (gradiente verde)
+Usar variaveis CSS customizadas para o gradiente verde do header mobile, mantendo o sistema de design existente. Adicionar em `index.css`:
 ```text
-{
-  digitableCode: string (somente numeros),
-  description: string (obrigatorio),
-  paymentFlow: "INSTANT" | "APPROVAL_REQUIRED",
-  payment: { currency: "BRL", amount: number } (opcional)
-}
-```
-- Salva transacao no banco com `pix_type: 'boleto'` e `boleto_code`
-- Registra audit log
-
-### 1.2 - `billet-check-status` (GET /billets/{id})
-Novo arquivo: `supabase/functions/billet-check-status/index.ts`
-
-- Recebe: `company_id`, `billet_id` (provider id) ou `transaction_id`
-- Consulta `GET /billets/{id}` na ONZ
-- Retorna status, dados do boleto (dueDate, settleDate, barCode), creditor/debtor
-- Atualiza status da transacao no banco
-
-### 1.3 - `billet-receipt` (GET /billets/payments/receipt/{id})
-Novo arquivo: `supabase/functions/billet-receipt/index.ts`
-
-- Recebe: `company_id`, `billet_id` ou `transaction_id`
-- Consulta `GET /billets/payments/receipt/{id}` na ONZ
-- Retorna PDF em base64
-
-### 1.4 - Configuracao em `supabase/config.toml`
-Adicionar:
-```text
-[functions.billet-pay]
-verify_jwt = false
-
-[functions.billet-check-status]
-verify_jwt = false
-
-[functions.billet-receipt]
-verify_jwt = false
+--gradient-bank-header: linear-gradient(180deg, hsl(145 60% 35%), hsl(145 55% 42%));
 ```
 
-## Parte 2: Hook Frontend - `useBilletPayment`
+### Responsividade
+- Bottom tab bar: visivel apenas `lg:hidden`, com `pb-20` no main content mobile
+- Sidebar desktop: mantida como esta (`hidden lg:flex`)
+- Header mobile: redesenhado, mantido `lg:hidden`
+- Grid de funcoes: `grid-cols-4` no mobile, adaptavel em desktop
 
-Novo arquivo: `src/hooks/useBilletPayment.ts`
+### Componentes Afetados
+1. `src/components/layout/MainLayout.tsx` - Redesenho do header mobile, remover hamburger menu, adicionar bottom tab bar
+2. `src/components/layout/BottomTabBar.tsx` - Novo componente
+3. `src/components/dashboard/OperatorDashboard.tsx` - Layout mobile com card de saldo e grid de acoes
+4. `src/components/dashboard/AdminDashboard.tsx` - Mesmo layout mobile (com saldo visivel para admin)
+5. `src/pages/MobileMenu.tsx` - Nova pagina de menu mobile
+6. `src/App.tsx` - Adicionar rota `/menu`
+7. `src/index.css` - Novas variaveis CSS para gradiente verde
 
-- `payBillet(params)` - chama `billet-pay`
-- `checkBilletStatus(billetId)` - chama `billet-check-status`
-- `downloadBilletReceipt(billetId)` - chama `billet-receipt`
-- Polling de status similar ao `usePixPayment`
-
-## Parte 3: Integrar Boleto na Pagina NewPayment
-
-Atualizar `src/pages/NewPayment.tsx`:
-- Importar e usar `useBilletPayment`
-- No `handleConfirmPayment`, quando `type === 'boleto'`, chamar `payBillet` ao inves do mock
-- Iniciar polling de status apos pagamento
-
-## Parte 4: Revisao e Correcoes das Edge Functions Existentes
-
-### 4.1 - `pix-refund` - DIVERGENCIA ENCONTRADA
-**Problema**: Usa endpoint estilo BCB (`/pix/{e2eid}/devolucao/{refundId}` com PUT), mas a API ONZ nao documenta esse endpoint. Devoluoes na ONZ sao tratadas via webhooks de REFUND.
-**Correcao**: Verificar se a ONZ realmente suporta esse endpoint ou se devoluoes devem ser feitas de outra forma. Por enquanto, manter como esta (pode ser um endpoint nao documentado publicamente) e adicionar tratamento de erro mais robusto.
-
-### 4.2 - `pix-pay-dict` - CORRETO
-- Endpoint `POST /pix/payments/dict` com `x-idempotency-key` - alinhado
-- Campos `pixKey`, `creditorDocument`, `priority`, `paymentFlow`, `expiration`, `payment` - todos corretos
-- Falta campo opcional `endToEndId` (para baixa de ficha de consultas) e `ispbDeny`
-- **Melhoria**: Adicionar suporte ao campo `endToEndId` opcional no request
-
-### 4.3 - `pix-pay-qrc` - CORRETO
-- Endpoint `POST /pix/payments/qrc` com `x-idempotency-key` - alinhado
-- Campos corretos
-- Falta campo `ispbDeny`
-- **Sem correcao necessaria**
-
-### 4.4 - `pix-check-status` - CORRETO
-- Endpoints `GET /pix/payments/{endToEndId}` e `GET /pix/payments/idempotencyKey/{key}` - alinhados
-- Resposta mapeada corretamente com `data` wrapper
-
-### 4.5 - `pix-receipt` - CORRETO
-- Endpoint `GET /pix/payments/receipt/{endToEndId}` - alinhado
-- Resposta `data.pdf` em base64 - correto
-
-### 4.6 - `pix-qrc-info` - CORRETO
-- Endpoint `POST /pix/payments/qrc/info` com `x-idempotency-key` - alinhado
-- Campos de resposta mapeados corretamente
-
-### 4.7 - `pix-webhook` - CORRETO
-- Payload com `data` e `type` (TRANSFER/RECEIVE/REFUND/CASHOUT) - alinhado com callback samples da ONZ
-- **Melhoria**: Adicionar validacao de webhook secret no header para seguranca
-
-### 4.8 - `pix-auth` - CORRETO
-- Endpoint `POST /oauth/token` com JSON body - alinhado
-- Campos `clientId`, `clientSecret`, `grantType`, `scope` - corretos
-
-## Sequencia de Implementacao
-
-1. Criar `billet-pay`, `billet-check-status`, `billet-receipt` (edge functions)
-2. Atualizar `config.toml`
-3. Criar hook `useBilletPayment`
-4. Integrar boleto real no `NewPayment.tsx`
-5. Aplicar melhorias menores nas funcoes existentes (campo `endToEndId` no dict, webhook secret validation)
+### Navegacao do Grid de Acoes
+| Botao | Destino |
+|-------|---------|
+| MENU PIX | `/pix/new` (aba key) |
+| PAGAR QR CODE | `/pix/new` (aba qrcode) |
+| COPIA E COLA | `/pix/new` (aba copy_paste) |
+| COM CHAVE | `/pix/new` (aba key) |
+| FAVORECIDOS | `/transactions` (futuro) |
+| TRANSACOES AGENDADAS | `/transactions` |
+| BOLETO | `/pix/new` (aba boleto) |
+| TRANSFERIR | `/pix/new` |
