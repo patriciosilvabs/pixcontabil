@@ -24,12 +24,11 @@ import {
   FileText,
   LogOut,
   ChevronDown,
-  Menu,
-  X,
   DollarSign,
-  BarChart3,
   Link2,
 } from "lucide-react";
+import { MobileHeader } from "@/components/layout/MobileHeader";
+import { BottomTabBar } from "@/components/layout/BottomTabBar";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -38,7 +37,7 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const { profile, isAdmin, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
   const location = useLocation();
-  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
+  const [balanceVisible, setBalanceVisible] = React.useState(true);
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: Home },
@@ -64,119 +63,10 @@ export function MainLayout({ children }: MainLayoutProps) {
   return (
     <div className="min-h-screen bg-background">
       {/* Mobile header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-card border-b border-border px-4 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-primary flex items-center justify-center">
-            <DollarSign className="h-5 w-5 text-white" />
-          </div>
-          <span className="font-bold text-lg">PixFlow</span>
-        </div>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-        >
-          {mobileMenuOpen ? (
-            <X className="h-6 w-6" />
-          ) : (
-            <Menu className="h-6 w-6" />
-          )}
-        </Button>
-      </header>
-
-      {/* Mobile menu */}
-      {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 pt-16">
-          <div
-            className="absolute inset-0 bg-black/50"
-            onClick={() => setMobileMenuOpen(false)}
-          />
-          <nav className="relative bg-card w-72 h-full p-4 animate-slide-in-left">
-            {/* Company selector */}
-            {companies.length > 0 && (
-              <div className="mb-6">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      className="w-full justify-between"
-                    >
-                      <span className="truncate">
-                        {currentCompany?.name || "Selecionar empresa"}
-                      </span>
-                      <ChevronDown className="h-4 w-4 ml-2" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent className="w-56">
-                    <DropdownMenuLabel>Empresas</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {companies.map((company) => (
-                      <DropdownMenuItem
-                        key={company.id}
-                        onClick={() => setCurrentCompany(company)}
-                        className={cn(
-                          currentCompany?.id === company.id && "bg-accent"
-                        )}
-                      >
-                        {company.name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
-
-            {/* Navigation */}
-            <div className="space-y-1">
-              {filteredNavigation.map((item) => (
-                <Link
-                  key={item.href}
-                  to={item.href}
-                  onClick={() => setMobileMenuOpen(false)}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
-                    isActive(item.href)
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  <item.icon className="h-5 w-5" />
-                  {item.name}
-                </Link>
-              ))}
-            </div>
-
-            {/* User section */}
-            <div className="absolute bottom-4 left-4 right-4">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted">
-                <Avatar className="h-10 w-10">
-                  <AvatarImage src={profile?.avatar_url || undefined} />
-                  <AvatarFallback className="bg-primary text-primary-foreground">
-                    {getInitials(profile?.full_name || "U")}
-                  </AvatarFallback>
-                </Avatar>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">
-                    {profile?.full_name}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {isAdmin ? "Administrador" : "Operador"}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => signOut()}
-                  className="text-muted-foreground"
-                >
-                  <LogOut className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          </nav>
-        </div>
-      )}
+      <MobileHeader
+        balanceVisible={balanceVisible}
+        onToggleBalance={() => setBalanceVisible((v) => !v)}
+      />
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col bg-sidebar border-r border-sidebar-border">
@@ -289,9 +179,12 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main className="lg:pl-64 pt-16 lg:pt-0 min-h-screen">
+      <main className="lg:pl-64 pt-[88px] lg:pt-0 pb-16 lg:pb-0 min-h-screen">
         <div className="page-transition">{children}</div>
       </main>
+
+      {/* Bottom tab bar (mobile only) */}
+      <BottomTabBar />
     </div>
   );
 }

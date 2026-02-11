@@ -16,6 +16,7 @@ import Users from "./pages/Users";
 import Companies from "./pages/Companies";
 import Settings from "./pages/Settings";
 import PixIntegration from "./pages/settings/PixIntegration";
+import MobileMenu from "./pages/MobileMenu";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -109,6 +110,14 @@ const App = () => (
               element={
                 <AuthGuard requireAdmin>
                   <PixIntegration />
+                </AuthGuard>
+              }
+            />
+            <Route
+              path="/menu"
+              element={
+                <AuthGuard>
+                  <MobileMenu />
                 </AuthGuard>
               }
             />
