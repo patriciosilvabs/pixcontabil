@@ -194,6 +194,17 @@ export default function PixIntegration() {
   const handleSave = async (showNotification = true) => {
     if (!currentCompany) return;
 
+    // Validate UUID format for client_id (warn but don't block)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (config.client_id && !uuidRegex.test(config.client_id)) {
+      toast({
+        variant: "destructive",
+        title: "Client ID inválido",
+        description: "O Client ID deve estar no formato UUID (ex: 12345678-abcd-efgh-ijkl-123456789012). Verifique no portal ONZ.",
+      });
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -369,8 +380,11 @@ export default function PixIntegration() {
                   <Input
                     value={config.client_id}
                     onChange={(e) => setConfig({ ...config, client_id: e.target.value })}
-                    placeholder="Seu Client ID"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Formato UUID (ex: 12345678-abcd-efgh-ijkl-123456789012). Consulte o portal ONZ.
+                  </p>
                 </div>
 
                 <div className="space-y-2">
