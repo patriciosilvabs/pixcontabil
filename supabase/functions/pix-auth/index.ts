@@ -144,23 +144,21 @@ Deno.serve(async (req) => {
     console.log(`[pix-auth] Requesting new token from ONZ provider (with mTLS)`);
 
     const tokenUrl = `${pixConfig.base_url}/oauth/token`;
-    
-    // ONZ uses JSON body for authentication
-    const tokenPayload = {
-      clientId: pixConfig.client_id,
-      clientSecret: pixConfig.client_secret_encrypted,
-      grantType: "client_credentials",
-      scope: "pix.read pix.write transactions.read account.read webhook.read webhook.write"
-    };
+    const scope = "pix.read pix.write transactions.read account.read webhook.read webhook.write";
 
+    // Attempt 1: JSON with camelCase (primary ONZ format per docs)
+    console.log('[pix-auth] Attempt 1: application/json (camelCase)');
     let tokenResponse: Response;
     try {
       tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(tokenPayload),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: pixConfig.client_id,
+          clientSecret: pixConfig.client_secret_encrypted,
+          grantType: "client_credentials",
+          scope,
+        }),
         // @ts-ignore - Deno specific option
         client: httpClient,
       });
@@ -173,17 +171,71 @@ Deno.serve(async (req) => {
       );
     }
 
+    // If first attempt fails with onz-0001, try form-urlencoded with snake_case
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      httpClient.close();
-      console.error('[pix-auth] Token request failed:', errorText);
-      return new Response(
-        JSON.stringify({ 
-          error: 'Failed to authenticate with Pix provider',
-          details: errorText 
-        }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      console.warn('[pix-auth] Attempt 1 failed:', errorText);
+
+      let shouldRetry = false;
+      try {
+        const errJson = JSON.parse(errorText);
+        if (errJson.type === 'onz-0001' || errJson.title?.includes('Invalid credentials')) {
+          shouldRetry = true;
+        }
+      } catch { 
+        // not JSON, don't retry
+      }
+
+      if (shouldRetry) {
+        console.log('[pix-auth] Attempt 2: application/x-www-form-urlencoded (snake_case)');
+        try {
+          const formBody = new URLSearchParams({
+            client_id: pixConfig.client_id,
+            client_secret: pixConfig.client_secret_encrypted,
+            grant_type: "client_credentials",
+            scope,
+          });
+
+          tokenResponse = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formBody.toString(),
+            // @ts-ignore - Deno specific option
+            client: httpClient,
+          });
+
+          if (!tokenResponse.ok) {
+            const errorText2 = await tokenResponse.text();
+            httpClient.close();
+            console.error('[pix-auth] Attempt 2 also failed:', errorText2);
+            return new Response(
+              JSON.stringify({ 
+                error: 'Failed to authenticate with Pix provider (both formats tried)',
+                details: errorText2,
+                hint: 'Verifique se o Client ID está no formato UUID e se as credenciais foram ativadas pelo suporte ONZ.'
+              }),
+              { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+          console.log('[pix-auth] ✓ Attempt 2 (form-urlencoded) succeeded');
+        } catch (fetchError2) {
+          httpClient.close();
+          console.error('[pix-auth] Attempt 2 fetch failed:', fetchError2);
+          return new Response(
+            JSON.stringify({ error: 'Falha na conexão mTLS com o provedor.', details: fetchError2.message }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } else {
+        httpClient.close();
+        console.error('[pix-auth] Token request failed (non-retryable):', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to authenticate with Pix provider', details: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      console.log('[pix-auth] ✓ Attempt 1 (JSON) succeeded');
     }
 
     httpClient.close();
