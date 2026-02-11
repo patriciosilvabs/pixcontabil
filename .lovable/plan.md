@@ -1,78 +1,42 @@
 
-# Implementar mTLS na Edge Function pix-auth
 
-## Problema
-A API da ONZ requer certificados mTLS (client certificate + key) para autenticacao. A edge function `pix-auth` atualmente faz `fetch` sem apresentar certificados, causando o erro `onz-0001: Invalid credentials`.
+# Atualizar autenticacao ONZ para suportar ambos os formatos
 
-## Solucao
-Usar `Deno.createHttpClient()` com os certificados PEM para criar um cliente HTTP customizado que apresenta o certificado do cliente durante o handshake TLS.
+## Contexto
+A documentacao da ONZ (`accounts-api_2.yaml`) revelou que:
+1. O campo `clientId` deve ter **formato UUID**, nao CNPJ
+2. A API suporta dois Content-Types: `application/json` (camelCase) e `application/x-www-form-urlencoded` (snake_case)
+
+O erro `onz-0001` pode estar ocorrendo porque o `clientId` armazenado no banco nao esta no formato correto (UUID).
 
 ## Mudancas
 
 ### 1. Atualizar `supabase/functions/pix-auth/index.ts`
-- Incluir `certificate_encrypted` e `certificate_key_encrypted` na interface `PixConfig`
-- Apos carregar a config do banco, decodificar os certificados de Base64 para texto PEM
-- Criar um `Deno.createHttpClient({ cert, key })` com os certificados
-- Passar o `client` customizado na chamada `fetch` para o endpoint `/oauth/token`
-- Fazer cleanup do client apos uso (`client.close()`)
+- Tentar autenticacao primeiro com `application/json` (camelCase) -- formato atual
+- Se falhar com erro `onz-0001`, tentar automaticamente com `application/x-www-form-urlencoded` (snake_case: `client_id`, `client_secret`, `grant_type`)
+- Adicionar log indicando qual formato funcionou para facilitar debug futuro
 
-### 2. Atualizar todas as outras edge functions que chamam a API da ONZ
-As seguintes edge functions tambem fazem `fetch` diretamente para a API ONZ e precisam do mesmo tratamento mTLS:
-- `supabase/functions/pix-pay-dict/index.ts` - pagamento via chave
-- `supabase/functions/pix-pay-qrc/index.ts` - pagamento via QR code
-- `supabase/functions/pix-check-status/index.ts` - consulta de status
-- `supabase/functions/pix-receipt/index.ts` - comprovante
-- `supabase/functions/pix-refund/index.ts` - devolucao
-- `supabase/functions/pix-qrc-info/index.ts` - info do QR code
-- `supabase/functions/billet-pay/index.ts` - pagamento de boleto
-- `supabase/functions/billet-check-status/index.ts` - status boleto
-- `supabase/functions/billet-receipt/index.ts` - comprovante boleto
-
-**Abordagem:** Como todas essas funcoes ja chamam `pix-auth` para obter o token, e depois fazem chamadas diretas a API ONZ, cada uma precisara carregar a config e criar o `Deno.createHttpClient` com os certificados.
-
-### 3. UI - Atualizar placeholder dos campos de certificado
-Na pagina `src/pages/settings/PixIntegration.tsx`, atualizar o placeholder para indicar que os certificados sao **obrigatorios** para a ONZ (remover "opcional para alguns provedores").
+### 2. Atualizar `src/pages/settings/PixIntegration.tsx`
+- Adicionar texto de ajuda no campo `Client ID` informando que deve estar no **formato UUID** (ex: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+- Adicionar validacao basica de formato UUID no campo antes de salvar
 
 ## Detalhes Tecnicos
 
-### Codigo do mTLS no pix-auth (exemplo central):
+### Fallback de formato no pix-auth:
 
 ```text
-// Decodificar certificados de Base64 para PEM
-const certPem = atob(pixConfig.certificate_encrypted);
-const keyPem = atob(pixConfig.certificate_key_encrypted);
+// Tentativa 1: JSON com camelCase (formato principal da ONZ)
+POST /oauth/token
+Content-Type: application/json
+{ "clientId": "...", "clientSecret": "...", "grantType": "client_credentials", "scope": "..." }
 
-// Criar HTTP client com mTLS
-const httpClient = Deno.createHttpClient({
-  cert: certPem,
-  key: keyPem,
-});
-
-// Usar na chamada fetch
-const tokenResponse = await fetch(tokenUrl, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(tokenPayload),
-  client: httpClient,
-});
-
-// Cleanup
-httpClient.close();
+// Se falhar com onz-0001, Tentativa 2: form-urlencoded com snake_case
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+client_id=...&client_secret=...&grant_type=client_credentials&scope=...
 ```
 
-### Validacao
-- Se os campos `certificate_encrypted` ou `certificate_key_encrypted` estiverem vazios, retornar erro 400 informando que certificados mTLS sao obrigatorios para o provedor ONZ
-- Tratar erros de certificado invalido com mensagem clara
-
 ### Arquivos afetados
-1. `supabase/functions/pix-auth/index.ts` - Adicionar mTLS
-2. `supabase/functions/pix-pay-dict/index.ts` - Adicionar mTLS nas chamadas a API ONZ
-3. `supabase/functions/pix-pay-qrc/index.ts` - Adicionar mTLS
-4. `supabase/functions/pix-check-status/index.ts` - Adicionar mTLS
-5. `supabase/functions/pix-receipt/index.ts` - Adicionar mTLS
-6. `supabase/functions/pix-refund/index.ts` - Adicionar mTLS
-7. `supabase/functions/pix-qrc-info/index.ts` - Adicionar mTLS
-8. `supabase/functions/billet-pay/index.ts` - Adicionar mTLS
-9. `supabase/functions/billet-check-status/index.ts` - Adicionar mTLS
-10. `supabase/functions/billet-receipt/index.ts` - Adicionar mTLS
-11. `src/pages/settings/PixIntegration.tsx` - Atualizar placeholders
+1. `supabase/functions/pix-auth/index.ts` - Adicionar fallback de formato
+2. `src/pages/settings/PixIntegration.tsx` - Hint de UUID e validacao
+
