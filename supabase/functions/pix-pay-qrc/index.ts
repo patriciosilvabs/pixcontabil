@@ -140,7 +140,7 @@ Deno.serve(async (req) => {
       expiration: expiration,
       payment: {
         currency: 'BRL',
-        amount: valor || 0 // If 0 or not provided, uses QR code value
+        amount: valor || 0
       }
     };
 
@@ -154,9 +154,22 @@ Deno.serve(async (req) => {
 
     console.log('[pix-pay-qrc] Sending to ONZ:', JSON.stringify({ ...paymentPayload, qrCode: '***' }));
 
+    // Create mTLS HTTP client
+    let httpClient: Deno.HttpClient | undefined;
+    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+      try {
+        httpClient = Deno.createHttpClient({
+          cert: atob(config.certificate_encrypted),
+          key: atob(config.certificate_key_encrypted),
+        });
+      } catch (e) {
+        console.error('[pix-pay-qrc] Failed to create mTLS client:', e);
+      }
+    }
+
     // Make payment request to ONZ
     const paymentUrl = `${config.base_url}/pix/payments/qrc`;
-    const paymentResponse = await fetch(paymentUrl, {
+    const fetchOptions: any = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
@@ -164,7 +177,11 @@ Deno.serve(async (req) => {
         'x-idempotency-key': idempotencyKey,
       },
       body: JSON.stringify(paymentPayload),
-    });
+    };
+    if (httpClient) fetchOptions.client = httpClient;
+
+    const paymentResponse = await fetch(paymentUrl, fetchOptions);
+    httpClient?.close();
 
     if (!paymentResponse.ok) {
       const errorText = await paymentResponse.text();

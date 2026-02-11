@@ -102,14 +102,31 @@ Deno.serve(async (req) => {
 
     const { access_token } = await authResponse.json();
 
+    // Create mTLS HTTP client
+    let httpClient: Deno.HttpClient | undefined;
+    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+      try {
+        httpClient = Deno.createHttpClient({
+          cert: atob(config.certificate_encrypted),
+          key: atob(config.certificate_key_encrypted),
+        });
+      } catch (e) {
+        console.error('[billet-receipt] Failed to create mTLS client:', e);
+      }
+    }
+
     const receiptUrl = `${config.base_url}/billets/payments/receipt/${billet_id}`;
-    const receiptResponse = await fetch(receiptUrl, {
+    const fetchOptions: any = {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
       },
-    });
+    };
+    if (httpClient) fetchOptions.client = httpClient;
+
+    const receiptResponse = await fetch(receiptUrl, fetchOptions);
+    httpClient?.close();
 
     if (!receiptResponse.ok) {
       const errorText = await receiptResponse.text();

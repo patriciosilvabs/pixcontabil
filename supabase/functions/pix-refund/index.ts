@@ -182,14 +182,31 @@ Deno.serve(async (req) => {
 
     console.log(`[pix-refund] Requesting refund at: ${refundUrl}`);
 
-    const refundResponse = await fetch(refundUrl, {
+    // Create mTLS HTTP client
+    let httpClient: Deno.HttpClient | undefined;
+    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+      try {
+        httpClient = Deno.createHttpClient({
+          cert: atob(config.certificate_encrypted),
+          key: atob(config.certificate_key_encrypted),
+        });
+      } catch (e) {
+        console.error('[pix-refund] Failed to create mTLS client:', e);
+      }
+    }
+
+    const fetchOptions: any = {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(refundPayload),
-    });
+    };
+    if (httpClient) fetchOptions.client = httpClient;
+
+    const refundResponse = await fetch(refundUrl, fetchOptions);
+    httpClient?.close();
 
     if (!refundResponse.ok) {
       const errorText = await refundResponse.text();

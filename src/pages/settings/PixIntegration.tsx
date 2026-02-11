@@ -399,7 +399,7 @@ export default function PixIntegration() {
                 <Textarea
                   value={config.certificate_encrypted || ""}
                   onChange={(e) => setConfig({ ...config, certificate_encrypted: e.target.value })}
-                  placeholder="Cole aqui o certificado em Base64 (opcional para alguns provedores)"
+                  placeholder="Cole aqui o certificado .crt em Base64 (obrigatório para ONZ)"
                   rows={3}
                 />
               </div>
@@ -409,7 +409,7 @@ export default function PixIntegration() {
                 <Textarea
                   value={config.certificate_key_encrypted || ""}
                   onChange={(e) => setConfig({ ...config, certificate_key_encrypted: e.target.value })}
-                  placeholder="Cole aqui a chave do certificado em Base64 (opcional)"
+                  placeholder="Cole aqui a chave do certificado .key em Base64 (obrigatório para ONZ)"
                   rows={3}
                 />
               </div>

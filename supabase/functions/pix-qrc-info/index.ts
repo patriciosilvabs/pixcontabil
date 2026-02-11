@@ -115,9 +115,22 @@ Deno.serve(async (req) => {
     const { access_token } = await authResponse.json();
     const idempotencyKey = generateIdempotencyKey();
 
+    // Create mTLS HTTP client
+    let httpClient: Deno.HttpClient | undefined;
+    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+      try {
+        httpClient = Deno.createHttpClient({
+          cert: atob(config.certificate_encrypted),
+          key: atob(config.certificate_key_encrypted),
+        });
+      } catch (e) {
+        console.error('[pix-qrc-info] Failed to create mTLS client:', e);
+      }
+    }
+
     // Query QR Code info from ONZ
     const infoUrl = `${config.base_url}/pix/payments/qrc/info`;
-    const infoResponse = await fetch(infoUrl, {
+    const fetchOptions: any = {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${access_token}`,
@@ -125,7 +138,11 @@ Deno.serve(async (req) => {
         'x-idempotency-key': idempotencyKey,
       },
       body: JSON.stringify({ qrCode: qr_code }),
-    });
+    };
+    if (httpClient) fetchOptions.client = httpClient;
+
+    const infoResponse = await fetch(infoUrl, fetchOptions);
+    httpClient?.close();
 
     if (!infoResponse.ok) {
       const errorText = await infoResponse.text();

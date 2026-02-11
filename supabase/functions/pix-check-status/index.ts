@@ -146,14 +146,31 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Create mTLS HTTP client
+    let httpClient: Deno.HttpClient | undefined;
+    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+      try {
+        httpClient = Deno.createHttpClient({
+          cert: atob(config.certificate_encrypted),
+          key: atob(config.certificate_key_encrypted),
+        });
+      } catch (e) {
+        console.error('[pix-check-status] Failed to create mTLS client:', e);
+      }
+    }
+
     // Query status from ONZ
-    const statusResponse = await fetch(statusUrl, {
+    const fetchOptions: any = {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
       },
-    });
+    };
+    if (httpClient) fetchOptions.client = httpClient;
+
+    const statusResponse = await fetch(statusUrl, fetchOptions);
+    httpClient?.close();
 
     if (!statusResponse.ok) {
       const errorText = await statusResponse.text();
