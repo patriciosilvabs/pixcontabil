@@ -7,23 +7,10 @@ const corsHeaders = {
 
 interface RefundRequest {
   transaction_id: string;
-  valor?: number; // If not provided, full refund
+  valor?: number;
   motivo?: string;
 }
 
-interface RefundResponse {
-  id: string;
-  rtrId: string;
-  valor: string;
-  horario: {
-    solicitacao: string;
-    liquidacao?: string;
-  };
-  status: 'EM_PROCESSAMENTO' | 'DEVOLVIDO' | 'NAO_REALIZADO';
-  motivo?: string;
-}
-
-// Generate refund ID (unique per e2eid)
 function generateRefundId(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
@@ -39,7 +26,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Authenticate user
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -66,7 +52,6 @@ Deno.serve(async (req) => {
 
     const userId = claims.claims.sub as string;
 
-    // Get request body
     const body: RefundRequest = await req.json();
     const { transaction_id, valor, motivo } = body;
 
@@ -77,9 +62,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-refund] Requesting refund for transaction: ${transaction_id}`);
-
-    // Get transaction
     const { data: transaction, error: txError } = await supabase
       .from('transactions')
       .select('*')
@@ -93,7 +75,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate transaction state
     if (transaction.status !== 'completed') {
       return new Response(
         JSON.stringify({ error: 'Only completed transactions can be refunded' }),
@@ -103,15 +84,13 @@ Deno.serve(async (req) => {
 
     if (!transaction.pix_e2eid) {
       return new Response(
-        JSON.stringify({ error: 'Transaction does not have e2eid (not a Pix payment)' }),
+        JSON.stringify({ error: 'Transaction does not have e2eId' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Calculate refund value
     const refundValue = valor || transaction.amount;
 
-    // Check for existing refunds to prevent over-refunding
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
@@ -128,16 +107,11 @@ Deno.serve(async (req) => {
 
     if (refundValue > availableForRefund) {
       return new Response(
-        JSON.stringify({ 
-          error: 'Refund value exceeds available amount',
-          available: availableForRefund,
-          requested: refundValue
-        }),
+        JSON.stringify({ error: 'Refund value exceeds available amount', available: availableForRefund, requested: refundValue }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get Pix config
     const { data: config, error: configError } = await supabase
       .from('pix_configs')
       .select('*')
@@ -152,44 +126,32 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id: transaction.company_id }),
     });
 
     if (!authResponse.ok) {
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with Pix provider' }),
+        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
 
-    // Generate refund ID
     const refundId = generateRefundId();
 
-    // Request refund from Pix provider
-    const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-    const refundPayload = {
-      valor: refundValue.toFixed(2),
-    };
+    // EFI endpoint: PUT /v2/pix/:e2eId/devolucao/:id (BCB standard)
+    const refundUrl = `${config.base_url}/v2/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
 
-    console.log(`[pix-refund] Requesting refund at: ${refundUrl}`);
-
-    // Create mTLS HTTP client
     let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted && config.certificate_key_encrypted) {
+    if (config.certificate_encrypted) {
       try {
-        httpClient = Deno.createHttpClient({
-          cert: atob(config.certificate_encrypted),
-          key: atob(config.certificate_key_encrypted),
-        });
+        const certPem = atob(config.certificate_encrypted);
+        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
       } catch (e) {
         console.error('[pix-refund] Failed to create mTLS client:', e);
       }
@@ -201,7 +163,7 @@ Deno.serve(async (req) => {
         'Authorization': `Bearer ${access_token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(refundPayload),
+      body: JSON.stringify({ valor: refundValue.toFixed(2) }),
     };
     if (httpClient) fetchOptions.client = httpClient;
 
@@ -210,21 +172,17 @@ Deno.serve(async (req) => {
 
     if (!refundResponse.ok) {
       const errorText = await refundResponse.text();
-      console.error('[pix-refund] Provider error:', errorText);
+      console.error('[pix-refund] EFI error:', errorText);
       return new Response(
-        JSON.stringify({ 
-          error: 'Failed to request refund',
-          provider_error: errorText 
-        }),
+        JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const refundData: RefundResponse = await refundResponse.json();
+    const refundData = await refundResponse.json();
     console.log('[pix-refund] Refund response:', JSON.stringify(refundData));
 
-    // Save refund to database
-    const { data: savedRefund, error: saveError } = await supabaseAdmin
+    const { data: savedRefund } = await supabaseAdmin
       .from('pix_refunds')
       .insert({
         transaction_id,
@@ -232,29 +190,20 @@ Deno.serve(async (req) => {
         refund_id: refundId,
         valor: refundValue,
         motivo,
-        status: refundData.status,
+        status: refundData.status || 'EM_PROCESSAMENTO',
         refunded_at: refundData.horario?.liquidacao,
         created_by: userId,
       })
       .select()
       .single();
 
-    if (saveError) {
-      console.error('[pix-refund] Failed to save refund:', saveError);
-    }
-
-    // Log to audit
     await supabaseAdmin.from('audit_logs').insert({
       user_id: userId,
       company_id: transaction.company_id,
       entity_type: 'pix_refund',
       entity_id: savedRefund?.id,
       action: 'pix_refund_requested',
-      new_data: { 
-        refund_id: refundId, 
-        valor: refundValue, 
-        status: refundData.status 
-      },
+      new_data: { refund_id: refundId, valor: refundValue, status: refundData.status },
     });
 
     return new Response(

@@ -17,18 +17,15 @@ interface PixConfig {
   certificate_key_encrypted?: string;
 }
 
-// ONZ Token Response
-interface ONZTokenResponse {
-  tokenType: string;
-  expiresAt: number;
-  refreshExpiresIn: number;
-  notBeforePolicy: number;
-  accessToken: string;
+// EFI Token Response
+interface EFITokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
   scope: string;
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -112,24 +109,27 @@ Deno.serve(async (req) => {
     const pixConfig = config as PixConfig;
 
     // Validate mTLS certificates
-    if (!pixConfig.certificate_encrypted || !pixConfig.certificate_key_encrypted) {
-      console.error('[pix-auth] mTLS certificates missing');
+    if (!pixConfig.certificate_encrypted) {
+      console.error('[pix-auth] mTLS certificate missing');
       return new Response(
-        JSON.stringify({ error: 'Certificados mTLS são obrigatórios para o provedor ONZ. Configure o certificado (.crt) e a chave (.key) em Base64 nas configurações.' }),
+        JSON.stringify({ error: 'Certificado mTLS é obrigatório para a EFI Pay. Configure o certificado PEM em Base64 nas configurações.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Decode certificates from Base64 to PEM
+    // Decode certificate from Base64 to PEM
     let certPem: string;
     let keyPem: string;
     try {
       certPem = atob(pixConfig.certificate_encrypted);
-      keyPem = atob(pixConfig.certificate_key_encrypted);
+      // EFI can use combined PEM (cert+key in one file) or separate files
+      keyPem = pixConfig.certificate_key_encrypted 
+        ? atob(pixConfig.certificate_key_encrypted) 
+        : certPem; // If no separate key, assume combined PEM
     } catch (e) {
-      console.error('[pix-auth] Failed to decode certificates:', e);
+      console.error('[pix-auth] Failed to decode certificate:', e);
       return new Response(
-        JSON.stringify({ error: 'Certificados mTLS inválidos. Verifique se estão corretamente codificados em Base64.' }),
+        JSON.stringify({ error: 'Certificado mTLS inválido. Verifique se está corretamente codificado em Base64.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -140,24 +140,24 @@ Deno.serve(async (req) => {
       key: keyPem,
     });
 
-    // Request new token from ONZ API
-    console.log(`[pix-auth] Requesting new token from ONZ provider (with mTLS)`);
+    // Request new token from EFI API using Basic Auth
+    console.log(`[pix-auth] Requesting new token from EFI Pay (Basic Auth + mTLS)`);
 
     const tokenUrl = `${pixConfig.base_url}/oauth/token`;
-    const scope = "pix.read pix.write transactions.read account.read webhook.read webhook.write";
+    
+    // EFI uses Basic Auth: base64(client_id:client_secret)
+    const basicAuth = btoa(`${pixConfig.client_id}:${pixConfig.client_secret_encrypted}`);
 
-    // Attempt 1: JSON with camelCase (primary ONZ format per docs)
-    console.log('[pix-auth] Attempt 1: application/json (camelCase)');
     let tokenResponse: Response;
     try {
       tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Authorization': `Basic ${basicAuth}`,
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
-          clientId: pixConfig.client_id,
-          clientSecret: pixConfig.client_secret_encrypted,
-          grantType: "client_credentials",
-          scope,
+          grant_type: 'client_credentials',
         }),
         // @ts-ignore - Deno specific option
         client: httpClient,
@@ -166,86 +166,32 @@ Deno.serve(async (req) => {
       httpClient.close();
       console.error('[pix-auth] mTLS fetch failed:', fetchError);
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão mTLS com o provedor. Verifique os certificados.', details: fetchError.message }),
+        JSON.stringify({ error: 'Falha na conexão mTLS com a EFI Pay. Verifique o certificado.', details: fetchError.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // If first attempt fails with onz-0001, try form-urlencoded with snake_case
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      console.warn('[pix-auth] Attempt 1 failed:', errorText);
-
-      let shouldRetry = false;
-      try {
-        const errJson = JSON.parse(errorText);
-        if (errJson.type === 'onz-0001' || errJson.title?.includes('Invalid credentials')) {
-          shouldRetry = true;
-        }
-      } catch { 
-        // not JSON, don't retry
-      }
-
-      if (shouldRetry) {
-        console.log('[pix-auth] Attempt 2: application/x-www-form-urlencoded (snake_case)');
-        try {
-          const formBody = new URLSearchParams({
-            client_id: pixConfig.client_id,
-            client_secret: pixConfig.client_secret_encrypted,
-            grant_type: "client_credentials",
-            scope,
-          });
-
-          tokenResponse = await fetch(tokenUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: formBody.toString(),
-            // @ts-ignore - Deno specific option
-            client: httpClient,
-          });
-
-          if (!tokenResponse.ok) {
-            const errorText2 = await tokenResponse.text();
-            httpClient.close();
-            console.error('[pix-auth] Attempt 2 also failed:', errorText2);
-            return new Response(
-              JSON.stringify({ 
-                error: 'Failed to authenticate with Pix provider (both formats tried)',
-                details: errorText2,
-                hint: 'Verifique se o Client ID está no formato UUID e se as credenciais foram ativadas pelo suporte ONZ.'
-              }),
-              { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            );
-          }
-          console.log('[pix-auth] ✓ Attempt 2 (form-urlencoded) succeeded');
-        } catch (fetchError2) {
-          httpClient.close();
-          console.error('[pix-auth] Attempt 2 fetch failed:', fetchError2);
-          return new Response(
-            JSON.stringify({ error: 'Falha na conexão mTLS com o provedor.', details: fetchError2.message }),
-            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      } else {
-        httpClient.close();
-        console.error('[pix-auth] Token request failed (non-retryable):', errorText);
-        return new Response(
-          JSON.stringify({ error: 'Failed to authenticate with Pix provider', details: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    } else {
-      console.log('[pix-auth] ✓ Attempt 1 (JSON) succeeded');
+      httpClient.close();
+      console.error('[pix-auth] EFI token request failed:', errorText);
+      return new Response(
+        JSON.stringify({ 
+          error: 'Falha ao autenticar com a EFI Pay',
+          details: errorText,
+          hint: 'Verifique Client ID, Client Secret e certificado mTLS no painel EFI Pay.'
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     httpClient.close();
 
-    const tokenData: ONZTokenResponse = await tokenResponse.json();
-    console.log('[pix-auth] Token received, expiresAt:', tokenData.expiresAt);
+    const tokenData: EFITokenResponse = await tokenResponse.json();
+    console.log('[pix-auth] Token received, expires_in:', tokenData.expires_in);
 
-    // ONZ returns expiresAt as Unix timestamp (seconds)
-    // Calculate expiration time (subtract 60 seconds for safety margin)
-    const expiresAt = new Date(tokenData.expiresAt * 1000 - 60000);
+    // EFI returns expires_in in seconds. Calculate expiration with safety margin.
+    const expiresAt = new Date(Date.now() + (tokenData.expires_in - 60) * 1000);
 
     // Store token in database using service role for insert
     const supabaseAdmin = createClient(
@@ -264,20 +210,19 @@ Deno.serve(async (req) => {
       .from('pix_tokens')
       .insert({
         company_id,
-        access_token: tokenData.accessToken,
-        token_type: tokenData.tokenType || 'bearer',
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type || 'Bearer',
         expires_at: expiresAt.toISOString()
       });
 
     if (insertError) {
       console.error('[pix-auth] Failed to cache token:', insertError);
-      // Continue anyway, token is still valid
     }
 
     return new Response(
       JSON.stringify({
-        access_token: tokenData.accessToken,
-        token_type: tokenData.tokenType || 'bearer',
+        access_token: tokenData.access_token,
+        token_type: tokenData.token_type || 'Bearer',
         expires_at: expiresAt.toISOString(),
         scope: tokenData.scope,
         cached: false
