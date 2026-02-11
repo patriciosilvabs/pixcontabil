@@ -13,6 +13,8 @@ interface PixConfig {
   client_secret_encrypted: string;
   base_url: string;
   is_sandbox: boolean;
+  certificate_encrypted?: string;
+  certificate_key_encrypted?: string;
 }
 
 // ONZ Token Response
@@ -109,29 +111,71 @@ Deno.serve(async (req) => {
 
     const pixConfig = config as PixConfig;
 
+    // Validate mTLS certificates
+    if (!pixConfig.certificate_encrypted || !pixConfig.certificate_key_encrypted) {
+      console.error('[pix-auth] mTLS certificates missing');
+      return new Response(
+        JSON.stringify({ error: 'Certificados mTLS são obrigatórios para o provedor ONZ. Configure o certificado (.crt) e a chave (.key) em Base64 nas configurações.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Decode certificates from Base64 to PEM
+    let certPem: string;
+    let keyPem: string;
+    try {
+      certPem = atob(pixConfig.certificate_encrypted);
+      keyPem = atob(pixConfig.certificate_key_encrypted);
+    } catch (e) {
+      console.error('[pix-auth] Failed to decode certificates:', e);
+      return new Response(
+        JSON.stringify({ error: 'Certificados mTLS inválidos. Verifique se estão corretamente codificados em Base64.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Create HTTP client with mTLS
+    const httpClient = Deno.createHttpClient({
+      cert: certPem,
+      key: keyPem,
+    });
+
     // Request new token from ONZ API
-    console.log(`[pix-auth] Requesting new token from ONZ provider`);
+    console.log(`[pix-auth] Requesting new token from ONZ provider (with mTLS)`);
 
     const tokenUrl = `${pixConfig.base_url}/oauth/token`;
     
     // ONZ uses JSON body for authentication
     const tokenPayload = {
       clientId: pixConfig.client_id,
-      clientSecret: pixConfig.client_secret_encrypted, // In production, decrypt this
+      clientSecret: pixConfig.client_secret_encrypted,
       grantType: "client_credentials",
       scope: "pix.read pix.write transactions.read account.read webhook.read webhook.write"
     };
 
-    const tokenResponse = await fetch(tokenUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(tokenPayload),
-    });
+    let tokenResponse: Response;
+    try {
+      tokenResponse = await fetch(tokenUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(tokenPayload),
+        // @ts-ignore - Deno specific option
+        client: httpClient,
+      });
+    } catch (fetchError) {
+      httpClient.close();
+      console.error('[pix-auth] mTLS fetch failed:', fetchError);
+      return new Response(
+        JSON.stringify({ error: 'Falha na conexão mTLS com o provedor. Verifique os certificados.', details: fetchError.message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
+      httpClient.close();
       console.error('[pix-auth] Token request failed:', errorText);
       return new Response(
         JSON.stringify({ 
@@ -141,6 +185,8 @@ Deno.serve(async (req) => {
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    httpClient.close();
 
     const tokenData: ONZTokenResponse = await tokenResponse.json();
     console.log('[pix-auth] Token received, expiresAt:', tokenData.expiresAt);
