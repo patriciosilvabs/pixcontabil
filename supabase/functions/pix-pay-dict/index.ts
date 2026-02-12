@@ -179,8 +179,8 @@ Deno.serve(async (req) => {
         if (/^.+@.+\..+$/.test(key)) return 'EMAIL';
         if (/^\+?[0-9]{10,13}$/.test(cleaned)) return 'PHONE';
         // UUID format = EVP (random key)
-        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return 'EVP';
-        return 'EVP';
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return 'CHAVE_ALEATORIA';
+        return 'CHAVE_ALEATORIA';
       }
 
       const detectedKeyType = detectPixKeyType(pix_key);
@@ -188,6 +188,9 @@ Deno.serve(async (req) => {
 
       const payUrl = `${config.base_url}/batch`;
       const transfeeraPayload = {
+        name: `Pix ${new Date().toISOString()}`,
+        type: 'TRANSFERENCIA',
+        auto_close: true,
         transfers: [
           {
             value: valor,
