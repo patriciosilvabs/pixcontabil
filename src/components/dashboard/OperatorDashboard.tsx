@@ -2,10 +2,13 @@ import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrency } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileDashboard } from "@/components/dashboard/MobileDashboard";
+import { useDashboardData } from "@/hooks/useDashboardData";
+import { usePixBalance } from "@/hooks/usePixBalance";
 import {
   Send,
   History,
@@ -15,50 +18,27 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  Inbox,
 } from "lucide-react";
-
-// Mock data - will be replaced with real data from Supabase
-const mockOperatorData = {
-  transactionsToday: 5,
-  pendingReceipts: 2,
-  recentTransactions: [
-    {
-      id: "1",
-      beneficiary: "Moinho Santa Clara",
-      amount: 2450.00,
-      time: "10 min atrás",
-      status: "completed",
-      hasReceipt: true,
-    },
-    {
-      id: "2",
-      beneficiary: "CEMIG",
-      amount: 1230.50,
-      time: "1h atrás",
-      status: "completed",
-      hasReceipt: false,
-    },
-    {
-      id: "3",
-      beneficiary: "Atacadão",
-      amount: 3890.00,
-      time: "2h atrás",
-      status: "completed",
-      hasReceipt: true,
-    },
-  ],
-};
 
 export function OperatorDashboard() {
   const { profile, currentCompany } = useAuth();
   const isMobile = useIsMobile();
   const [balanceVisible, setBalanceVisible] = React.useState(true);
+  const { summary, recentTransactions, isLoading: dataLoading } = useDashboardData();
+  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = usePixBalance();
 
   if (isMobile) {
     return (
       <MobileDashboard
         balanceVisible={balanceVisible}
         onToggleBalance={() => setBalanceVisible((v) => !v)}
+        balance={balance}
+        balanceLoading={balanceLoading}
+        balanceAvailable={balanceAvailable}
+        provider={provider}
+        recentTransactions={recentTransactions}
+        dataLoading={dataLoading}
       />
     );
   }
@@ -114,7 +94,7 @@ export function OperatorDashboard() {
       </Card>
 
       {/* Alert for pending receipts */}
-      {mockOperatorData.pendingReceipts > 0 && (
+      {summary.pendingReceipts > 0 && (
         <Card className="border-warning/50 bg-warning/5">
           <CardContent className="flex items-center gap-4 p-4">
             <div className="h-10 w-10 rounded-full bg-warning/20 flex items-center justify-center">
@@ -122,7 +102,7 @@ export function OperatorDashboard() {
             </div>
             <div className="flex-1">
               <p className="font-medium">
-                {mockOperatorData.pendingReceipts} comprovantes pendentes
+                {summary.pendingReceipts} comprovantes pendentes
               </p>
               <p className="text-sm text-muted-foreground">
                 Anexe os comprovantes para completar os pagamentos
@@ -147,9 +127,13 @@ export function OperatorDashboard() {
                 <Clock className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {mockOperatorData.transactionsToday}
-                </p>
+                {dataLoading ? (
+                  <Skeleton className="h-7 w-10" />
+                ) : (
+                  <p className="text-2xl font-bold">
+                    {summary.transactionsToday}
+                  </p>
+                )}
                 <p className="text-sm text-muted-foreground">Pagamentos hoje</p>
               </div>
             </div>
@@ -163,9 +147,13 @@ export function OperatorDashboard() {
                 <FileWarning className="h-5 w-5 text-warning" />
               </div>
               <div>
-                <p className="text-2xl font-bold">
-                  {mockOperatorData.pendingReceipts}
-                </p>
+                {dataLoading ? (
+                  <Skeleton className="h-7 w-10" />
+                ) : (
+                  <p className="text-2xl font-bold">
+                    {summary.pendingReceipts}
+                  </p>
+                )}
                 <p className="text-sm text-muted-foreground">Pendentes</p>
               </div>
             </div>
@@ -178,7 +166,7 @@ export function OperatorDashboard() {
         <CardHeader className="flex flex-row items-center justify-between pb-4">
           <div>
             <CardTitle className="text-lg">Meus Pagamentos</CardTitle>
-            <CardDescription>Transações realizadas hoje</CardDescription>
+            <CardDescription>Transações realizadas recentemente</CardDescription>
           </div>
           <Button variant="ghost" size="sm" asChild>
             <Link to="/transactions">
@@ -188,46 +176,59 @@ export function OperatorDashboard() {
           </Button>
         </CardHeader>
         <CardContent className="space-y-3">
-          {mockOperatorData.recentTransactions.map((transaction) => (
-            <div
-              key={transaction.id}
-              className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-            >
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <DollarSign className="h-5 w-5 text-primary" />
+          {dataLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="flex items-center gap-3 p-3">
+                  <Skeleton className="h-10 w-10 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <Skeleton className="h-4 w-32" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                  <Skeleton className="h-4 w-20" />
                 </div>
-                <div>
-                  <p className="font-medium text-sm">{transaction.beneficiary}</p>
-                  <p className="text-xs text-muted-foreground">{transaction.time}</p>
-                </div>
-              </div>
-              <div className="text-right">
-                <p className="font-bold font-mono-numbers text-sm">
-                  {formatCurrency(transaction.amount)}
-                </p>
-                <div className="flex items-center justify-end gap-1 mt-1">
-                  {transaction.hasReceipt ? (
-                    <span className="text-xs text-success flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" />
-                      Comprovante OK
-                    </span>
-                  ) : (
-                    <span className="text-xs text-warning flex items-center gap-1">
-                      <AlertCircle className="h-3 w-3" />
-                      Sem comprovante
-                    </span>
-                  )}
-                </div>
-              </div>
+              ))}
             </div>
-          ))}
-
-          {mockOperatorData.recentTransactions.length === 0 && (
+          ) : recentTransactions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
-              <History className="h-12 w-12 mx-auto mb-4 opacity-50" />
-              <p>Nenhum pagamento realizado hoje</p>
+              <Inbox className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Nenhum pagamento realizado</p>
             </div>
+          ) : (
+            recentTransactions.map((transaction) => (
+              <div
+                key={transaction.id}
+                className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
+                    <DollarSign className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{transaction.beneficiary}</p>
+                    <p className="text-xs text-muted-foreground">{transaction.time}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="font-bold font-mono-numbers text-sm">
+                    {formatCurrency(transaction.amount)}
+                  </p>
+                  <div className="flex items-center justify-end gap-1 mt-1">
+                    {transaction.status === "completed" ? (
+                      <span className="text-xs text-success flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Concluído
+                      </span>
+                    ) : (
+                      <span className="text-xs text-warning flex items-center gap-1">
+                        <AlertCircle className="h-3 w-3" />
+                        Pendente
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
           )}
         </CardContent>
       </Card>
