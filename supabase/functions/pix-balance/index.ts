@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
 
       const data = await res.json();
       console.log('[pix-balance] Transfeera balance response:', JSON.stringify(data));
-      balance = parseFloat(data?.balance ?? data?.available ?? data?.amount ?? '0');
+      balance = parseFloat(data?.value ?? data?.balance ?? data?.available ?? data?.amount ?? '0');
     }
 
     // ========== WOOVI (OpenPix) ==========
