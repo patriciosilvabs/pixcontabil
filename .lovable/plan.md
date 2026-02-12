@@ -1,32 +1,45 @@
 
 
-# Corrigir Pagamento Automatico na Transfeera
+# Corrigir Consulta de Saldo para Transfeera
 
 ## Problema
-A API da Transfeera usa um sistema de lotes (batch). Por padrao, `auto_close` e `false`, o que significa que o lote fica "aberto" aguardando aprovacao manual no painel da Transfeera. O pagamento nunca e executado automaticamente.
 
-Alem disso, o tipo de chave aleatoria deveria ser `CHAVE_ALEATORIA` em vez de `EVP`.
+O codigo atual na edge function `pix-balance` retorna imediatamente "Saldo nao disponivel via API Transfeera" (linhas 59-64) sem consultar a API. Porem, a documentacao oficial da Transfeera confirma que existe o endpoint:
+
+```text
+GET https://api.transfeera.com/statement/balance
+```
 
 ## Correcao
 
-### Arquivo: `supabase/functions/pix-pay-dict/index.ts`
+### Arquivo: `supabase/functions/pix-balance/index.ts`
 
-1. Adicionar `auto_close: true` no payload do batch da Transfeera para que a transferencia seja executada imediatamente apos a criacao do lote
-2. Corrigir o mapeamento de tipos de chave Pix:
-   - `EVP` deve ser `CHAVE_ALEATORIA` (padrao Transfeera)
-   - Os demais tipos (`CPF`, `CNPJ`, `EMAIL`, `PHONE`) permanecem iguais
+1. Remover o bloco que retorna "indisponivel" para Transfeera (linhas 58-64)
+2. Mover a secao de autenticacao (`pix-auth`) para ANTES dos blocos de provedor, para que Transfeera tambem obtenha o token
+3. Adicionar bloco Transfeera que faz `GET {base_url}/statement/balance` com header `Authorization: Bearer {access_token}`
+4. Parsear a resposta para extrair o saldo disponivel
+
+### Fluxo Corrigido
+
+```text
+1. Buscar pix_configs para a empresa
+2. Obter token de autenticacao via pix-auth (para TODOS os provedores)
+3. Switch por provedor:
+   - transfeera: GET /statement/balance
+   - woovi: GET /api/v1/subaccount/{pixKey}
+   - onz: GET /accounts/balances/
+   - efi: GET /v2/gn/saldo (com mTLS)
+4. Retornar saldo
+```
 
 ### Detalhes Tecnicos
 
-No payload enviado ao `POST /batch`, adicionar os campos:
+O endpoint da Transfeera retorna o saldo da conta. O request sera:
 
 ```text
-{
-  "type": "TRANSFERENCIA",
-  "auto_close": true,        // <-- executa automaticamente
-  "transfers": [...]
-}
+GET {base_url}/statement/balance
+Authorization: Bearer {access_token}
 ```
 
-Na funcao `detectPixKeyType`, alterar o retorno padrao e o caso UUID de `EVP` para `CHAVE_ALEATORIA`.
+O saldo sera extraido do campo retornado pela API (provavelmente `balance` ou `available`). Logs serao adicionados para registrar a resposta completa na primeira execucao, facilitando debug caso o formato seja diferente do esperado.
 
