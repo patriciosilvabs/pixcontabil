@@ -55,15 +55,7 @@ Deno.serve(async (req) => {
     const provider = config.provider;
     console.log(`[pix-balance] Provider: ${provider}`);
 
-    // ========== TRANSFEERA ==========
-    if (provider === 'transfeera') {
-      return new Response(
-        JSON.stringify({ success: true, balance: null, available: false, provider: 'transfeera', message: 'Saldo não disponível via API Transfeera' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get auth token via pix-auth
+    // Get auth token via pix-auth (for ALL providers except those handled separately)
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const authResponse = await fetch(`${supabaseUrl}/functions/v1/pix-auth`, {
       method: 'POST',
@@ -88,8 +80,31 @@ Deno.serve(async (req) => {
 
     let balance: number | null = null;
 
+    // ========== TRANSFEERA ==========
+    if (provider === 'transfeera') {
+      const balanceUrl = `${config.base_url}/statement/balance`;
+      console.log(`[pix-balance] Transfeera: GET ${balanceUrl}`);
+
+      const res = await fetch(balanceUrl, {
+        headers: { 'Authorization': `Bearer ${accessToken}` },
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.error('[pix-balance] Transfeera balance error:', errText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao consultar saldo na Transfeera', details: errText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = await res.json();
+      console.log('[pix-balance] Transfeera balance response:', JSON.stringify(data));
+      balance = parseFloat(data?.balance ?? data?.available ?? data?.amount ?? '0');
+    }
+
     // ========== WOOVI (OpenPix) ==========
-    if (provider === 'woovi') {
+    else if (provider === 'woovi') {
       const pixKey = config.pix_key;
       const balanceUrl = `${config.base_url}/api/v1/subaccount/${encodeURIComponent(pixKey)}`;
       console.log(`[pix-balance] Woovi: GET ${balanceUrl}`);
