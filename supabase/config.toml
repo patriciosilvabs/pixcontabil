@@ -65,3 +65,6 @@ verify_jwt = false
 
 [functions.billet-receipt]
 verify_jwt = false
+
+[functions.pix-balance]
+verify_jwt = false
