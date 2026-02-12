@@ -25,6 +25,9 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
+  { value: "woovi", label: "Woovi (OpenPix)" },
+  { value: "onz", label: "ONZ Infopago" },
+  { value: "transfeera", label: "Transfeera" },
   { value: "efi", label: "EFI Pay (Efí)" },
 ];
 
@@ -35,6 +38,79 @@ const PIX_KEY_TYPES = [
   { value: "phone", label: "Telefone" },
   { value: "random", label: "Chave Aleatória" },
 ];
+
+// Provider-specific configuration
+const PROVIDER_CONFIG: Record<string, {
+  clientIdLabel: string;
+  clientIdPlaceholder: string;
+  clientIdHelp: string;
+  showClientSecret: boolean;
+  clientSecretLabel?: string;
+  clientSecretHelp?: string;
+  showCertificate: boolean;
+  credentialsTitle: string;
+  credentialsDescription: string;
+  urls: { production: string; sandbox: string };
+}> = {
+  woovi: {
+    clientIdLabel: 'AppID',
+    clientIdPlaceholder: 'Q2xpZW50X0lkXzEyMzQ1Njc4OTB...',
+    clientIdHelp: 'Obtido no painel Woovi/OpenPix > API > AppID.',
+    showClientSecret: false,
+    showCertificate: false,
+    credentialsTitle: 'Credenciais Woovi (OpenPix)',
+    credentialsDescription: 'Apenas o AppID é necessário para autenticação',
+    urls: {
+      production: 'https://api.openpix.com.br',
+      sandbox: 'https://api.openpix.com.br',
+    },
+  },
+  onz: {
+    clientIdLabel: 'Client ID',
+    clientIdPlaceholder: 'seu_client_id',
+    clientIdHelp: 'Obtido no painel ONZ Infopago > Integrações.',
+    showClientSecret: true,
+    clientSecretLabel: 'Client Secret',
+    clientSecretHelp: 'Obtido no painel ONZ Infopago > Integrações.',
+    showCertificate: false,
+    credentialsTitle: 'Credenciais ONZ Infopago',
+    credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
+    urls: {
+      production: 'https://secureapi.bancodigital.onz.software/api/v2',
+      sandbox: 'https://secureapi.bancodigital.hmg.onz.software/api/v2',
+    },
+  },
+  transfeera: {
+    clientIdLabel: 'Client ID',
+    clientIdPlaceholder: 'seu_client_id',
+    clientIdHelp: 'Obtido no painel Transfeera > Configurações > API.',
+    showClientSecret: true,
+    clientSecretLabel: 'Client Secret',
+    clientSecretHelp: 'Obtido no painel Transfeera > Configurações > API.',
+    showCertificate: false,
+    credentialsTitle: 'Credenciais Transfeera',
+    credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
+    urls: {
+      production: 'https://api.transfeera.com',
+      sandbox: 'https://api-sandbox.transfeera.com',
+    },
+  },
+  efi: {
+    clientIdLabel: 'Client ID',
+    clientIdPlaceholder: 'Client_Id_xxxxxxxxxxxxxxx',
+    clientIdHelp: 'Obtido no painel EFI Pay > API > Aplicações.',
+    showClientSecret: true,
+    clientSecretLabel: 'Client Secret',
+    clientSecretHelp: 'Obtido no painel EFI Pay > API > Aplicações.',
+    showCertificate: true,
+    credentialsTitle: 'Credenciais EFI Pay',
+    credentialsDescription: 'Credenciais OAuth2 + Certificado mTLS obrigatório',
+    urls: {
+      production: 'https://pix.api.efipay.com.br',
+      sandbox: 'https://pix-h.api.efipay.com.br',
+    },
+  },
+};
 
 interface PixConfig {
   id?: string;
@@ -75,6 +151,8 @@ export default function PixIntegration() {
     is_sandbox: true,
     is_active: true,
   });
+
+  const providerConfig = config.provider ? PROVIDER_CONFIG[config.provider] : null;
 
   // Redirect if not admin
   useEffect(() => {
@@ -149,16 +227,9 @@ export default function PixIntegration() {
 
   // Get default base URL for provider
   const getDefaultBaseUrl = (provider: string, sandbox: boolean): string => {
-    const urls: Record<string, { production: string; sandbox: string }> = {
-      efi: {
-        production: "https://pix.api.efipay.com.br",
-        sandbox: "https://pix-h.api.efipay.com.br",
-      },
-    };
-
-    const providerUrls = urls[provider];
-    if (providerUrls) {
-      return sandbox ? providerUrls.sandbox : providerUrls.production;
+    const pc = PROVIDER_CONFIG[provider];
+    if (pc) {
+      return sandbox ? pc.urls.sandbox : pc.urls.production;
     }
     return "";
   };
@@ -166,7 +237,16 @@ export default function PixIntegration() {
   // Handle provider change
   const handleProviderChange = (provider: string) => {
     const baseUrl = getDefaultBaseUrl(provider, config.is_sandbox);
-    setConfig({ ...config, provider, base_url: baseUrl || config.base_url });
+    setConfig({ 
+      ...config, 
+      provider, 
+      base_url: baseUrl || config.base_url,
+      // Clear certificate fields when switching to non-EFI
+      certificate_encrypted: provider === 'efi' ? config.certificate_encrypted : undefined,
+      certificate_key_encrypted: provider === 'efi' ? config.certificate_key_encrypted : undefined,
+      // For Woovi, client_secret is not needed but DB requires it
+      client_secret_encrypted: provider === 'woovi' ? (config.client_secret_encrypted || 'not_required') : config.client_secret_encrypted,
+    });
   };
 
   // Handle sandbox toggle
@@ -183,10 +263,8 @@ export default function PixIntegration() {
     setTestResult(null);
 
     try {
-      // First save the config
       await handleSave(false);
 
-      // Then test authentication
       const { data, error } = await supabase.functions.invoke("pix-auth", {
         body: { company_id: currentCompany.id },
       });
@@ -202,7 +280,7 @@ export default function PixIntegration() {
         setTestResult("success");
         toast({
           title: "Conexão bem-sucedida!",
-          description: "As credenciais foram validadas com o provedor Pix.",
+          description: `Credenciais validadas com ${PIX_PROVIDERS.find(p => p.value === config.provider)?.label || config.provider}.`,
         });
       }
     } catch (error) {
@@ -228,7 +306,7 @@ export default function PixIntegration() {
         company_id: currentCompany.id,
         provider: config.provider,
         client_id: config.client_id,
-        client_secret_encrypted: config.client_secret_encrypted,
+        client_secret_encrypted: config.client_secret_encrypted || (config.provider === 'woovi' ? 'not_required' : ''),
         base_url: config.base_url,
         pix_key: config.pix_key,
         pix_key_type: config.pix_key_type,
@@ -243,14 +321,12 @@ export default function PixIntegration() {
       let error;
       
       if (config.id) {
-        // Update existing
         const result = await supabase
           .from("pix_configs")
           .update(configData)
           .eq("id", config.id);
         error = result.error;
       } else {
-        // Insert new
         const result = await supabase
           .from("pix_configs")
           .insert(configData)
@@ -285,7 +361,6 @@ export default function PixIntegration() {
     }
   };
 
-  // Generate webhook URL
   const webhookUrl = currentCompany 
     ? `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pix-webhook`
     : "";
@@ -372,85 +447,104 @@ export default function PixIntegration() {
                 <Input
                   value={config.base_url}
                   onChange={(e) => setConfig({ ...config, base_url: e.target.value })}
-                  placeholder="https://api.provedor.com.br/pix/v2"
+                  placeholder="https://api.provedor.com.br"
                 />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Credentials */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Key className="h-5 w-5 text-primary" />
-                Credenciais OAuth2
-              </CardTitle>
-              <CardDescription>
-                Credenciais de autenticação da API (Client Credentials)
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <Label>Client ID</Label>
-                  <Input
-                    value={config.client_id}
-                    onChange={(e) => setConfig({ ...config, client_id: e.target.value })}
-                    placeholder="Client_Id_xxxxxxxxxxxxxxx"
-                  />
+                {providerConfig && (
                   <p className="text-xs text-muted-foreground">
-                    Obtido no painel EFI Pay &gt; API &gt; Aplicações.
+                    Padrão: {config.is_sandbox ? providerConfig.urls.sandbox : providerConfig.urls.production}
                   </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Client Secret</Label>
-                  <div className="relative">
-                    <Input
-                      type={showSecrets ? "text" : "password"}
-                      value={config.client_secret_encrypted}
-                      onChange={(e) => setConfig({ ...config, client_secret_encrypted: e.target.value })}
-                      placeholder="Seu Client Secret"
-                      className="pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowSecrets(!showSecrets)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showSecrets ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Certificado mTLS - PEM (Base64)</Label>
-                <Textarea
-                  value={config.certificate_encrypted || ""}
-                  onChange={(e) => setConfig({ ...config, certificate_encrypted: e.target.value })}
-                  placeholder="Cole aqui o certificado .pem em Base64 (obrigatório para EFI Pay). Converta o .p12 para .pem antes."
-                  rows={3}
-                />
-                <p className="text-xs text-muted-foreground">
-                  A EFI fornece um arquivo .p12. Converta para .pem com: openssl pkcs12 -in certificado.p12 -out certificado.pem -nodes
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Chave Privada do Certificado - PEM (Base64, opcional)</Label>
-                <Textarea
-                  value={config.certificate_key_encrypted || ""}
-                  onChange={(e) => setConfig({ ...config, certificate_key_encrypted: e.target.value })}
-                  placeholder="Se o .pem acima contiver cert+key, deixe em branco. Caso contrário, cole a chave privada aqui."
-                  rows={3}
-                />
-                <p className="text-xs text-muted-foreground">
-                  Opcional se o PEM acima já incluir o certificado e a chave privada juntos.
-                </p>
+                )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Credentials - Dynamic per provider */}
+          {providerConfig && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Key className="h-5 w-5 text-primary" />
+                  {providerConfig.credentialsTitle}
+                </CardTitle>
+                <CardDescription>
+                  {providerConfig.credentialsDescription}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className={`grid gap-4 ${providerConfig.showClientSecret ? 'md:grid-cols-2' : 'md:grid-cols-1'}`}>
+                  <div className="space-y-2">
+                    <Label>{providerConfig.clientIdLabel}</Label>
+                    <Input
+                      value={config.client_id}
+                      onChange={(e) => setConfig({ ...config, client_id: e.target.value })}
+                      placeholder={providerConfig.clientIdPlaceholder}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {providerConfig.clientIdHelp}
+                    </p>
+                  </div>
+
+                  {providerConfig.showClientSecret && (
+                    <div className="space-y-2">
+                      <Label>{providerConfig.clientSecretLabel}</Label>
+                      <div className="relative">
+                        <Input
+                          type={showSecrets ? "text" : "password"}
+                          value={config.client_secret_encrypted}
+                          onChange={(e) => setConfig({ ...config, client_secret_encrypted: e.target.value })}
+                          placeholder="Seu Client Secret"
+                          className="pr-10"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowSecrets(!showSecrets)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                        >
+                          {showSecrets ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      {providerConfig.clientSecretHelp && (
+                        <p className="text-xs text-muted-foreground">
+                          {providerConfig.clientSecretHelp}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* mTLS Certificate - Only for EFI */}
+                {providerConfig.showCertificate && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Certificado mTLS - PEM (Base64)</Label>
+                      <Textarea
+                        value={config.certificate_encrypted || ""}
+                        onChange={(e) => setConfig({ ...config, certificate_encrypted: e.target.value })}
+                        placeholder="Cole aqui o certificado .pem em Base64 (obrigatório para EFI Pay). Converta o .p12 para .pem antes."
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        A EFI fornece um arquivo .p12. Converta para .pem com: openssl pkcs12 -in certificado.p12 -out certificado.pem -nodes
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Chave Privada do Certificado - PEM (Base64, opcional)</Label>
+                      <Textarea
+                        value={config.certificate_key_encrypted || ""}
+                        onChange={(e) => setConfig({ ...config, certificate_key_encrypted: e.target.value })}
+                        placeholder="Se o .pem acima contiver cert+key, deixe em branco."
+                        rows={3}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Opcional se o PEM acima já incluir o certificado e a chave privada juntos.
+                      </p>
+                    </div>
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Pix Key */}
           <Card>
@@ -522,6 +616,11 @@ export default function PixIntegration() {
                     Copiar
                   </Button>
                 </div>
+                {config.provider === 'woovi' && (
+                  <p className="text-xs text-muted-foreground">
+                    No painel Woovi/OpenPix, vá em Configurações &gt; Webhooks e adicione esta URL.
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

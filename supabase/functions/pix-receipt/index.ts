@@ -27,7 +27,6 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    
     if (authError || !claims?.claims) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
@@ -50,10 +49,9 @@ Deno.serve(async (req) => {
     if (transaction_id && (!end_to_end_id || !company_id)) {
       const { data: txData } = await supabase
         .from('transactions')
-        .select('company_id, pix_e2eid')
+        .select('company_id, pix_e2eid, pix_provider_response, amount, description, paid_at, pix_key')
         .eq('id', transaction_id)
         .single();
-
       if (txData) {
         company_id = company_id || txData.company_id;
         end_to_end_id = end_to_end_id || txData.pix_e2eid;
@@ -67,21 +65,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-receipt] Getting EFI receipt for e2eId: ${end_to_end_id}`);
-
-    const { data: config, error: configError } = await supabase
+    const { data: config } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
       .single();
 
-    if (configError || !config) {
+    if (!config) {
       return new Response(
         JSON.stringify({ error: 'Pix configuration not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const provider = config.provider;
 
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
@@ -91,58 +89,99 @@ Deno.serve(async (req) => {
 
     if (!authResponse.ok) {
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
+        JSON.stringify({ error: 'Failed to authenticate with provider' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
 
-    let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted) {
-      try {
-        const certPem = atob(config.certificate_encrypted);
-        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
-        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-      } catch (e) {
-        console.error('[pix-receipt] Failed to create mTLS client:', e);
-      }
-    }
+    // ========== WOOVI ==========
+    // Woovi doesn't have a receipt/PDF endpoint; return transaction data
+    if (provider === 'woovi') {
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('pix_e2eid', end_to_end_id)
+        .single();
 
-    // EFI receipt endpoint
-    const receiptUrl = `${config.base_url}/v2/gn/receipts/${end_to_end_id}`;
-    const fetchOptions: any = {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      },
-    };
-    if (httpClient) fetchOptions.client = httpClient;
-
-    const receiptResponse = await fetch(receiptUrl, fetchOptions);
-    httpClient?.close();
-
-    if (!receiptResponse.ok) {
-      const errorText = await receiptResponse.text();
-      console.error('[pix-receipt] EFI error:', errorText);
       return new Response(
-        JSON.stringify({ error: 'Failed to get receipt', provider_error: errorText, status: receiptResponse.status }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: true,
+          end_to_end_id,
+          provider: 'woovi',
+          receipt_type: 'json',
+          transaction: txData,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const receiptData = await receiptResponse.json();
-    console.log('[pix-receipt] Receipt received');
+    // ========== ONZ ==========
+    if (provider === 'onz') {
+      const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
+      const resp = await fetch(receiptUrl, {
+        headers: { 'Authorization': `Bearer ${access_token}` },
+      });
+      const data = await resp.json();
+      return new Response(
+        JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========== TRANSFEERA ==========
+    if (provider === 'transfeera') {
+      const receiptUrl = `${config.base_url}/pix/transfer/${end_to_end_id}/receipt`;
+      const resp = await fetch(receiptUrl, {
+        headers: { 'Authorization': `Bearer ${access_token}` },
+      });
+      const data = await resp.json();
+      return new Response(
+        JSON.stringify({ success: true, end_to_end_id, provider: 'transfeera', pdf_base64: data.pdf || data.receipt, content_type: 'application/pdf' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========== EFI ==========
+    if (provider === 'efi') {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
+      const receiptUrl = `${config.base_url}/v2/gn/receipts/${end_to_end_id}`;
+      const fetchOptions: any = {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const resp = await fetch(receiptUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        return new Response(
+          JSON.stringify({ error: 'Failed to get receipt', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const receiptData = await resp.json();
+      return new Response(
+        JSON.stringify({ success: true, end_to_end_id, provider: 'efi', pdf_base64: receiptData.pdf || receiptData.data?.pdf, content_type: 'application/pdf' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        end_to_end_id,
-        pdf_base64: receiptData.pdf || receiptData.data?.pdf,
-        content_type: 'application/pdf',
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      JSON.stringify({ error: `Provider '${provider}' não suportado` }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {

@@ -17,21 +17,12 @@ interface PixConfig {
   certificate_key_encrypted?: string;
 }
 
-// EFI Token Response
-interface EFITokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  scope: string;
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
-    // Authenticate user
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(
@@ -56,7 +47,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get request body
     const { company_id } = await req.json();
 
     if (!company_id) {
@@ -68,29 +58,7 @@ Deno.serve(async (req) => {
 
     console.log(`[pix-auth] Getting token for company: ${company_id}`);
 
-    // Check for valid cached token
-    const { data: cachedToken } = await supabase
-      .from('pix_tokens')
-      .select('*')
-      .eq('company_id', company_id)
-      .gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (cachedToken) {
-      console.log('[pix-auth] Using cached token');
-      return new Response(
-        JSON.stringify({
-          access_token: cachedToken.access_token,
-          token_type: cachedToken.token_type,
-          cached: true
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Get Pix config for this company
+    // Get Pix config
     const { data: config, error: configError } = await supabase
       .from('pix_configs')
       .select('*')
@@ -107,125 +75,208 @@ Deno.serve(async (req) => {
     }
 
     const pixConfig = config as PixConfig;
+    const provider = pixConfig.provider;
 
-    // Validate mTLS certificates
-    if (!pixConfig.certificate_encrypted) {
-      console.error('[pix-auth] mTLS certificate missing');
+    console.log(`[pix-auth] Provider: ${provider}`);
+
+    // ========== WOOVI (OpenPix) ==========
+    // No OAuth needed - uses AppID directly
+    if (provider === 'woovi') {
+      console.log('[pix-auth] Woovi: returning AppID as access_token');
       return new Response(
-        JSON.stringify({ error: 'Certificado mTLS é obrigatório para a EFI Pay. Configure o certificado PEM em Base64 nas configurações.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          access_token: pixConfig.client_id, // AppID
+          token_type: 'AppID',
+          provider: 'woovi',
+          cached: true,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Decode certificate from Base64 to PEM
-    let certPem: string;
-    let keyPem: string;
-    try {
-      certPem = atob(pixConfig.certificate_encrypted);
-      // EFI can use combined PEM (cert+key in one file) or separate files
-      keyPem = pixConfig.certificate_key_encrypted 
-        ? atob(pixConfig.certificate_key_encrypted) 
-        : certPem; // If no separate key, assume combined PEM
-    } catch (e) {
-      console.error('[pix-auth] Failed to decode certificate:', e);
+    // For OAuth-based providers, check cached token first
+    const { data: cachedToken } = await supabase
+      .from('pix_tokens')
+      .select('*')
+      .eq('company_id', company_id)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (cachedToken) {
+      console.log('[pix-auth] Using cached token');
       return new Response(
-        JSON.stringify({ error: 'Certificado mTLS inválido. Verifique se está corretamente codificado em Base64.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          access_token: cachedToken.access_token,
+          token_type: cachedToken.token_type,
+          provider,
+          cached: true,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Create HTTP client with mTLS
-    const httpClient = Deno.createHttpClient({
-      cert: certPem,
-      key: keyPem,
-    });
+    let accessToken: string;
+    let tokenType = 'Bearer';
+    let expiresInSeconds = 3600;
 
-    // Request new token from EFI API using Basic Auth
-    console.log(`[pix-auth] Requesting new token from EFI Pay (Basic Auth + mTLS)`);
-
-    const tokenUrl = `${pixConfig.base_url}/oauth/token`;
-    
-    // EFI uses Basic Auth: base64(client_id:client_secret)
-    const basicAuth = btoa(`${pixConfig.client_id}:${pixConfig.client_secret_encrypted}`);
-
-    let tokenResponse: Response;
-    try {
-      tokenResponse = await fetch(tokenUrl, {
+    // ========== ONZ Infopago ==========
+    if (provider === 'onz') {
+      console.log('[pix-auth] ONZ: requesting token via OAuth2 JSON body');
+      const tokenUrl = `${pixConfig.base_url}/oauth/token`;
+      const tokenResponse = await fetch(tokenUrl, {
         method: 'POST',
-        headers: {
-          'Authorization': `Basic ${basicAuth}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clientId: pixConfig.client_id,
+          clientSecret: pixConfig.client_secret_encrypted,
+          grantType: 'client_credentials',
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        console.error('[pix-auth] ONZ token request failed:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao autenticar com ONZ Infopago', details: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const tokenData = await tokenResponse.json();
+      accessToken = tokenData.accessToken || tokenData.access_token;
+      // ONZ returns expiresAt as unix timestamp
+      if (tokenData.expiresAt) {
+        expiresInSeconds = Math.floor((tokenData.expiresAt * 1000 - Date.now()) / 1000);
+      } else if (tokenData.expires_in) {
+        expiresInSeconds = tokenData.expires_in;
+      }
+    }
+    // ========== TRANSFEERA ==========
+    else if (provider === 'transfeera') {
+      console.log('[pix-auth] Transfeera: requesting token via OAuth2 client_credentials');
+      const authUrl = pixConfig.is_sandbox
+        ? 'https://login-api-sandbox.transfeera.com/authorization'
+        : 'https://login-api.transfeera.com/authorization';
+
+      const tokenResponse = await fetch(authUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           grant_type: 'client_credentials',
+          client_id: pixConfig.client_id,
+          client_secret: pixConfig.client_secret_encrypted,
         }),
-        // @ts-ignore - Deno specific option
-        client: httpClient,
       });
-    } catch (fetchError) {
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        console.error('[pix-auth] Transfeera token request failed:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao autenticar com Transfeera', details: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const tokenData = await tokenResponse.json();
+      accessToken = tokenData.access_token;
+      expiresInSeconds = tokenData.expires_in || 3600;
+    }
+    // ========== EFI Pay ==========
+    else if (provider === 'efi') {
+      // Validate mTLS certificates
+      if (!pixConfig.certificate_encrypted) {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS é obrigatório para a EFI Pay. Configure o certificado PEM em Base64 nas configurações.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      let certPem: string;
+      let keyPem: string;
+      try {
+        certPem = atob(pixConfig.certificate_encrypted);
+        keyPem = pixConfig.certificate_key_encrypted
+          ? atob(pixConfig.certificate_key_encrypted)
+          : certPem;
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS inválido. Verifique se está corretamente codificado em Base64.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+      const tokenUrl = `${pixConfig.base_url}/oauth/token`;
+      const basicAuth = btoa(`${pixConfig.client_id}:${pixConfig.client_secret_encrypted}`);
+
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Basic ${basicAuth}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ grant_type: 'client_credentials' }),
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+      } catch (fetchError) {
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão mTLS com a EFI Pay.', details: fetchError.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha ao autenticar com a EFI Pay', details: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       httpClient.close();
-      console.error('[pix-auth] mTLS fetch failed:', fetchError);
+      const tokenData = await tokenResponse.json();
+      accessToken = tokenData.access_token;
+      expiresInSeconds = tokenData.expires_in || 3600;
+    }
+    // ========== UNKNOWN PROVIDER ==========
+    else {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão mTLS com a EFI Pay. Verifique o certificado.', details: fetchError.message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: `Provider '${provider}' não suportado para autenticação automática` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
-      httpClient.close();
-      console.error('[pix-auth] EFI token request failed:', errorText);
-      return new Response(
-        JSON.stringify({ 
-          error: 'Falha ao autenticar com a EFI Pay',
-          details: errorText,
-          hint: 'Verifique Client ID, Client Secret e certificado mTLS no painel EFI Pay.'
-        }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Cache token
+    const expiresAt = new Date(Date.now() + (expiresInSeconds - 60) * 1000);
 
-    httpClient.close();
-
-    const tokenData: EFITokenResponse = await tokenResponse.json();
-    console.log('[pix-auth] Token received, expires_in:', tokenData.expires_in);
-
-    // EFI returns expires_in in seconds. Calculate expiration with safety margin.
-    const expiresAt = new Date(Date.now() + (tokenData.expires_in - 60) * 1000);
-
-    // Store token in database using service role for insert
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Delete old tokens for this company
-    await supabaseAdmin
-      .from('pix_tokens')
-      .delete()
-      .eq('company_id', company_id);
+    await supabaseAdmin.from('pix_tokens').delete().eq('company_id', company_id);
 
-    // Insert new token
-    const { error: insertError } = await supabaseAdmin
-      .from('pix_tokens')
-      .insert({
-        company_id,
-        access_token: tokenData.access_token,
-        token_type: tokenData.token_type || 'Bearer',
-        expires_at: expiresAt.toISOString()
-      });
-
-    if (insertError) {
-      console.error('[pix-auth] Failed to cache token:', insertError);
-    }
+    await supabaseAdmin.from('pix_tokens').insert({
+      company_id,
+      access_token: accessToken!,
+      token_type: tokenType,
+      expires_at: expiresAt.toISOString(),
+    });
 
     return new Response(
       JSON.stringify({
-        access_token: tokenData.access_token,
-        token_type: tokenData.token_type || 'Bearer',
+        access_token: accessToken!,
+        token_type: tokenType,
         expires_at: expiresAt.toISOString(),
-        scope: tokenData.scope,
-        cached: false
+        provider,
+        cached: false,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

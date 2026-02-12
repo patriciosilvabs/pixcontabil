@@ -5,13 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface PayQrcRequest {
-  company_id: string;
-  qr_code: string;
-  valor?: number;
-  descricao?: string;
-}
-
 function generateIdEnvio(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
@@ -43,7 +36,6 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    
     if (authError || !claims?.claims) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
@@ -52,8 +44,7 @@ Deno.serve(async (req) => {
     }
 
     const userId = claims.claims.sub as string;
-
-    const body: PayQrcRequest = await req.json();
+    const body = await req.json();
     const { company_id, qr_code, valor, descricao } = body;
 
     if (!company_id || !qr_code) {
@@ -63,174 +54,86 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-pay-qrc] Initiating EFI QR Code payment for company: ${company_id}`);
-
-    const { data: config, error: configError } = await supabase
+    const { data: config } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
       .single();
 
-    if (configError || !config) {
+    if (!config) {
       return new Response(
         JSON.stringify({ error: 'Pix configuration not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+    const provider = config.provider;
+
+    // First decode QR code info
+    const qrcInfoResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-qrc-info`, {
       method: 'POST',
       headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id }),
+      body: JSON.stringify({ company_id, qr_code }),
     });
 
-    if (!authResponse.ok) {
+    if (!qrcInfoResponse.ok) {
+      const errorText = await qrcInfoResponse.text();
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
+        JSON.stringify({ error: 'Failed to decode QR Code', details: errorText }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { access_token } = await authResponse.json();
+    const qrcInfo = await qrcInfoResponse.json();
+    const paymentAmount = valor || qrcInfo.amount || 0;
+    const destKey = qrcInfo.pix_key;
 
-    let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted) {
-      try {
-        const certPem = atob(config.certificate_encrypted);
-        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
-        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-      } catch (e) {
-        console.error('[pix-pay-qrc] Failed to create mTLS client:', e);
-      }
-    }
-
-    // Step 1: Decode QR code to get pix key and amount
-    const decodeUrl = `${config.base_url}/v2/gn/qrcode/decode`;
-    const decodeFetchOptions: any = {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ qrcode: qr_code }),
-    };
-    if (httpClient) decodeFetchOptions.client = httpClient;
-
-    const decodeResponse = await fetch(decodeUrl, decodeFetchOptions);
-
-    if (!decodeResponse.ok) {
-      const errorText = await decodeResponse.text();
-      httpClient?.close();
-      console.error('[pix-pay-qrc] Failed to decode QR:', errorText);
-      return new Response(
-        JSON.stringify({ error: 'Failed to decode QR Code', provider_error: errorText }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const qrcData = await decodeResponse.json();
-    console.log('[pix-pay-qrc] QR decoded:', JSON.stringify(qrcData));
-
-    // Step 2: Pay via PUT /v2/gn/pix/:idEnvio using decoded info
-    const idEnvio = generateIdEnvio();
-    const paymentAmount = valor || (qrcData.valor ? parseFloat(qrcData.valor) : 0);
-    const destKey = qrcData.chave;
-
-    if (!destKey) {
-      httpClient?.close();
+    if (!destKey && provider !== 'woovi') {
       return new Response(
         JSON.stringify({ error: 'Could not extract Pix key from QR Code' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const paymentPayload = {
-      valor: paymentAmount.toFixed(2),
-      pagador: {
-        chave: config.pix_key,
-        infoPagador: descricao || 'Pagamento via QR Code',
-      },
-      favorecido: {
-        chave: destKey,
-      },
-    };
-
-    const payUrl = `${config.base_url}/v2/gn/pix/${idEnvio}`;
-    const payFetchOptions: any = {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(paymentPayload),
-    };
-    if (httpClient) payFetchOptions.client = httpClient;
-
-    const paymentResponse = await fetch(payUrl, payFetchOptions);
-    httpClient?.close();
-
-    if (!paymentResponse.ok) {
-      const errorText = await paymentResponse.text();
-      console.error('[pix-pay-qrc] EFI payment error:', errorText);
-      return new Response(
-        JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const paymentData = await paymentResponse.json();
-    console.log('[pix-pay-qrc] Payment initiated:', JSON.stringify(paymentData));
-
-    // Save transaction
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
-    const { data: newTransaction, error: insertError } = await supabaseAdmin
-      .from('transactions')
-      .insert({
+    // Now pay via pix-pay-dict (which handles multi-provider)
+    const payResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
+      method: 'POST',
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         company_id,
-        created_by: userId,
-        amount: paymentAmount,
-        status: 'pending',
-        pix_type: 'qrcode' as const,
-        pix_copia_cola: qr_code,
-        pix_key: destKey,
-        description: descricao,
-        pix_e2eid: paymentData.e2eId || paymentData.endToEndId || idEnvio,
-        external_id: idEnvio,
-        pix_provider_response: paymentData,
-      })
-      .select('id')
-      .single();
+        pix_key: destKey || qr_code,
+        valor: paymentAmount,
+        descricao: descricao || 'Pagamento via QR Code',
+      }),
+    });
 
-    if (insertError) {
-      console.error('[pix-pay-qrc] Failed to create transaction:', insertError);
+    const payResult = await payResponse.json();
+
+    if (!payResponse.ok) {
       return new Response(
-        JSON.stringify({ error: 'Failed to save transaction' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify(payResult),
+        { status: payResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    await supabaseAdmin.from('audit_logs').insert({
-      user_id: userId,
-      company_id,
-      entity_type: 'transaction',
-      entity_id: newTransaction.id,
-      action: 'pix_qrc_payment_initiated',
-      new_data: { idEnvio, e2eId: paymentData.e2eId, valor: paymentAmount, status: 'pending' },
-    });
+    // Update transaction to mark as QR code type
+    if (payResult.transaction_id) {
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      );
+      await supabaseAdmin.from('transactions').update({
+        pix_type: 'qrcode',
+        pix_copia_cola: qr_code,
+      }).eq('id', payResult.transaction_id);
+    }
 
     return new Response(
       JSON.stringify({
-        success: true,
-        transaction_id: newTransaction.id,
-        end_to_end_id: paymentData.e2eId || paymentData.endToEndId || idEnvio,
-        id_envio: idEnvio,
+        ...payResult,
         amount: paymentAmount,
-        status: paymentData.status || 'PROCESSING',
+        qr_info: qrcInfo,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

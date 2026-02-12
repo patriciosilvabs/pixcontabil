@@ -5,12 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-interface RefundRequest {
-  transaction_id: string;
-  valor?: number;
-  motivo?: string;
-}
-
 function generateRefundId(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
@@ -42,7 +36,6 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    
     if (authError || !claims?.claims) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
@@ -51,8 +44,7 @@ Deno.serve(async (req) => {
     }
 
     const userId = claims.claims.sub as string;
-
-    const body: RefundRequest = await req.json();
+    const body = await req.json();
     const { transaction_id, valor, motivo } = body;
 
     if (!transaction_id) {
@@ -62,13 +54,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: transaction, error: txError } = await supabase
+    const { data: transaction } = await supabase
       .from('transactions')
       .select('*')
       .eq('id', transaction_id)
       .single();
 
-    if (txError || !transaction) {
+    if (!transaction) {
       return new Response(
         JSON.stringify({ error: 'Transaction not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -90,11 +82,7 @@ Deno.serve(async (req) => {
     }
 
     const refundValue = valor || transaction.amount;
-
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     const { data: existingRefunds } = await supabaseAdmin
       .from('pix_refunds')
@@ -107,24 +95,26 @@ Deno.serve(async (req) => {
 
     if (refundValue > availableForRefund) {
       return new Response(
-        JSON.stringify({ error: 'Refund value exceeds available amount', available: availableForRefund, requested: refundValue }),
+        JSON.stringify({ error: 'Refund value exceeds available amount', available: availableForRefund }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const { data: config, error: configError } = await supabase
+    const { data: config } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', transaction.company_id)
       .eq('is_active', true)
       .single();
 
-    if (configError || !config) {
+    if (!config) {
       return new Response(
         JSON.stringify({ error: 'Pix configuration not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const provider = config.provider;
 
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
@@ -134,52 +124,111 @@ Deno.serve(async (req) => {
 
     if (!authResponse.ok) {
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
+        JSON.stringify({ error: 'Failed to authenticate with provider' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
-
     const refundId = generateRefundId();
+    let refundData: any;
 
-    // EFI endpoint: PUT /v2/pix/:e2eId/devolucao/:id (BCB standard)
-    const refundUrl = `${config.base_url}/v2/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-
-    let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted) {
-      try {
-        const certPem = atob(config.certificate_encrypted);
-        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
-        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-      } catch (e) {
-        console.error('[pix-refund] Failed to create mTLS client:', e);
+    // ========== WOOVI ==========
+    if (provider === 'woovi') {
+      const refundUrl = `${config.base_url}/api/v1/charge/${transaction.pix_e2eid}/refund`;
+      const resp = await fetch(refundUrl, {
+        method: 'POST',
+        headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          correlationID: refundId,
+          value: Math.round(refundValue * 100),
+          comment: motivo || 'Devolução',
+        }),
+      });
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+      refundData = await resp.json();
     }
+    // ========== ONZ ==========
+    else if (provider === 'onz') {
+      const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
+      const resp = await fetch(refundUrl, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
+      });
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      refundData = await resp.json();
+    }
+    // ========== TRANSFEERA ==========
+    else if (provider === 'transfeera') {
+      const refundUrl = `${config.base_url}/pix/refund`;
+      const resp = await fetch(refundUrl, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          end_to_end_id: transaction.pix_e2eid,
+          value: refundValue,
+          description: motivo || 'Devolução',
+        }),
+      });
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      refundData = await resp.json();
+    }
+    // ========== EFI ==========
+    else if (provider === 'efi') {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
 
-    const fetchOptions: any = {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ valor: refundValue.toFixed(2) }),
-    };
-    if (httpClient) fetchOptions.client = httpClient;
+      const refundUrl = `${config.base_url}/v2/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
+      const fetchOptions: any = {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
+      };
+      if (httpClient) fetchOptions.client = httpClient;
 
-    const refundResponse = await fetch(refundUrl, fetchOptions);
-    httpClient?.close();
+      const resp = await fetch(refundUrl, fetchOptions);
+      httpClient?.close();
 
-    if (!refundResponse.ok) {
-      const errorText = await refundResponse.text();
-      console.error('[pix-refund] EFI error:', errorText);
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      refundData = await resp.json();
+    } else {
       return new Response(
-        JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: `Provider '${provider}' não suportado` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const refundData = await refundResponse.json();
     console.log('[pix-refund] Refund response:', JSON.stringify(refundData));
 
     const { data: savedRefund } = await supabaseAdmin
@@ -203,7 +252,7 @@ Deno.serve(async (req) => {
       entity_type: 'pix_refund',
       entity_id: savedRefund?.id,
       action: 'pix_refund_requested',
-      new_data: { refund_id: refundId, valor: refundValue, status: refundData.status },
+      new_data: { provider, refund_id: refundId, valor: refundValue, status: refundData.status },
     });
 
     return new Response(
@@ -213,7 +262,6 @@ Deno.serve(async (req) => {
         status: refundData.status,
         valor: refundValue,
         rtrId: refundData.rtrId,
-        horario: refundData.horario,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
