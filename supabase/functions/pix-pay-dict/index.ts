@@ -170,14 +170,23 @@ Deno.serve(async (req) => {
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
       externalId = generateIdEnvio();
-      const payUrl = `${config.base_url}/pix/transfer`;
+      // Transfeera uses POST /batch with a transfers array
+      const payUrl = `${config.base_url}/batch`;
       const transfeeraPayload = {
-        value: valor,
-        pix_key: pix_key,
-        pix_key_type: 'automatic',
-        description: descricao || 'Pagamento Pix',
-        external_id: externalId,
+        transfers: [
+          {
+            value: valor,
+            integration_id: externalId,
+            destination_bank_account: {
+              pix_key_type: 'CHAVE',
+              pix_key: pix_key,
+            },
+            description: descricao || 'Pagamento Pix',
+          },
+        ],
       };
+
+      console.log('[pix-pay-dict] Transfeera payload:', JSON.stringify(transfeeraPayload));
 
       const payResponse = await fetch(payUrl, {
         method: 'POST',
