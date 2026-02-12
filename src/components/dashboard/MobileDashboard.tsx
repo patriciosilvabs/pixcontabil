@@ -4,9 +4,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Eye, EyeOff, QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet } from "lucide-react";
+import { Eye, EyeOff, QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
+import type { RecentTransaction } from "@/hooks/useDashboardData";
 
 interface MobileDashboardProps {
   balanceVisible: boolean;
@@ -15,6 +16,8 @@ interface MobileDashboardProps {
   balanceLoading?: boolean;
   balanceAvailable?: boolean;
   provider?: string | null;
+  recentTransactions?: RecentTransaction[];
+  dataLoading?: boolean;
 }
 
 const quickActions = [
@@ -28,7 +31,7 @@ const quickActions = [
   { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new", color: "text-primary" },
 ];
 
-export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading }: MobileDashboardProps) {
   return (
     <div className="px-4 pb-24 space-y-6">
       {/* Balance Card */}
@@ -87,8 +90,43 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
           </Link>
         </div>
         <Card>
-          <CardContent className="p-6 flex items-center justify-center">
-            <p className="text-sm text-muted-foreground">Nenhum dado encontrado</p>
+          <CardContent className="p-4">
+            {dataLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <div className="flex-1 space-y-1.5">
+                      <Skeleton className="h-3.5 w-28" />
+                      <Skeleton className="h-3 w-20" />
+                    </div>
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                ))}
+              </div>
+            ) : recentTransactions.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-4 text-muted-foreground">
+                <Inbox className="h-8 w-8 mb-1.5" />
+                <p className="text-sm">Nenhuma transação encontrada</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {recentTransactions.map((tx) => (
+                  <div key={tx.id} className="flex items-center gap-3">
+                    <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                      <DollarSign className="h-4 w-4 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{tx.beneficiary}</p>
+                      <p className="text-xs text-muted-foreground">{tx.time}</p>
+                    </div>
+                    <p className="text-sm font-bold font-mono-numbers text-destructive shrink-0">
+                      -{formatCurrency(tx.amount)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
