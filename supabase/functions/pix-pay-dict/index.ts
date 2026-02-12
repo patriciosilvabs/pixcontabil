@@ -12,7 +12,6 @@ interface PayDictRequest {
   descricao?: string;
 }
 
-// Generate idEnvio (alphanumeric, up to 35 chars)
 function generateIdEnvio(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   let result = '';
@@ -20,6 +19,10 @@ function generateIdEnvio(): string {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return result;
+}
+
+function generateCorrelationID(): string {
+  return crypto.randomUUID();
 }
 
 Deno.serve(async (req) => {
@@ -44,7 +47,6 @@ Deno.serve(async (req) => {
 
     const token = authHeader.replace('Bearer ', '');
     const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    
     if (authError || !claims?.claims) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
@@ -53,7 +55,6 @@ Deno.serve(async (req) => {
     }
 
     const userId = claims.claims.sub as string;
-
     const body: PayDictRequest = await req.json();
     const { company_id, pix_key, valor, descricao } = body;
 
@@ -63,8 +64,6 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    console.log(`[pix-pay-dict] Initiating EFI Pix payment to key: ${pix_key}, valor: ${valor}`);
 
     // Get Pix config
     const { data: config, error: configError } = await supabase
@@ -81,13 +80,13 @@ Deno.serve(async (req) => {
       );
     }
 
+    const provider = config.provider;
+    console.log(`[pix-pay-dict] Provider: ${provider}, key: ${pix_key}, valor: ${valor}`);
+
     // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
-      headers: {
-        'Authorization': authHeader,
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id }),
     });
 
@@ -95,96 +94,190 @@ Deno.serve(async (req) => {
       const authErrorText = await authResponse.text();
       console.error('[pix-pay-dict] Auth failed:', authErrorText);
       return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with EFI Pay' }),
+        JSON.stringify({ error: 'Failed to authenticate with provider' }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const { access_token } = await authResponse.json();
 
-    // Generate unique idEnvio
-    const idEnvio = generateIdEnvio();
-    console.log(`[pix-pay-dict] Generated idEnvio: ${idEnvio}`);
+    let paymentData: any;
+    let externalId: string;
 
-    // Build EFI payment payload
-    const paymentPayload = {
-      valor: valor.toFixed(2),
-      pagador: {
-        chave: config.pix_key, // Company's own Pix key
-        infoPagador: descricao ? descricao.substring(0, 140) : 'Pagamento Pix',
-      },
-      favorecido: {
-        chave: pix_key, // Destination Pix key
-      },
-    };
+    // ========== WOOVI ==========
+    if (provider === 'woovi') {
+      externalId = generateCorrelationID();
+      // Woovi Pix Out via subaccount withdraw
+      const payUrl = `${config.base_url}/api/v1/subaccount/withdraw`;
+      const wooviPayload = {
+        value: Math.round(valor * 100), // centavos
+        pixKey: pix_key,
+        comment: descricao || 'Pagamento Pix',
+        correlationID: externalId,
+      };
 
-    console.log('[pix-pay-dict] Sending to EFI:', JSON.stringify(paymentPayload));
+      const payResponse = await fetch(payUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': access_token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(wooviPayload),
+      });
 
-    // Create mTLS HTTP client
-    let httpClient: Deno.HttpClient | undefined;
-    if (config.certificate_encrypted) {
-      try {
-        const certPem = atob(config.certificate_encrypted);
-        const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
-        httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-      } catch (e) {
-        console.error('[pix-pay-dict] Failed to create mTLS client:', e);
+      if (!payResponse.ok) {
+        const errorText = await payResponse.text();
+        console.error('[pix-pay-dict] Woovi error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+
+      paymentData = await payResponse.json();
     }
+    // ========== ONZ ==========
+    else if (provider === 'onz') {
+      externalId = generateIdEnvio();
+      const payUrl = `${config.base_url}/pix/payments/dict`;
+      const onzPayload = {
+        valor: valor.toFixed(2),
+        chaveDestinatario: pix_key,
+        descricao: descricao || 'Pagamento Pix',
+        idExterno: externalId,
+      };
 
-    // EFI endpoint: PUT /v2/gn/pix/:idEnvio
-    const paymentUrl = `${config.base_url}/v2/gn/pix/${idEnvio}`;
-    const fetchOptions: any = {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(paymentPayload),
-    };
-    if (httpClient) fetchOptions.client = httpClient;
+      const payResponse = await fetch(payUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(onzPayload),
+      });
 
-    const paymentResponse = await fetch(paymentUrl, fetchOptions);
-    httpClient?.close();
+      if (!payResponse.ok) {
+        const errorText = await payResponse.text();
+        console.error('[pix-pay-dict] ONZ error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    if (!paymentResponse.ok) {
-      const errorText = await paymentResponse.text();
-      console.error('[pix-pay-dict] EFI error:', errorText);
+      paymentData = await payResponse.json();
+    }
+    // ========== TRANSFEERA ==========
+    else if (provider === 'transfeera') {
+      externalId = generateIdEnvio();
+      const payUrl = `${config.base_url}/pix/transfer`;
+      const transfeeraPayload = {
+        value: valor,
+        pix_key: pix_key,
+        pix_key_type: 'automatic',
+        description: descricao || 'Pagamento Pix',
+        external_id: externalId,
+      };
+
+      const payResponse = await fetch(payUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(transfeeraPayload),
+      });
+
+      if (!payResponse.ok) {
+        const errorText = await payResponse.text();
+        console.error('[pix-pay-dict] Transfeera error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = await payResponse.json();
+    }
+    // ========== EFI ==========
+    else if (provider === 'efi') {
+      externalId = generateIdEnvio();
+
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (e) {
+          console.error('[pix-pay-dict] Failed to create mTLS client:', e);
+        }
+      }
+
+      const paymentPayload = {
+        valor: valor.toFixed(2),
+        pagador: {
+          chave: config.pix_key,
+          infoPagador: descricao ? descricao.substring(0, 140) : 'Pagamento Pix',
+        },
+        favorecido: { chave: pix_key },
+      };
+
+      const paymentUrl = `${config.base_url}/v2/gn/pix/${externalId}`;
+      const fetchOptions: any = {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(paymentPayload),
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const paymentResponse = await fetch(paymentUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!paymentResponse.ok) {
+        const errorText = await paymentResponse.text();
+        console.error('[pix-pay-dict] EFI error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = await paymentResponse.json();
+    } else {
       return new Response(
-        JSON.stringify({ 
-          error: 'Failed to initiate Pix payment',
-          provider_error: errorText,
-          status: paymentResponse.status
-        }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: `Provider '${provider}' não suportado` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const paymentData = await paymentResponse.json();
     console.log('[pix-pay-dict] Payment initiated:', JSON.stringify(paymentData));
 
-    // Save transaction in database
+    // Save transaction
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const transactionData = {
-      company_id,
-      created_by: userId,
-      amount: valor,
-      status: 'pending',
-      pix_type: 'key' as const,
-      pix_key: pix_key,
-      description: descricao,
-      pix_e2eid: paymentData.e2eId || paymentData.endToEndId || idEnvio,
-      external_id: idEnvio,
-      pix_provider_response: paymentData,
-    };
+    const e2eId = paymentData.e2eId || paymentData.endToEndId || paymentData.correlationID || externalId!;
 
     const { data: newTransaction, error: insertError } = await supabaseAdmin
       .from('transactions')
-      .insert(transactionData)
+      .insert({
+        company_id,
+        created_by: userId,
+        amount: valor,
+        status: 'pending',
+        pix_type: 'key' as const,
+        pix_key,
+        description: descricao,
+        pix_e2eid: e2eId,
+        external_id: externalId!,
+        pix_provider_response: paymentData,
+      })
       .select('id')
       .single();
 
@@ -196,28 +289,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Audit log
     await supabaseAdmin.from('audit_logs').insert({
       user_id: userId,
       company_id,
       entity_type: 'transaction',
       entity_id: newTransaction.id,
       action: 'pix_payment_initiated',
-      new_data: { 
-        idEnvio,
-        e2eId: paymentData.e2eId,
-        valor, 
-        pix_key,
-        status: 'pending' 
-      },
+      new_data: { provider, externalId: externalId!, e2eId, valor, pix_key, status: 'pending' },
     });
 
     return new Response(
       JSON.stringify({
         success: true,
         transaction_id: newTransaction.id,
-        end_to_end_id: paymentData.e2eId || paymentData.endToEndId || idEnvio,
-        id_envio: idEnvio,
+        end_to_end_id: e2eId,
+        id_envio: externalId!,
         status: paymentData.status || 'PROCESSING',
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
