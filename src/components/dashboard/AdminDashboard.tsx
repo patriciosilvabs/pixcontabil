@@ -6,6 +6,8 @@ import { formatCurrency } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileDashboard } from "@/components/dashboard/MobileDashboard";
+import { usePixBalance } from "@/hooks/usePixBalance";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   DollarSign,
   TrendingDown,
@@ -68,12 +70,17 @@ export function AdminDashboard() {
   const { profile, currentCompany } = useAuth();
   const isMobile = useIsMobile();
   const [balanceVisible, setBalanceVisible] = React.useState(true);
+  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = usePixBalance();
 
   if (isMobile) {
     return (
       <MobileDashboard
         balanceVisible={balanceVisible}
         onToggleBalance={() => setBalanceVisible((v) => !v)}
+        balance={balance}
+        balanceLoading={balanceLoading}
+        balanceAvailable={balanceAvailable}
+        provider={provider}
       />
     );
   }
@@ -136,11 +143,17 @@ export function AdminDashboard() {
                 Saldo atual
               </span>
             </div>
-            <p className="text-3xl font-bold font-mono-numbers">
-              {formatCurrency(mockSummary.totalBalance)}
-            </p>
+            {balanceLoading ? (
+              <Skeleton className="h-9 w-40 bg-white/20" />
+            ) : balanceAvailable ? (
+              <p className="text-3xl font-bold font-mono-numbers">
+                {formatCurrency(balance ?? 0)}
+              </p>
+            ) : (
+              <p className="text-xl font-bold">Indisponível</p>
+            )}
             <p className="text-white/70 text-sm mt-1">
-              Atualizado em tempo real
+              {provider ? `Provedor: ${provider}` : 'Atualizado em tempo real'}
             </p>
           </CardContent>
         </Card>

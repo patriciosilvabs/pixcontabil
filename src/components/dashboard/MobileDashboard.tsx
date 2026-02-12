@@ -3,12 +3,18 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Eye, EyeOff, QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 
 interface MobileDashboardProps {
   balanceVisible: boolean;
   onToggleBalance: () => void;
+  balance?: number | null;
+  balanceLoading?: boolean;
+  balanceAvailable?: boolean;
+  provider?: string | null;
 }
 
 const quickActions = [
@@ -22,7 +28,7 @@ const quickActions = [
   { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new", color: "text-primary" },
 ];
 
-export function MobileDashboard({ balanceVisible, onToggleBalance }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider }: MobileDashboardProps) {
   return (
     <div className="px-4 pb-24 space-y-6">
       {/* Balance Card */}
@@ -36,9 +42,20 @@ export function MobileDashboard({ balanceVisible, onToggleBalance }: MobileDashb
               {balanceVisible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
             </button>
           </div>
-          <p className="text-3xl font-bold font-mono-numbers tracking-tight">
-            {balanceVisible ? "R$ 0,00" : "••••••"}
-          </p>
+          {balanceLoading ? (
+            <Skeleton className="h-9 w-32" />
+          ) : (
+            <p className="text-3xl font-bold font-mono-numbers tracking-tight">
+              {balanceVisible
+                ? balanceAvailable
+                  ? formatCurrency(balance ?? 0)
+                  : "Indisponível"
+                : "••••••"}
+            </p>
+          )}
+          {provider && (
+            <p className="text-xs text-muted-foreground mt-1">Provedor: {provider}</p>
+          )}
           <Progress value={0} className="mt-4 h-1.5 [&>div]:bg-gradient-bank-header" />
         </CardContent>
       </Card>
