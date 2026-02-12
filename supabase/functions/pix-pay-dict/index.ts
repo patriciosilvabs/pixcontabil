@@ -170,7 +170,22 @@ Deno.serve(async (req) => {
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
       externalId = generateIdEnvio();
-      // Transfeera uses POST /batch with a transfers array
+
+      // Auto-detect pix_key_type for Transfeera (CPF, CNPJ, EMAIL, PHONE, EVP)
+      function detectPixKeyType(key: string): string {
+        const cleaned = key.replace(/[.\-\/\s\(\)]/g, '');
+        if (/^[0-9]{11}$/.test(cleaned)) return 'CPF';
+        if (/^[0-9]{14}$/.test(cleaned)) return 'CNPJ';
+        if (/^.+@.+\..+$/.test(key)) return 'EMAIL';
+        if (/^\+?[0-9]{10,13}$/.test(cleaned)) return 'PHONE';
+        // UUID format = EVP (random key)
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return 'EVP';
+        return 'EVP';
+      }
+
+      const detectedKeyType = detectPixKeyType(pix_key);
+      console.log(`[pix-pay-dict] Transfeera detected key type: ${detectedKeyType} for key: ${pix_key}`);
+
       const payUrl = `${config.base_url}/batch`;
       const transfeeraPayload = {
         transfers: [
@@ -178,7 +193,7 @@ Deno.serve(async (req) => {
             value: valor,
             integration_id: externalId,
             destination_bank_account: {
-              pix_key_type: 'CHAVE',
+              pix_key_type: detectedKeyType,
               pix_key: pix_key,
             },
             description: descricao || 'Pagamento Pix',
