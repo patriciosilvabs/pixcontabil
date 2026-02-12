@@ -1,71 +1,70 @@
 
-# Consulta de Saldo do Provedor Pix
+# Substituir Dados Fictícios por Dados Reais no Dashboard
 
-## Resumo
-Criar uma Edge Function `pix-balance` que consulta o saldo da conta no provedor Pix configurado, e exibir esse saldo no Dashboard (substituindo o valor mock atual).
+## Problema
+O card de saldo ja esta conectado ao provedor real (mostrando "Indisponivel" para Transfeera). Porem, os demais cards e secoes do dashboard ainda exibem dados mock hardcoded:
+- Card "Hoje": R$ 73.980,00 (ficticio)
+- Card "Custos": R$ 45.230,00 (ficticio)
+- Card "Despesas": R$ 28.750,00 (ficticio)
+- Grafico de categorias: dados fixos
+- Transacoes recentes: 3 transacoes ficticias
+- Alerta de comprovantes pendentes: "3 pendentes" (ficticio)
 
-## Endpoints por Provedor
+O banco de dados possui as tabelas `transactions`, `categories` e `receipts`, mas atualmente com 0 registros.
 
-| Provedor | Endpoint | Resposta |
-|----------|----------|----------|
-| Woovi (OpenPix) | `GET /api/v1/subaccount/{pixKey}` | `{ SubAccount: { balance: 100 } }` (centavos) |
-| ONZ Infopago | `GET /api/v2/accounts/balances/` | Retorna saldo disponivel |
-| Transfeera | Sem endpoint publico de saldo na API | Sera retornado como "indisponivel" |
-| EFI Pay | `GET /v2/gn/saldo/` | `{ saldo: "100.00" }` |
+## Solucao
 
-## Arquivos a criar/modificar
+Criar um hook `useDashboardData` que busca dados reais das tabelas `transactions`, `categories` e `receipts`, e substituir todos os dados mock no `AdminDashboard`.
 
-### 1. Nova Edge Function: `supabase/functions/pix-balance/index.ts`
-- Recebe `company_id` no body
-- Busca `pix_configs` para obter o provedor e credenciais
-- Chama `pix-auth` internamente (via Supabase Functions) para obter o token
-- Faz dispatch por provedor:
-  - **Woovi**: `GET {base_url}/api/v1/subaccount/{pix_key}` com header `Authorization: {appID}` e retorna `balance / 100` (centavos para reais)
-  - **ONZ**: `GET {base_url}/accounts/balances/` com header `Authorization: Bearer {token}`
-  - **EFI**: `GET {base_url}/v2/gn/saldo/` com mTLS e header `Authorization: Bearer {token}`
-  - **Transfeera**: Retorna `{ success: true, balance: null, available: false, message: "Saldo nao disponivel via API Transfeera" }`
-- Resposta padronizada: `{ success: true, balance: 125430.50, provider: "woovi", available: true }`
+### 1. Criar hook `src/hooks/useDashboardData.ts`
+- Buscar transacoes do mes atual da empresa (`transactions` filtrado por `company_id` e `created_at` no mes corrente)
+- Calcular totais de custos e despesas com base na classificacao da categoria vinculada
+- Buscar transacoes de hoje para o card "Hoje"
+- Buscar as 5 transacoes mais recentes para a lista
+- Contar comprovantes pendentes (transacoes sem `category_id` ou com status pendente)
+- Agrupar valores por categoria para o grafico de pizza
+- Retornar tudo com estados de loading
 
-### 2. Novo hook: `src/hooks/usePixBalance.ts`
-- Hook que chama a Edge Function `pix-balance`
-- Faz fetch ao montar o componente e a cada 60 segundos (polling)
-- Expoe: `balance`, `isLoading`, `isAvailable`, `provider`, `refetch()`
+### 2. Modificar `src/components/dashboard/AdminDashboard.tsx`
+- Remover todas as constantes mock (`mockSummary`, `mockCategoryData`, `mockRecentTransactions`)
+- Importar e usar `useDashboardData`
+- Substituir valores fixos pelos dados do hook
+- Mostrar estados vazios quando nao houver dados (em vez de dados fictícios)
+- Usar `date-fns` para formatar tempos relativos nas transacoes recentes
+- Mostrar skeleton loading enquanto os dados carregam
 
-### 3. Modificar: `src/components/dashboard/AdminDashboard.tsx`
-- Importar `usePixBalance`
-- Substituir `mockSummary.totalBalance` pelo saldo real do provedor
-- Mostrar indicador de loading enquanto busca
-- Mostrar mensagem quando saldo nao esta disponivel (ex: Transfeera)
-- Mostrar nome do provedor junto ao saldo
+### 3. Modificar `src/components/dashboard/MobileDashboard.tsx`
+- Receber transacoes recentes como props
+- Exibir transacoes reais ou estado vazio
 
-### 4. Modificar: `src/components/dashboard/MobileDashboard.tsx`
-- Receber `balance`, `isLoading`, `isAvailable` como props
-- Substituir o "R$ 0,00" fixo pelo saldo real
-- Mostrar skeleton/loading enquanto busca
+## Detalhes Tecnicos
 
-### 5. Modificar: `src/components/dashboard/OperatorDashboard.tsx`
-- Se admin, passar o saldo real para o MobileDashboard
-- Operadores continuam vendo "Saldo oculto"
-
-## Fluxo de dados
+### Queries no hook `useDashboardData`:
 
 ```text
-Dashboard monta
-  -> usePixBalance() dispara
-    -> chama edge function pix-balance
-      -> busca pix_configs (provedor + credenciais)
-      -> chama pix-auth (obtem token)
-      -> GET saldo no provedor
-      -> retorna saldo normalizado
-    -> atualiza state no hook
-  -> Dashboard exibe saldo real
-  -> polling a cada 60s atualiza
+1. Transacoes do mes (com join em categories):
+   SELECT t.*, c.name as category_name, c.classification
+   FROM transactions t
+   LEFT JOIN categories c ON t.category_id = c.id
+   WHERE t.company_id = X AND t.created_at >= inicio_do_mes
+
+2. Calculos:
+   - totalCosts = SUM(amount) WHERE classification = 'custo'
+   - totalExpenses = SUM(amount) WHERE classification = 'despesa'
+   - transactionsToday = COUNT WHERE created_at >= inicio_do_dia
+   - pendingReceipts = COUNT WHERE category_id IS NULL
+
+3. Categorias para grafico:
+   - GROUP BY category_name, SUM(amount)
+
+4. Transacoes recentes:
+   - ORDER BY created_at DESC LIMIT 5
 ```
 
-## Detalhes tecnicos
+### Cores do grafico de categorias:
+- Gerar cores automaticamente com base no indice da categoria usando uma paleta pre-definida
 
-- A Edge Function `pix-balance` vai chamar a funcao `pix-auth` via fetch interno do Supabase para reutilizar a logica de autenticacao existente
-- Para EFI, precisa mTLS (mesmo padrao do pix-auth)
-- Woovi retorna valores em centavos, entao dividimos por 100
-- Transfeera nao tem endpoint de saldo publico, entao retornamos gracefully
-- O polling de 60s evita chamadas excessivas mas mantem o saldo atualizado
+### Estados vazios:
+- Quando nao ha transacoes: mostrar mensagem "Nenhuma transacao este mes" nos cards
+- Quando nao ha categorias: ocultar o grafico de pizza ou mostrar estado vazio
+- Cards de custos/despesas: mostrar R$ 0,00 quando nao ha dados
