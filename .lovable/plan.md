@@ -1,77 +1,55 @@
 
-# Relatorios com Exportacao CSV, XLSX e PDF com Comprovantes
 
-## Resumo
+# Corrigir Exibicao de Status nas Transacoes
 
-Atualizar a pagina de Relatorios para suportar tres formatos de exportacao (CSV, XLSX, PDF), onde cada transacao inclui o link para o comprovante anexado. No PDF, as imagens dos comprovantes serao exibidas visualmente. No CSV e XLSX, uma coluna com a URL do comprovante sera incluida.
+## O Que Significa "Pendente"
 
-## Alteracoes
+O badge "Pendente" se refere ao **status do pagamento** (campo `status` na tabela `transactions`), e nao ao comprovante anexado. Os status possiveis sao:
 
-### 1. Instalar dependencias
+- **Concluido**: pagamento confirmado pelo provedor Pix
+- **Pendente**: pagamento ainda nao confirmado
+- **Falhou**: pagamento rejeitado
+- **Cancelado**: pagamento cancelado
 
-- `xlsx` (SheetJS) -- para gerar arquivos XLSX
-- `jspdf` + `jspdf-autotable` -- para gerar PDFs formatados com tabelas
+Anexar um comprovante nao altera esse status. Sao informacoes independentes.
 
-### 2. Atualizar a query de dados (`src/pages/Reports.tsx`)
+## Problema Identificado
 
-A query atual busca `transactions` com join em `categories`, mas nao busca `receipts`. Atualizar para:
+As transacoes estao sendo criadas com status `pending` e nunca sao atualizadas para `completed`, mesmo apos o pagamento ser processado. Isso pode significar que:
 
-```
-.select("*, categories(name, classification), receipts(file_url, file_name)")
-```
+1. O fluxo de pagamento Pix nao esta atualizando o status da transacao apos confirmacao
+2. Ou o webhook de confirmacao nao esta funcionando
 
-Isso traz a URL do comprovante junto com cada transacao.
+## Solucao Proposta
 
-### 3. Adicionar botoes de exportacao
+Duas acoes:
 
-Substituir o botao unico "CSV" por um dropdown ou tres botoes:
-- CSV
-- XLSX
-- PDF
+### 1. Atualizar transacoes existentes
 
-### 4. Exportacao CSV
+Executar uma query para marcar como `completed` as transacoes que ja possuem comprovante anexado (indicando que o pagamento foi de fato realizado):
 
-Adicionar coluna "Comprovante" com a URL publica do arquivo. Formato:
-
-```
-Data,Descricao,Valor,Categoria,Classificacao,Status,Comprovante
-15/01/2025,Insumos,2450.00,Insumos,Custo,completed,https://...url...
+```sql
+UPDATE transactions 
+SET status = 'completed', paid_at = NOW()
+WHERE id IN (SELECT DISTINCT transaction_id FROM receipts)
+AND status = 'pending';
 ```
 
-### 5. Exportacao XLSX
+### 2. Atualizar o fluxo de captura de comprovante
 
-Usar a biblioteca `xlsx` para gerar uma planilha com as mesmas colunas do CSV, incluindo a coluna "Comprovante" com a URL. A URL sera clicavel no Excel.
+No arquivo `src/pages/ReceiptCapture.tsx`, ao salvar um comprovante com sucesso, tambem atualizar o status da transacao para `completed` (ja que o usuario esta confirmando que o pagamento foi feito ao anexar o comprovante):
 
-### 6. Exportacao PDF
+```
+await supabase.from("transactions")
+  .update({ status: "completed", paid_at: new Date().toISOString() })
+  .eq("id", transactionId);
+```
 
-Usar `jspdf` + `jspdf-autotable` para gerar um PDF contendo:
+Isso faz sentido porque no fluxo do sistema, o usuario so anexa comprovante apos confirmar que o pagamento foi realizado.
 
-1. **Cabecalho**: Nome da empresa, periodo do relatorio, data de geracao
-2. **Resumo**: Total de saidas, custos, despesas (cards resumo)
-3. **Tabela**: Data | Favorecido | Valor | Categoria | Classificacao | Status | Comprovante
-4. **Paginas de comprovantes**: Apos a tabela, cada comprovante que for imagem (JPG/PNG) sera inserido em uma pagina separada com o titulo da transacao acima da imagem
+### Resultado Esperado
 
-Para inserir as imagens no PDF:
-- Buscar cada imagem via `fetch()` da URL publica do storage
-- Converter para base64
-- Inserir com `doc.addImage()`
-- Cada comprovante em uma pagina separada com legenda (data, valor, favorecido)
+- Transacoes com comprovante anexado mostrarao "Concluido" (badge verde)
+- Transacoes sem comprovante continuarao como "Pendente" com o botao "Anexar"
+- A filtragem por status `pending` mostrara apenas transacoes que realmente precisam de acao
 
-### 7. Arquivo: `src/pages/Reports.tsx`
-
-Alteracoes especificas:
-- Importar `jsPDF` e `autoTable` das novas dependencias
-- Importar `utils` do `xlsx`
-- Atualizar o `useEffect` para incluir `receipts` no select
-- Criar funcao `exportXLSX()` -- gera planilha com SheetJS
-- Criar funcao `exportPDF()` -- gera PDF com cabecalho, resumo, tabela e imagens
-- Atualizar funcao `exportCSV()` -- adicionar coluna de comprovante
-- Substituir botao unico por dropdown com tres opcoes
-
-### Detalhes Tecnicos
-
-- As imagens dos comprovantes ja estao no bucket `receipts` (publico), entao podem ser acessadas via URL publica
-- O join `receipts(file_url, file_name)` retorna um array (uma transacao pode ter multiplos comprovantes); usaremos o primeiro
-- Para o PDF, imagens serao carregadas via `fetch` e convertidas para base64 com `FileReader`/`canvas`
-- PDFs e comprovantes que nao sao imagem terao apenas o link no PDF, sem preview visual
-- O XLSX usa a funcao `HYPERLINK` para tornar URLs clicareis
