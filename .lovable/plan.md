@@ -1,56 +1,38 @@
 
-# Simplificar Etapa 2: Apenas Custo ou Despesa (sem dropdown)
+# Adicionar Campo de Pesquisa nas Subcategorias (ReceiptCapture)
 
-## Resumo
+## Problema
+Com muitas categorias cadastradas, o usuario precisa rolar bastante para encontrar a categoria desejada. Um campo de busca facilita a localizacao rapida.
 
-Na etapa 2 do Novo Pagamento, substituir o dropdown de categorias por dois botoes grandes: **CUSTO** e **DESPESA**. A categoria especifica (ex: Insumos, Embalagens) sera selecionada depois, na tela de anexo do comprovante (que ja tem esse fluxo implementado).
+## Alteracoes
 
-## O que muda
+### Arquivo: `src/pages/ReceiptCapture.tsx`
 
-### Arquivo: `src/pages/NewPayment.tsx`
+1. **Adicionar estado de busca**: `const [categorySearch, setCategorySearch] = useState("")`
+2. **Resetar busca** quando trocar a classificacao (cost/expense) -- no onClick dos botoes CUSTO/DESPESA, resetar `categorySearch` para `""`
+3. **Adicionar campo Input de pesquisa** entre o label "Categoria" e os botoes de subcategoria:
+   - Placeholder: "Buscar categoria..."
+   - Icone de lupa (Search do lucide-react)
+   - Filtra as categorias exibidas em tempo real pelo texto digitado
+4. **Filtrar categorias**: Alem do filtro por classificacao, aplicar `.filter(c => c.name.toLowerCase().includes(categorySearch.toLowerCase()))`
+5. **Mostrar mensagem** quando nenhuma categoria corresponder a busca: "Nenhuma categoria encontrada"
 
-1. **Remover** o estado `categories`, o `useEffect` de fetch de categorias, e as variaveis `costCategories`, `expenseCategories`, `selectedCategory`
-2. **Substituir `categoryId`** no `PaymentData` por `classification?: "cost" | "expense"`
-3. **Etapa 2**: Remover o `Select` dropdown e colocar dois botoes lado a lado:
-   - Botao **CUSTO** (com icone DollarSign, estilo gradient quando selecionado)
-   - Botao **DESPESA** (com icone TrendingUp, estilo vermelho quando selecionado)
-   - Subtitulo: "Classificacao" em vez de "Categoria"
-4. **Etapa 3 (confirmacao)**: Mostrar "Custo" ou "Despesa" em vez do nome da categoria
-5. **`handleConfirmPayment`**: Passar a classificacao como descricao do pagamento (ex: "Custo" ou "Despesa")
-6. **Remover imports** desnecessarios: `SelectGroup`, `SelectLabel` (se nao usados em outro lugar do arquivo)
-
-### Layout da Etapa 2 (Mobile e Desktop)
+### Layout
 
 ```text
-+------------------------------------------+
-|  Informacao do pagamento                 |
-|  Informe o valor e a classificacao       |
-|                                          |
-|  Valor (R$)                              |
-|  +--------------------------------------+|
-|  | R$  3,55                             ||
-|  +--------------------------------------+|
-|                                          |
-|  Classificacao                           |
-|  +------------------+  +---------------+|
-|  |    $             |  |    ^          ||
-|  |   CUSTO          |  |   DESPESA     ||
-|  +------------------+  +---------------+|
-+------------------------------------------+
-```
+Categoria
++--------------------------------------+
+| [lupa] Buscar categoria...           |
++--------------------------------------+
 
-### Fluxo completo atualizado
-
-```text
-Etapa 1: Tipo de pagamento (chave, copia e cola, QR, boleto)
-Etapa 2: Valor + Classificacao (Custo ou Despesa) -- botoes, sem dropdown
-Etapa 3: Confirmacao
-  -> Apos confirmacao: Tela de comprovante (onde escolhe a categoria especifica)
+[Afiacao de cortadores]  [Agua]  [Agua utilizada...]
+[Azeites e oleos...]  [Bebidas para revenda...]
+...
 ```
 
 ### Detalhes Tecnicos
 
-- Os botoes usam o mesmo estilo ja existente na tela `ReceiptCapture.tsx` (CUSTO com `bg-gradient-primary`, DESPESA com `bg-destructive`)
-- A classificacao sera passada na descricao do pagamento para registro
-- A categoria especifica continua sendo escolhida na tela de anexo do comprovante, que ja possui esse fluxo com subcategorias
-- Importar `DollarSign` e `TrendingUp` do lucide-react (ja disponivel no projeto)
+- Importar `Search` do lucide-react e `Input` de `@/components/ui/input`
+- O campo Input fica dentro da div `space-y-2` existente, logo abaixo do label "Categoria"
+- Filtro case-insensitive usando `toLowerCase()`
+- Sem debounce necessario pois e filtragem local em memoria
