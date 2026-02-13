@@ -5,36 +5,28 @@
 ## Diagnostico
 O certificado TLS do servidor `cashout.infopago.com.br` possui o hostname correto no campo CN (Common Name), porem **nao possui a extensao SubjectAltName (SAN)**. Desde 2017 (RFC 6125 / CA/Browser Forum), bibliotecas TLS modernas exigem SAN e ignoram o CN. O runtime Deno (rustls) segue esse padrao estritamente.
 
-## Plano de acao
+## Resultado das tentativas de workaround
 
-### Passo 1 - Tentar workaround no codigo
-Verificar se o Deno Edge Functions permite alguma configuracao de relaxamento de validacao de hostname no `Deno.createHttpClient`. Possibilidades a testar:
-- Opcao de custom `ServerCertVerifier` (se disponivel no runtime)
-- Fallback via `node:tls` com `checkServerIdentity` customizado
+### Passo 1 - Tentativas realizadas (TODAS FALHARAM)
 
-### Passo 2 - Se workaround nao funcionar
-Nao ha como desabilitar a verificacao de hostname no runtime do Supabase Edge Functions (Deno Deploy). Nesse caso, a unica solucao e:
+1. **`Deno.connectTls` com `unsafelyDisableHostnameVerification: true`**: A flag é ignorada pelo Supabase Edge Functions (Deno Deploy). O handshake TLS é lazy — `connectTls` retorna sucesso mas o erro `NotValidForName` ocorre no primeiro `write`.
 
-**Solicitar a ONZ Infopago** que atualize o certificado do servidor `cashout.infopago.com.br` para incluir a extensao SubjectAltName com:
+2. **`node:https` com `checkServerIdentity` customizado**: O shim `node:https` no Supabase Edge Functions redireciona internamente para `fetch` do Deno (rustls). A opção `checkServerIdentity` é completamente ignorada. O erro mudou para `UnknownIssuer` porque os `caCerts` não são repassados corretamente pelo shim.
+
+### Conclusão
+**Não existe workaround possível no código** dentro do ambiente Supabase Edge Functions. O runtime usa rustls que exige SAN estritamente, e nenhuma API disponível permite desabilitar a verificação de hostname.
+
+## Próximos passos (requer ação externa)
+
+### Passo 2 - Solicitar correção à ONZ Infopago (RECOMENDADO)
+A ONZ precisa atualizar o certificado do servidor `cashout.infopago.com.br` para incluir a extensão SubjectAltName:
 ```
 DNS:cashout.infopago.com.br
 ```
+Isso é um padrão obrigatório desde 2017. A correção deve ser simples para a equipe de infraestrutura.
 
-Isso e um padrao obrigatorio desde 2017 e a correcao deve ser simples para a equipe de infraestrutura da ONZ.
-
-### Passo 3 - Solucao alternativa temporaria (proxy)
-Caso a ONZ demore para corrigir, uma opcao seria:
-- Configurar um servidor proxy intermediario (ex: um VPS com nginx) que faca a conexao mTLS com a ONZ (usando OpenSSL que aceita CN) e exponha a API via um certificado valido para as Edge Functions consumirem. Isso adiciona complexidade e custo, entao so e recomendado como ultimo recurso.
-
-## Detalhes tecnicos
-
-O certificado do servidor ONZ retorna:
-```
-subject=CN=cashout.infopago.com.br
-No extensions in certificate
-```
-
-O runtime Deno usa **rustls** internamente, que segue estritamente a RFC 6125 e exige SAN. Nao ha flag para desabilitar hostname verification em `Deno.createHttpClient` nem no Supabase Edge Functions (que roda sobre Deno Deploy).
-
-O proximo passo imediato e implementar o Passo 1 (tentar workaround no codigo) e, se nao funcionar, orientar o contato com a ONZ.
-
+### Passo 3 - Proxy intermediário (alternativa temporária)
+Configurar um servidor proxy (ex: VPS com nginx + OpenSSL) que:
+1. Aceite conexões HTTPS com certificado válido (com SAN)
+2. Faça proxy reverso para `cashout.infopago.com.br` usando OpenSSL (que aceita CN sem SAN)
+3. As Edge Functions se conectam ao proxy em vez do servidor ONZ diretamente
