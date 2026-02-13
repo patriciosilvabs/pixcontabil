@@ -1,9 +1,11 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import {
   Camera,
@@ -35,29 +37,33 @@ interface ReceiptData {
   isProcessing: boolean;
 }
 
-const costCategories = [
-  "Insumos",
-  "Mão de Obra Direta",
-  "Embalagens",
-  "Produção",
-  "Matéria-Prima",
-];
-
-const expenseCategories = [
-  "Utilidades",
-  "Ocupação",
-  "Administrativo",
-  "Marketing",
-  "Transporte",
-  "Outros",
-];
+interface CategoryRecord {
+  id: string;
+  name: string;
+  classification: "cost" | "expense";
+}
 
 export default function ReceiptCapture() {
   const { transactionId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currentCompany } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
+
+  useEffect(() => {
+    if (!currentCompany) return;
+    supabase
+      .from("categories")
+      .select("id, name, classification")
+      .eq("company_id", currentCompany.id)
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => {
+        if (data) setCategories(data as CategoryRecord[]);
+      });
+  }, [currentCompany]);
 
   const [receiptData, setReceiptData] = useState<ReceiptData>({
     file: null,
@@ -369,14 +375,13 @@ export default function ReceiptCapture() {
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Categoria</label>
                       <div className="flex flex-wrap gap-2">
-                        {(receiptData.classification === "cost"
-                          ? costCategories
-                          : expenseCategories
-                        ).map((category) => (
+                        {categories
+                          .filter((c) => c.classification === receiptData.classification)
+                          .map((cat) => (
                           <Button
-                            key={category}
+                            key={cat.id}
                             variant={
-                              receiptData.subcategory === category
+                              receiptData.subcategory === cat.name
                                 ? "default"
                                 : "outline"
                             }
@@ -384,11 +389,11 @@ export default function ReceiptCapture() {
                             onClick={() =>
                               setReceiptData((prev) => ({
                                 ...prev,
-                                subcategory: category,
+                                subcategory: cat.name,
                               }))
                             }
                           >
-                            {category}
+                            {cat.name}
                           </Button>
                         ))}
                       </div>
