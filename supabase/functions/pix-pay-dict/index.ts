@@ -107,14 +107,16 @@ Deno.serve(async (req) => {
     // ========== WOOVI ==========
     if (provider === 'woovi') {
       externalId = generateCorrelationID();
-      // Woovi Pix Out via subaccount withdraw
-      const payUrl = `${config.base_url}/api/v1/subaccount/withdraw`;
+      // Woovi Pix Out via payment API (requires access request)
+      const payUrl = `${config.base_url}/api/v1/payment`;
       const wooviPayload = {
         value: Math.round(valor * 100), // centavos
-        pixKey: pix_key,
+        destinationAlias: pix_key,
         comment: descricao || 'Pagamento Pix',
         correlationID: externalId,
       };
+
+      console.log('[pix-pay-dict] Woovi payload:', JSON.stringify(wooviPayload));
 
       const payResponse = await fetch(payUrl, {
         method: 'POST',
