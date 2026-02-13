@@ -302,7 +302,7 @@ export default function PixIntegration() {
     setIsSaving(true);
 
     try {
-      const configData = {
+      const configData: Record<string, any> = {
         company_id: currentCompany.id,
         provider: config.provider,
         client_id: config.client_id,
@@ -310,26 +310,31 @@ export default function PixIntegration() {
         base_url: config.base_url,
         pix_key: config.pix_key,
         pix_key_type: config.pix_key_type,
-        certificate_encrypted: config.certificate_encrypted || null,
-        certificate_key_encrypted: config.certificate_key_encrypted || null,
         webhook_url: config.webhook_url || null,
         webhook_secret: config.webhook_secret || null,
         is_sandbox: config.is_sandbox,
         is_active: config.is_active,
       };
 
+      // Only include certificate fields if the UI manages them (e.g. EFI provider)
+      // Other providers (like ONZ) have certificates set directly in the database
+      if (providerConfig?.showCertificate) {
+        configData.certificate_encrypted = config.certificate_encrypted || null;
+        configData.certificate_key_encrypted = config.certificate_key_encrypted || null;
+      }
+
       let error;
       
       if (config.id) {
         const result = await supabase
           .from("pix_configs")
-          .update(configData)
+          .update(configData as any)
           .eq("id", config.id);
         error = result.error;
       } else {
         const result = await supabase
           .from("pix_configs")
-          .insert(configData)
+          .insert(configData as any)
           .select()
           .single();
         
