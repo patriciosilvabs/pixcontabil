@@ -143,21 +143,32 @@ Deno.serve(async (req) => {
       // Build caCerts list from available sources
       const caCerts: string[] = [];
 
+      // Helper to ensure PEM has proper line breaks
+      const normalizePem = (pem: string): string => {
+        // Remove existing whitespace/newlines, extract header/footer/body
+        const match = pem.match(/(-----BEGIN [^-]+-----)([\s\S]*?)(-----END [^-]+-----)/);
+        if (!match) return pem;
+        const header = match[1];
+        const body = match[2].replace(/\s+/g, '');
+        const footer = match[3];
+        // Re-wrap body at 64 chars per line
+        const lines = body.match(/.{1,64}/g) || [];
+        return `${header}\n${lines.join('\n')}\n${footer}\n`;
+      };
+
       // 1. Check for explicit CA cert in env
       const caCertRaw = Deno.env.get('ONZ_CA_CERT');
       if (caCertRaw) {
-        // Try to detect if it's already PEM or Base64-encoded PEM
         const trimmed = caCertRaw.trim();
+        let caPem = '';
         if (trimmed.startsWith('-----BEGIN')) {
-          // Already PEM format
-          caCerts.push(trimmed);
+          caPem = trimmed;
           console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT (PEM direct)');
         } else {
-          // Try Base64 decode
           try {
             const decoded = atob(trimmed);
             if (decoded.includes('-----BEGIN')) {
-              caCerts.push(decoded);
+              caPem = decoded;
               console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT (Base64 decoded)');
             } else {
               console.warn('[pix-auth] ONZ: ONZ_CA_CERT decoded but does not contain PEM header');
@@ -166,10 +177,13 @@ Deno.serve(async (req) => {
             console.warn('[pix-auth] ONZ: Failed to decode ONZ_CA_CERT:', e.message);
           }
         }
+        if (caPem) {
+          caCerts.push(normalizePem(caPem));
+        }
       }
 
       // 2. Also add the client cert itself as potential CA (some ONZ setups use self-signed CA chains)
-      caCerts.push(certPem);
+      caCerts.push(normalizePem(certPem));
 
       let httpClient: Deno.HttpClient;
       try {
