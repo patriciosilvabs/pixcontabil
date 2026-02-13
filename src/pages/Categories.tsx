@@ -11,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Plus, Pencil, Power, FolderOpen, Filter } from "lucide-react";
+import { Loader2, Plus, Pencil, Power, FolderOpen, Filter, FileUp } from "lucide-react";
+import { BatchCategoryDialog } from "@/components/categories/BatchCategoryDialog";
 
 type Classification = "cost" | "expense";
 
@@ -30,6 +31,7 @@ export default function Categories() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [filter, setFilter] = useState<"all" | Classification>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -115,7 +117,10 @@ export default function Categories() {
             </h1>
             <p className="text-muted-foreground">Gerencie as categorias de custos e despesas</p>
           </div>
-          <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Nova Categoria</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBatchDialogOpen(true)}><FileUp className="h-4 w-4 mr-2" /> Importar em Lote</Button>
+            <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Nova Categoria</Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -212,6 +217,15 @@ export default function Categories() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {currentCompany && (
+          <BatchCategoryDialog
+            open={batchDialogOpen}
+            onOpenChange={setBatchDialogOpen}
+            companyId={currentCompany.id}
+            onSuccess={fetchCategories}
+          />
+        )}
       </div>
     </MainLayout>
   );
