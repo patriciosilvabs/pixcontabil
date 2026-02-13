@@ -1,67 +1,91 @@
 
 
-# Proxy intermediario para conexao ONZ
+# Guia Pratico: Deploy do Proxy ONZ
 
-## Problema
-O certificado TLS do servidor ONZ (`cashout.infopago.com.br`) nao possui a extensao SubjectAltName (SAN). O runtime Deno (rustls) nas Edge Functions rejeita a conexao independentemente dos certificados do cliente. Nao ha workaround possivel no codigo.
+## O que voce vai precisar
 
-## Solucao proposta: Proxy com Node.js
+- Uma conta no [Railway](https://railway.app) (login com GitHub, gratuito)
+- Uma conta no [GitHub](https://github.com) (gratuita)
+- Os certificados mTLS da ONZ que voce ja tem (os mesmos valores que estao no banco de dados nos campos `certificate_encrypted` e `certificate_key_encrypted`)
 
-Criar um servidor proxy simples que roda em uma plataforma que usa **OpenSSL** (que aceita CN sem SAN). As Edge Functions se conectam ao proxy, e o proxy repassa a requisicao para a ONZ com mTLS.
+## Passo a Passo
+
+### 1. Criar um repositorio no GitHub
+
+1. Acesse [github.com/new](https://github.com/new)
+2. Nome do repositorio: `onz-proxy` (ou qualquer nome)
+3. Marque como **Private**
+4. Clique em **Create repository**
+5. Faca upload de 2 arquivos que ja estao no seu projeto Lovable na pasta `docs/onz-proxy/`:
+   - `index.js`
+   - `package.json`
+6. Pode copiar o conteudo desses arquivos diretamente do editor de codigo do Lovable
+
+### 2. Fazer deploy no Railway
+
+1. Acesse [railway.app](https://railway.app) e faca login com sua conta GitHub
+2. Clique em **New Project**
+3. Selecione **Deploy from GitHub Repo**
+4. Escolha o repositorio `onz-proxy` que voce acabou de criar
+5. O Railway vai detectar automaticamente que e um projeto Node.js
+
+### 3. Configurar as variaveis de ambiente no Railway
+
+No painel do Railway, va em **Variables** e adicione:
+
+| Variavel | De onde vem o valor |
+|---|---|
+| `PROXY_API_KEY` | Invente uma senha longa. Pode gerar uma no terminal com `openssl rand -hex 32` ou usar qualquer gerador de senhas online |
+| `ONZ_CLIENT_CERT_B64` | E o mesmo valor que esta no campo `certificate_encrypted` da tabela `pix_configs` no seu banco de dados |
+| `ONZ_CLIENT_KEY_B64` | E o mesmo valor que esta no campo `certificate_key_encrypted` da tabela `pix_configs` |
+| `ONZ_CA_CERT_B64` | (Opcional) Se voce tiver o certificado CA da ONZ em Base64 |
+
+### 4. Fazer deploy
+
+1. Apos adicionar as variaveis, o Railway faz deploy automaticamente
+2. Va em **Settings** do servico e procure a secao **Networking**
+3. Clique em **Generate Domain** para obter uma URL publica (algo como `https://onz-proxy-production-xxxx.up.railway.app`)
+4. Teste acessando no navegador: `https://sua-url.up.railway.app/health` -- deve retornar `{"status":"ok"}`
+
+### 5. Voltar ao Lovable com os dados
+
+Apos o deploy funcionar, voce precisa me fornecer dois valores:
+
+1. **URL do proxy** -- a URL que o Railway gerou (ex: `https://onz-proxy-production-xxxx.up.railway.app`)
+2. **API Key** -- a senha que voce definiu em `PROXY_API_KEY`
+
+Com esses valores, vou atualizar todas as 7 Edge Functions para rotear o trafego ONZ pelo proxy.
+
+## Resumo do fluxo
 
 ```text
-Edge Functions (Deno/rustls)
-        |
-        | HTTPS (certificado valido com SAN)
-        v
-  Proxy Node.js (OpenSSL)
-        |
-        | mTLS (aceita CN sem SAN)
-        v
-  cashout.infopago.com.br
+Voce ja tem                    Voce precisa criar              Depois volta aqui
+--------------                 -------------------             -----------------
+Certificados ONZ     --->      Repo GitHub + Railway    --->   Me passa URL + Key
+(no banco de dados)            (deploy do proxy)               (atualizo as funcoes)
 ```
 
-## Opcoes de hospedagem do proxy
+## Secao Tecnica
 
-1. **VPS simples** (DigitalOcean, Vultr, etc.) - ~5 USD/mes
-   - Servidor Node.js ou nginx com OpenSSL
-   - Controle total
+### O que sera atualizado nas Edge Functions
 
-2. **AWS Lambda / Google Cloud Function** - custo por uso
-   - Funcao serverless com Node.js (usa OpenSSL)
-   - Sem servidor para manter
+Todas as 7 funcoes que fazem chamadas para a ONZ serao modificadas:
+- `pix-auth` -- autenticacao OAuth2
+- `pix-balance` -- consulta de saldo
+- `pix-pay-dict` -- pagamento por chave
+- `pix-pay-qrc` -- pagamento por QR Code
+- `pix-check-status` -- consulta de status
+- `pix-receipt` -- comprovante
+- `pix-refund` -- estorno
+- `pix-qrc-info` -- decodificacao de QR Code
 
-3. **Railway / Render / Fly.io** - plano gratuito disponivel
-   - Deploy facil de um servidor Node.js
-   - Menor complexidade operacional
+Em cada uma, o bloco ONZ deixara de criar conexao mTLS direta e passara a enviar a requisicao para o proxy via POST, que repassa para a ONZ com mTLS via OpenSSL.
 
-## Implementacao
+Dois novos secrets serao adicionados ao projeto:
+- `ONZ_PROXY_URL` -- URL do proxy no Railway
+- `ONZ_PROXY_API_KEY` -- chave de autenticacao do proxy
 
-### Passo 1 - Criar o servidor proxy (externo ao Lovable)
-Um servidor Node.js simples que:
-- Recebe requisicoes HTTPS das Edge Functions
-- Faz a conexao mTLS com a ONZ usando os certificados do cliente
-- Repassa headers e body sem modificacao
-- Retorna a resposta da ONZ
+### Custo estimado
 
-### Passo 2 - Configurar os certificados no proxy
-- Upload dos certificados mTLS (.crt e .key) para o servidor proxy
-- Configurar o certificado CA da ONZ
-
-### Passo 3 - Atualizar as Edge Functions
-- Alterar o bloco ONZ em todas as 7 Edge Functions para apontar para o proxy em vez de `cashout.infopago.com.br`
-- Adicionar secret `ONZ_PROXY_URL` com a URL do proxy
-- Remover a logica de mTLS das Edge Functions (o proxy cuida disso)
-
-### Passo 4 - Seguranca do proxy
-- Autenticacao via API key entre Edge Functions e proxy
-- HTTPS obrigatorio
-- Rate limiting
-
-## Alternativa recomendada
-Antes de implementar o proxy, **enviar um email/ticket para a ONZ** solicitando a correcao do certificado. A correcao e simples (adicionar SAN) e elimina a necessidade do proxy. Se desejar, posso redigir o texto do email.
-
-## O que o Lovable pode fazer
-- Atualizar as Edge Functions para usar o proxy (Passo 3)
-- O proxy em si precisa ser hospedado **fora do Lovable** em uma das plataformas listadas acima
+O Railway oferece um plano gratuito com 500 horas/mes (suficiente para um servico leve). Apos isso, o custo e de aproximadamente 5 USD/mes.
 
