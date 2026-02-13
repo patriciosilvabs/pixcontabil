@@ -107,11 +107,25 @@ Deno.serve(async (req) => {
     // ========== WOOVI ==========
     if (provider === 'woovi') {
       externalId = generateCorrelationID();
-      // Woovi Pix Out via payment API (requires access request)
+
+      // Auto-detect pix key type for Woovi
+      function detectWooviKeyType(key: string): string {
+        const cleaned = key.replace(/[.\-\/\s\(\)]/g, '');
+        if (/^[0-9]{11}$/.test(cleaned)) return 'CPF';
+        if (/^[0-9]{14}$/.test(cleaned)) return 'CNPJ';
+        if (/^.+@.+\..+$/.test(key)) return 'EMAIL';
+        if (/^\+?[0-9]{10,13}$/.test(cleaned)) return 'PHONE';
+        if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return 'RANDOM';
+        return 'RANDOM';
+      }
+
+      const keyType = detectWooviKeyType(pix_key);
       const payUrl = `${config.base_url}/api/v1/payment`;
       const wooviPayload = {
+        type: 'PIX_KEY',
         value: Math.round(valor * 100), // centavos
         destinationAlias: pix_key,
+        destinationAliasType: keyType,
         comment: descricao || 'Pagamento Pix',
         correlationID: externalId,
       };
@@ -129,7 +143,7 @@ Deno.serve(async (req) => {
 
       if (!payResponse.ok) {
         const errorText = await payResponse.text();
-        console.error('[pix-pay-dict] Woovi error:', errorText);
+        console.error('[pix-pay-dict] Woovi create payment error:', errorText);
         return new Response(
           JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -137,6 +151,29 @@ Deno.serve(async (req) => {
       }
 
       paymentData = await payResponse.json();
+      console.log('[pix-pay-dict] Woovi payment created:', JSON.stringify(paymentData));
+
+      // Auto-approve the payment so it executes immediately
+      const approveUrl = `${config.base_url}/api/v1/payment/approve`;
+      const approveResponse = await fetch(approveUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': access_token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ correlationID: externalId }),
+      });
+
+      if (!approveResponse.ok) {
+        const approveErrorText = await approveResponse.text();
+        console.error('[pix-pay-dict] Woovi approve error:', approveErrorText);
+        // Payment was created but not approved - still save it
+      } else {
+        const approveData = await approveResponse.json();
+        console.log('[pix-pay-dict] Woovi payment approved:', JSON.stringify(approveData));
+        // Merge approve data into paymentData
+        paymentData = { ...paymentData, ...approveData };
+      }
     }
     // ========== ONZ ==========
     else if (provider === 'onz') {
