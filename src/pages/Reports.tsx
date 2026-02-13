@@ -6,10 +6,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Loader2, FileText, Download, TrendingDown, DollarSign } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { startOfMonth, endOfMonth, subMonths, format, startOfWeek, endOfWeek, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { exportCSV, exportXLSX, exportPDF } from "@/utils/reportExports";
+import { toast } from "sonner";
 
 type PeriodFilter = "today" | "week" | "month" | "last3months";
 
@@ -39,7 +42,7 @@ export default function Reports() {
       const [txRes, catRes] = await Promise.all([
         supabase
           .from("transactions")
-          .select("*, categories(name, classification)")
+          .select("*, categories(name, classification), receipts(file_url, file_name)")
           .eq("company_id", currentCompany.id)
           .gte("created_at", dateRange.start.toISOString())
           .lte("created_at", dateRange.end.toISOString())
@@ -75,24 +78,17 @@ export default function Reports() {
 
   const formatCurrency = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
-  const exportCSV = () => {
-    const header = "Data,Descrição,Valor,Categoria,Classificação,Status\n";
-    const rows = transactions.map((t) =>
-      [
-        format(new Date(t.created_at), "dd/MM/yyyy"),
-        t.description || "",
-        Number(t.amount).toFixed(2),
-        t.categories?.name || "",
-        t.categories?.classification === "cost" ? "Custo" : t.categories?.classification === "expense" ? "Despesa" : "",
-        t.status,
-      ].join(",")
-    ).join("\n");
-    const blob = new Blob([header + rows], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `relatorio-${format(new Date(), "yyyy-MM-dd")}.csv`;
-    a.click();
+  const periodLabels: Record<PeriodFilter, string> = {
+    today: "Hoje",
+    week: "Esta Semana",
+    month: "Este Mês",
+    last3months: "Últimos 3 Meses",
+  };
+
+  const handleExportPDF = async () => {
+    toast.info("Gerando PDF com comprovantes…");
+    await exportPDF(transactions, { totalAmount, totalCosts, totalExpenses }, currentCompany?.name || "", periodLabels[period]);
+    toast.success("PDF gerado!");
   };
 
   return (
@@ -115,9 +111,18 @@ export default function Reports() {
                 <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={exportCSV} disabled={transactions.length === 0}>
-              <Download className="h-4 w-4 mr-2" /> CSV
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" disabled={transactions.length === 0}>
+                  <Download className="h-4 w-4 mr-2" /> Exportar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => exportCSV(transactions)}>CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => exportXLSX(transactions)}>XLSX</DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>PDF com Comprovantes</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
