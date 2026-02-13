@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
       };
 
       try {
-        const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '')}/proxy`, {
+        const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/proxy`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
