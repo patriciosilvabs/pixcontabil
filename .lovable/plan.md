@@ -1,38 +1,76 @@
 
-# Adicionar Filtros de Data e Classificacao acima do Resumo Diario
 
-## O que muda
+# Adicionar Controle de Acesso por Pagina com Checkboxes
 
-Mover os controles de filtro (periodo + novo filtro de classificacao) para uma barra de filtros logo acima do componente "Resumo por Dia", tornando a consulta mais acessivel e permitindo filtrar por Custo, Despesa ou Todos.
+## Objetivo
 
-## Alteracoes
+Permitir que o administrador defina, para cada usuario, quais paginas ele pode acessar. Cada pagina do sistema tera um checkbox no dialog de edicao do usuario, incluindo o Dashboard.
 
-### 1. `src/pages/Reports.tsx`
+## Nova Tabela no Banco de Dados
 
-- Adicionar novo estado `classificationFilter` com opcoes: `"all"`, `"cost"`, `"expense"`
-- Mover o `Select` de periodo e o botao de exportacao para uma barra de filtros posicionada entre os graficos e o resumo diario (acima do card "Resumo por Dia")
-- Adicionar um segundo `Select` para classificacao com opcoes: "Todos", "Custos", "Despesas"
-- Filtrar as transacoes passadas ao `DailyTransactionSummary` com base no `classificationFilter` selecionado (filtrando por `categories.classification`)
-- Os cards de resumo e graficos continuam usando todas as transacoes do periodo (sem filtro de classificacao), pois mostram a visao geral
-- O filtro de classificacao aplica-se apenas ao resumo diario com comprovantes
+Criar uma tabela `user_page_permissions` para armazenar as permissoes de acesso por usuario e empresa:
 
-### 2. Layout da barra de filtros
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid (PK) | Identificador |
+| user_id | uuid | Referencia ao usuario |
+| company_id | uuid | Referencia a empresa |
+| page_key | text | Identificador da pagina (ex: "dashboard", "transactions") |
+| has_access | boolean | Se o usuario pode acessar |
+| created_at | timestamptz | Data de criacao |
 
-```text
-+------------------------------------------------------------------+
-|  Periodo: [Este Mes v]   Classificacao: [Todos v]   [Exportar v] |
-+------------------------------------------------------------------+
-|  Resumo por Dia (X transacoes)                                    |
-|  ...                                                              |
-+------------------------------------------------------------------+
-```
+Paginas disponiveis como opcoes de checkbox:
 
-- Barra com `flex` responsiva: em mobile os selects ficam empilhados, em desktop ficam lado a lado
-- O header da pagina (titulo "Relatorios") fica limpo, sem controles
+- `dashboard` -- Dashboard
+- `new_payment` -- Novo Pagamento
+- `transactions` -- Transacoes
+- `categories` -- Categorias
+- `reports` -- Relatorios
+- `users` -- Usuarios
+- `companies` -- Empresas
+- `settings` -- Configuracoes
 
-### Detalhes tecnicos
+Admins sempre tem acesso total (nao sao restringidos pelas permissoes).
 
-- Novo estado: `const [classificationFilter, setClassificationFilter] = useState<"all" | "cost" | "expense">("all")`
-- Transacoes filtradas: `const filteredTransactions = useMemo(() => classificationFilter === "all" ? transactions : transactions.filter(t => t.categories?.classification === classificationFilter), [transactions, classificationFilter])`
-- Passar `filteredTransactions` para `DailyTransactionSummary` em vez de `transactions`
-- Os totais dos cards e graficos continuam usando `transactions` (sem filtro)
+## Politicas de Seguranca (RLS)
+
+- Admins podem gerenciar todas as permissoes (ALL)
+- Membros da empresa podem visualizar suas proprias permissoes (SELECT onde user_id = auth.uid())
+
+## Alteracoes nos Arquivos
+
+### 1. Migracao SQL
+- Criar tabela `user_page_permissions`
+- Habilitar RLS
+- Criar policies para admin (ALL) e usuario (SELECT proprio)
+- Inserir permissoes padrao para membros existentes (todas as paginas liberadas)
+
+### 2. `src/pages/Users.tsx`
+- Adicionar ao dialog de edicao uma secao "Acesso as Paginas" com checkboxes para cada pagina
+- Carregar permissoes atuais do usuario ao abrir o dialog
+- Salvar permissoes ao clicar em "Salvar"
+- Estado local: `editPermissions` como `Record<string, boolean>`
+
+### 3. `src/contexts/AuthContext.tsx`
+- Adicionar `pagePermissions` ao contexto (array de page_keys permitidos)
+- Carregar permissoes do usuario ao fazer login (fetchUserData)
+- Expor funcao `hasPageAccess(pageKey: string): boolean` que retorna true para admins sempre
+
+### 4. `src/components/auth/AuthGuard.tsx`
+- Adicionar prop opcional `requiredPage?: string`
+- Verificar se o usuario tem acesso a pagina usando `hasPageAccess`
+- Redirecionar para "/" se nao tiver permissao
+
+### 5. `src/App.tsx`
+- Adicionar `requiredPage` em cada rota protegida (ex: `requiredPage="dashboard"` no Dashboard)
+
+### 6. `src/components/layout/MainLayout.tsx` e `src/components/layout/BottomTabBar.tsx`
+- Ocultar itens de menu para paginas que o usuario nao tem acesso
+
+## Detalhes Tecnicos
+
+- Admins nao sao restringidos -- `hasPageAccess` retorna `true` sempre para role "admin"
+- Quando um novo membro e criado, todas as paginas sao liberadas por padrao
+- O sistema de permissoes e complementar ao sistema de roles existente (admin/operator)
+- Operadores continuam sem ver saldo mesmo tendo acesso ao Dashboard
+
