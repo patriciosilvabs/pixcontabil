@@ -2,8 +2,9 @@ import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/utils";
-import { Bell, Eye, EyeOff, Building2 } from "lucide-react";
+import { Bell, Eye, EyeOff, Building2, LogOut, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useNavigate } from "react-router-dom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,19 +21,39 @@ interface MobileHeaderProps {
 }
 
 export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderProps) {
-  const { profile, currentCompany, companies, setCurrentCompany } = useAuth();
+  const { profile, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-gradient-bank-header text-white">
       {/* Top row */}
       <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-        {/* Avatar */}
-        <Avatar className="h-10 w-10 border-2 border-white/30">
-          <AvatarImage src={profile?.avatar_url || undefined} />
-          <AvatarFallback className="bg-white/20 text-white text-sm font-bold">
-            {getInitials(profile?.full_name || "U")}
-          </AvatarFallback>
-        </Avatar>
+        {/* Avatar with dropdown */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button className="focus:outline-none">
+              <Avatar className="h-10 w-10 border-2 border-white/30">
+                <AvatarImage src={profile?.avatar_url || undefined} />
+                <AvatarFallback className="bg-white/20 text-white text-sm font-bold">
+                  {getInitials(profile?.full_name || "U")}
+                </AvatarFallback>
+              </Avatar>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-48">
+            <DropdownMenuLabel>{profile?.full_name || "Usuário"}</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => navigate("/settings")}>
+              <Settings className="h-4 w-4 mr-2" />
+              Configurações
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => signOut()} className="text-destructive focus:text-destructive">
+              <LogOut className="h-4 w-4 mr-2" />
+              Sair da conta
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         {/* Center - Logo */}
         <div className="flex flex-col items-center">
