@@ -1,25 +1,40 @@
 
 
-# Atualizar Secret ONZ_CA_CERT com o Certificado CA Extraido
+# Resolver erro NotValidForName na conexao mTLS com ONZ
 
-## Resumo
-O certificado CA privado da ONZ Infopago foi extraido com sucesso do arquivo `.pfx`. Agora precisamos codifica-lo em Base64 e atualizar o secret `ONZ_CA_CERT` para resolver o erro `UnknownIssuer` na conexao mTLS.
+## Diagnostico
+O certificado TLS do servidor `cashout.infopago.com.br` possui o hostname correto no campo CN (Common Name), porem **nao possui a extensao SubjectAltName (SAN)**. Desde 2017 (RFC 6125 / CA/Browser Forum), bibliotecas TLS modernas exigem SAN e ignoram o CN. O runtime Deno (rustls) segue esse padrao estritamente.
 
-## O que sera feito
+## Plano de acao
 
-1. **Atualizar o secret `ONZ_CA_CERT`** com o certificado PEM codificado em Base64
-2. **Redeployar a Edge Function `pix-auth`** para que ela use o novo certificado CA
-3. **Testar a conexao** chamando a funcao de autenticacao para verificar se o erro `UnknownIssuer` foi resolvido
+### Passo 1 - Tentar workaround no codigo
+Verificar se o Deno Edge Functions permite alguma configuracao de relaxamento de validacao de hostname no `Deno.createHttpClient`. Possibilidades a testar:
+- Opcao de custom `ServerCertVerifier` (se disponivel no runtime)
+- Fallback via `node:tls` com `checkServerIdentity` customizado
+
+### Passo 2 - Se workaround nao funcionar
+Nao ha como desabilitar a verificacao de hostname no runtime do Supabase Edge Functions (Deno Deploy). Nesse caso, a unica solucao e:
+
+**Solicitar a ONZ Infopago** que atualize o certificado do servidor `cashout.infopago.com.br` para incluir a extensao SubjectAltName com:
+```
+DNS:cashout.infopago.com.br
+```
+
+Isso e um padrao obrigatorio desde 2017 e a correcao deve ser simples para a equipe de infraestrutura da ONZ.
+
+### Passo 3 - Solucao alternativa temporaria (proxy)
+Caso a ONZ demore para corrigir, uma opcao seria:
+- Configurar um servidor proxy intermediario (ex: um VPS com nginx) que faca a conexao mTLS com a ONZ (usando OpenSSL que aceita CN) e exponha a API via um certificado valido para as Edge Functions consumirem. Isso adiciona complexidade e custo, entao so e recomendado como ultimo recurso.
 
 ## Detalhes tecnicos
 
-O certificado CA extraido:
-- **CN (Common Name):** ONZ-SECURE-AREA-INFOP
-- **Validade:** 2025-03-12 ate 2035-03-10
-- **Tipo:** CA raiz auto-assinada (flag CA:TRUE)
+O certificado do servidor ONZ retorna:
+```
+subject=CN=cashout.infopago.com.br
+No extensions in certificate
+```
 
-A Edge Function `pix-auth` ja possui o codigo preparado para ler o secret `ONZ_CA_CERT`, decodificar de Base64 e injetar no campo `caCerts` do `Deno.createHttpClient`. Nenhuma alteracao de codigo e necessaria - apenas a atualizacao do secret.
+O runtime Deno usa **rustls** internamente, que segue estritamente a RFC 6125 e exige SAN. Nao ha flag para desabilitar hostname verification em `Deno.createHttpClient` nem no Supabase Edge Functions (que roda sobre Deno Deploy).
 
-## Resultado esperado
-Apos a atualizacao, a conexao mTLS com `cashout.infopago.com.br` deve funcionar sem o erro `UnknownIssuer`, permitindo autenticacao OAuth2 e operacoes Pix com o provedor ONZ.
+O proximo passo imediato e implementar o Passo 1 (tentar workaround no codigo) e, se nao funcionar, orientar o contato com a ONZ.
 
