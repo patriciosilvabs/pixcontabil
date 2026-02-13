@@ -2,8 +2,69 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+// Helper: raw TLS fetch for ONZ (bypasses missing SAN in server cert)
+async function onzTlsFetch(
+  url: string, method: string, headers: Record<string, string>,
+  body?: string, certPem?: string, keyPem?: string, caCerts?: string[],
+): Promise<{ status: number; body: string }> {
+  const u = new URL(url);
+  const tlsOpts: any = { hostname: u.hostname, port: parseInt(u.port || '443'), unsafelyDisableHostnameVerification: true };
+  if (certPem) { tlsOpts.certChain = certPem; tlsOpts.privateKey = keyPem || certPem; }
+  if (caCerts?.length) tlsOpts.caCerts = caCerts;
+  const conn = await Deno.connectTls(tlsOpts);
+  const path = u.pathname + u.search;
+  const enc = new TextEncoder();
+  const bodyBytes = body ? enc.encode(body) : null;
+  const lines = [`${method} ${path} HTTP/1.1`, `Host: ${u.hostname}`];
+  for (const [k, v] of Object.entries(headers)) lines.push(`${k}: ${v}`);
+  if (bodyBytes) lines.push(`Content-Length: ${bodyBytes.byteLength}`);
+  lines.push('Connection: close', '', body || '');
+  await conn.write(enc.encode(lines.join('\r\n')));
+  const chunks: Uint8Array[] = [];
+  const buf = new Uint8Array(4096);
+  while (true) { const n = await conn.read(buf); if (n === null) break; chunks.push(buf.slice(0, n)); }
+  conn.close();
+  const total = chunks.reduce((s, c) => s + c.length, 0);
+  const full = new Uint8Array(total); let off = 0;
+  for (const c of chunks) { full.set(c, off); off += c.length; }
+  const text = new TextDecoder().decode(full);
+  const slEnd = text.indexOf('\r\n');
+  const status = parseInt(text.substring(0, slEnd).split(' ')[1]);
+  const bStart = text.indexOf('\r\n\r\n');
+  let respBody = text.substring(bStart + 4);
+  if (text.toLowerCase().includes('transfer-encoding: chunked')) {
+    const dc: string[] = []; let rem = respBody;
+    while (rem.length > 0) {
+      const ce = rem.indexOf('\r\n'); if (ce === -1) break;
+      const cs = parseInt(rem.substring(0, ce), 16); if (cs === 0) break;
+      dc.push(rem.substring(ce + 2, ce + 2 + cs)); rem = rem.substring(ce + 2 + cs + 2);
+    }
+    respBody = dc.join('');
+  }
+  return { status, body: respBody };
+}
+
+function getOnzCaCerts(certPem: string): string[] {
+  const normalizePem = (pem: string): string => {
+    const match = pem.match(/(-----BEGIN [^-]+-----)([\s\S]*?)(-----END [^-]+-----)/);
+    if (!match) return pem;
+    const body = match[2].replace(/\s+/g, '');
+    const lines = body.match(/.{1,64}/g) || [];
+    return `${match[1]}\n${lines.join('\n')}\n${match[3]}\n`;
+  };
+  const caCerts: string[] = [];
+  const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+  if (caCertRaw) {
+    const trimmed = caCertRaw.trim();
+    if (trimmed.startsWith('-----BEGIN')) { caCerts.push(normalizePem(trimmed)); }
+    else { try { const d = atob(trimmed); if (d.includes('-----BEGIN')) caCerts.push(normalizePem(d)); } catch {} }
+  }
+  caCerts.push(normalizePem(certPem));
+  return caCerts;
+}
 
 function generateRefundId(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -157,19 +218,20 @@ Deno.serve(async (req) => {
     // ========== ONZ ==========
     else if (provider === 'onz') {
       const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-      const resp = await fetch(refundUrl, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
-      });
-      if (!resp.ok) {
-        const errorText = await resp.text();
+      const certPem = config.certificate_encrypted ? atob(config.certificate_encrypted) : undefined;
+      const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+      const caCerts = certPem ? getOnzCaCerts(certPem) : undefined;
+      const refundBody = JSON.stringify({ valor: refundValue.toFixed(2) });
+      const resp = await onzTlsFetch(refundUrl, 'PUT', {
+        'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json',
+      }, refundBody, certPem, keyPem, caCerts);
+      if (resp.status < 200 || resp.status >= 300) {
         return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          JSON.stringify({ error: 'Failed to request refund', provider_error: resp.body }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      refundData = await resp.json();
+      refundData = JSON.parse(resp.body);
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {

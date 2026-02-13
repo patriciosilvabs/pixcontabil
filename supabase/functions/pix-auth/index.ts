@@ -140,23 +140,19 @@ Deno.serve(async (req) => {
         ? atob(pixConfig.certificate_key_encrypted)
         : certPem;
 
-      // Build caCerts list from available sources
-      const caCerts: string[] = [];
-
       // Helper to ensure PEM has proper line breaks
       const normalizePem = (pem: string): string => {
-        // Remove existing whitespace/newlines, extract header/footer/body
         const match = pem.match(/(-----BEGIN [^-]+-----)([\s\S]*?)(-----END [^-]+-----)/);
         if (!match) return pem;
         const header = match[1];
         const body = match[2].replace(/\s+/g, '');
         const footer = match[3];
-        // Re-wrap body at 64 chars per line
         const lines = body.match(/.{1,64}/g) || [];
         return `${header}\n${lines.join('\n')}\n${footer}\n`;
       };
 
-      // 1. Check for explicit CA cert in env
+      // Build caCerts list
+      const caCerts: string[] = [];
       const caCertRaw = Deno.env.get('ONZ_CA_CERT');
       if (caCertRaw) {
         const trimmed = caCertRaw.trim();
@@ -170,36 +166,14 @@ Deno.serve(async (req) => {
             if (decoded.includes('-----BEGIN')) {
               caPem = decoded;
               console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT (Base64 decoded)');
-            } else {
-              console.warn('[pix-auth] ONZ: ONZ_CA_CERT decoded but does not contain PEM header');
             }
-          } catch (e) {
-            console.warn('[pix-auth] ONZ: Failed to decode ONZ_CA_CERT:', e.message);
+          } catch (_e) {
+            console.warn('[pix-auth] ONZ: Failed to decode ONZ_CA_CERT');
           }
         }
-        if (caPem) {
-          caCerts.push(normalizePem(caPem));
-        }
+        if (caPem) caCerts.push(normalizePem(caPem));
       }
-
-      // 2. Also add the client cert itself as potential CA (some ONZ setups use self-signed CA chains)
       caCerts.push(normalizePem(certPem));
-
-      let httpClient: Deno.HttpClient;
-      try {
-        httpClient = Deno.createHttpClient({
-          cert: certPem,
-          key: keyPem,
-          caCerts,
-        });
-        console.log(`[pix-auth] ONZ: mTLS client created with ${caCerts.length} CA cert(s)`);
-      } catch (e) {
-        console.error('[pix-auth] ONZ: Failed to create mTLS client:', e);
-        return new Response(
-          JSON.stringify({ error: 'Certificado mTLS inválido para ONZ.', details: e.message }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
 
       const requestBody = JSON.stringify({
         clientId: pixConfig.client_id,
@@ -207,26 +181,102 @@ Deno.serve(async (req) => {
         grantType: 'client_credentials',
       });
 
-      try {
-        const tokenResponse = await fetch(tokenUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: requestBody,
-          // @ts-ignore - Deno specific
-          client: httpClient,
-        });
-        httpClient.close();
+      // Parse the token URL to get hostname and path
+      const parsedUrl = new URL(tokenUrl);
+      const hostname = parsedUrl.hostname;
+      const port = parseInt(parsedUrl.port || '443');
+      const path = parsedUrl.pathname + parsedUrl.search;
 
-        if (!tokenResponse.ok) {
-          const errorText = await tokenResponse.text();
-          console.error('[pix-auth] ONZ token request failed:', errorText);
+      console.log(`[pix-auth] ONZ: Connecting via raw TLS to ${hostname}:${port} with unsafelyDisableHostnameVerification`);
+
+      try {
+        // Use Deno.connectTls with unsafelyDisableHostnameVerification to bypass 
+        // the missing SubjectAltName (SAN) on the ONZ server certificate.
+        // The server cert only has CN=cashout.infopago.com.br but no SAN extension.
+        // Modern TLS (rustls) requires SAN and ignores CN per RFC 6125.
+        const conn = await Deno.connectTls({
+          hostname,
+          port,
+          caCerts,
+          certChain: certPem,
+          privateKey: keyPem,
+          // @ts-ignore - Available in Deno runtime but not in all type definitions
+          unsafelyDisableHostnameVerification: true,
+        });
+
+        console.log('[pix-auth] ONZ: TLS connection established successfully');
+
+        // Manually construct and send HTTP/1.1 POST request
+        const httpRequest = [
+          `POST ${path} HTTP/1.1`,
+          `Host: ${hostname}`,
+          `Content-Type: application/json`,
+          `Content-Length: ${new TextEncoder().encode(requestBody).byteLength}`,
+          `Connection: close`,
+          ``,
+          requestBody,
+        ].join('\r\n');
+
+        const encoder = new TextEncoder();
+        const decoder = new TextDecoder();
+
+        await conn.write(encoder.encode(httpRequest));
+
+        // Read response
+        const chunks: Uint8Array[] = [];
+        const buf = new Uint8Array(4096);
+        while (true) {
+          const n = await conn.read(buf);
+          if (n === null) break;
+          chunks.push(buf.slice(0, n));
+        }
+        conn.close();
+
+        // Combine chunks and parse HTTP response
+        const totalLength = chunks.reduce((sum, c) => sum + c.length, 0);
+        const fullResponse = new Uint8Array(totalLength);
+        let offset = 0;
+        for (const chunk of chunks) {
+          fullResponse.set(chunk, offset);
+          offset += chunk.length;
+        }
+        const responseText = decoder.decode(fullResponse);
+
+        // Parse status line
+        const statusLineEnd = responseText.indexOf('\r\n');
+        const statusLine = responseText.substring(0, statusLineEnd);
+        const statusCode = parseInt(statusLine.split(' ')[1]);
+
+        // Parse body (after double CRLF)
+        const bodyStart = responseText.indexOf('\r\n\r\n');
+        let responseBody = responseText.substring(bodyStart + 4);
+
+        // Handle chunked transfer encoding
+        if (responseText.toLowerCase().includes('transfer-encoding: chunked')) {
+          const decodedChunks: string[] = [];
+          let remaining = responseBody;
+          while (remaining.length > 0) {
+            const chunkSizeEnd = remaining.indexOf('\r\n');
+            if (chunkSizeEnd === -1) break;
+            const chunkSize = parseInt(remaining.substring(0, chunkSizeEnd), 16);
+            if (chunkSize === 0) break;
+            decodedChunks.push(remaining.substring(chunkSizeEnd + 2, chunkSizeEnd + 2 + chunkSize));
+            remaining = remaining.substring(chunkSizeEnd + 2 + chunkSize + 2);
+          }
+          responseBody = decodedChunks.join('');
+        }
+
+        console.log(`[pix-auth] ONZ: Response status ${statusCode}`);
+
+        if (statusCode < 200 || statusCode >= 300) {
+          console.error('[pix-auth] ONZ token request failed:', responseBody);
           return new Response(
-            JSON.stringify({ error: 'Falha ao autenticar com ONZ Infopago', details: errorText }),
+            JSON.stringify({ error: 'Falha ao autenticar com ONZ Infopago', details: responseBody }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        const tokenData = await tokenResponse.json();
+        const tokenData = JSON.parse(responseBody);
         accessToken = tokenData.accessToken || tokenData.access_token;
         if (tokenData.expiresAt) {
           expiresInSeconds = Math.floor((tokenData.expiresAt * 1000 - Date.now()) / 1000);
@@ -234,13 +284,12 @@ Deno.serve(async (req) => {
           expiresInSeconds = tokenData.expires_in;
         }
       } catch (e) {
-        httpClient.close();
-        console.error('[pix-auth] ONZ fetch error:', e);
+        console.error('[pix-auth] ONZ TLS connection error:', e);
         return new Response(
           JSON.stringify({ 
             error: 'Falha na conexão mTLS com ONZ Infopago', 
             details: e.message,
-            hint: 'O servidor ONZ usa um CA privado. Configure o certificado CA como secret ONZ_CA_CERT (Base64 do PEM). Extraia do .pfx: openssl pkcs12 -in arquivo.pfx -cacerts -nokeys -out ca.pem'
+            hint: 'Verifique os certificados e o secret ONZ_CA_CERT. O certificado CA deve ser o PEM codificado em Base64.'
           }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
