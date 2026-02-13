@@ -124,8 +124,19 @@ Deno.serve(async (req) => {
     // ========== ONZ Infopago ==========
     if (provider === 'onz') {
       console.log('[pix-auth] ONZ: requesting token via OAuth2 JSON body');
-      const tokenUrl = `${pixConfig.base_url}/oauth/token`;
-      const tokenResponse = await fetch(tokenUrl, {
+      const baseUrl = pixConfig.base_url.replace(/\/+$/, '');
+      const tokenUrl = `${baseUrl}/oauth/token`;
+      console.log(`[pix-auth] ONZ token URL: ${tokenUrl}`);
+
+      // ONZ may use a certificate not in Deno's default trust store
+      let httpClient: Deno.HttpClient | undefined;
+      try {
+        httpClient = Deno.createHttpClient({ caCerts: [] });
+      } catch (_e) {
+        // fallback: no custom client
+      }
+
+      const fetchOptions: any = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -133,7 +144,11 @@ Deno.serve(async (req) => {
           clientSecret: pixConfig.client_secret_encrypted,
           grantType: 'client_credentials',
         }),
-      });
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const tokenResponse = await fetch(tokenUrl, fetchOptions);
+      httpClient?.close();
 
       if (!tokenResponse.ok) {
         const errorText = await tokenResponse.text();
