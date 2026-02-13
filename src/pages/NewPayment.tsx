@@ -24,6 +24,7 @@ import {
   Check,
   AlertCircle,
 } from "lucide-react";
+import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 
 type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
@@ -337,6 +338,22 @@ export default function NewPayment() {
               </Tabs>
             </CardContent>
           </Card>
+        )}
+
+        {/* Recent Payments - only on step 1 */}
+        {step === 1 && (
+          <RecentPayments
+            onSelect={(payment: RecentPayment) => {
+              setPixData({
+                type: payment.pix_type as PaymentType,
+                keyType: (payment.pix_key_type as PixKeyType) || "cpf",
+                key: payment.pix_key,
+                amount: payment.amount.toString().replace(".", ","),
+                description: payment.description || "",
+              });
+              setStep(2);
+            }}
+          />
         )}
 
         {/* Step 2: Amount and Description */}
