@@ -144,13 +144,27 @@ Deno.serve(async (req) => {
       const caCerts: string[] = [];
 
       // 1. Check for explicit CA cert in env
-      const caCertB64 = Deno.env.get('ONZ_CA_CERT');
-      if (caCertB64) {
-        try {
-          caCerts.push(atob(caCertB64));
-          console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT secret');
-        } catch (e) {
-          console.warn('[pix-auth] ONZ: Failed to decode ONZ_CA_CERT');
+      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+      if (caCertRaw) {
+        // Try to detect if it's already PEM or Base64-encoded PEM
+        const trimmed = caCertRaw.trim();
+        if (trimmed.startsWith('-----BEGIN')) {
+          // Already PEM format
+          caCerts.push(trimmed);
+          console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT (PEM direct)');
+        } else {
+          // Try Base64 decode
+          try {
+            const decoded = atob(trimmed);
+            if (decoded.includes('-----BEGIN')) {
+              caCerts.push(decoded);
+              console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT (Base64 decoded)');
+            } else {
+              console.warn('[pix-auth] ONZ: ONZ_CA_CERT decoded but does not contain PEM header');
+            }
+          } catch (e) {
+            console.warn('[pix-auth] ONZ: Failed to decode ONZ_CA_CERT:', e.message);
+          }
         }
       }
 
