@@ -1,45 +1,34 @@
 
-# Corrigir Permissoes e Isolamento de Dados
+# Corrigir Navegacao Mobile para Usuarios com Permissoes Limitadas
 
-## Problemas Identificados
+## Problema
+A usuario `julietedmb@gmail.com` tem acesso apenas a "Novo Pagamento" e "Transacoes", mas:
+- A barra inferior (BottomTabBar) nao tem um tab para "Novo Pagamento"
+- O tab "Home" (Dashboard) desaparece porque ela nao tem permissao, deixando apenas "Menu" e "Transacoes"
+- Nao ha como acessar "Novo Pagamento" pelo mobile
 
-1. **Configuracoes aparecendo sem permissao**: A pagina "Menu" no mobile mostra "Configuracoes" para todos os usuarios, sem verificar se o usuario tem acesso.
+## Solucao
 
-2. **Menu mobile nao filtra por permissoes**: O menu mobile so verifica se o usuario e admin, mas nao usa `hasPageAccess` para filtrar os itens visiveis para operadores.
+### 1. Atualizar BottomTabBar (`src/components/layout/BottomTabBar.tsx`)
+- Adicionar o tab "Novo Pagamento" com icone `PlusCircle` e pageKey `new_payment`
+- Reorganizar os tabs para: Home | Novo Pagamento | Menu | Transacoes
+- O filtro `hasPageAccess` ja esta implementado, entao tabs sem permissao serao ocultados automaticamente
 
-3. **Historico mostrando dados de outros usuarios**: A pagina de Transacoes busca todas as transacoes da empresa (`company_id`), sem filtrar por `created_by` para operadores. Apenas admins devem ver todas as transacoes.
-
-## Plano de Implementacao
-
-### 1. Corrigir MobileMenu.tsx
-- Importar `hasPageAccess` do `useAuth`
-- Filtrar os itens do menu usando `hasPageAccess` para cada item que tenha um `pageKey`
-- Adicionar `pageKey` aos itens do menu (ex: `settings` para Configuracoes)
-- Manter "Configuracoes" condicionada a `hasPageAccess("settings")`
-
-### 2. Corrigir Transactions.tsx - Isolamento de dados por usuario
-- Importar `isAdmin` e `user` do `useAuth`
-- Para operadores: adicionar filtro `.eq("created_by", user.id)` na query
-- Para admins: manter a query atual (ver todas as transacoes da empresa)
-
-### 3. Revisar MainLayout.tsx (sidebar desktop)
-- Ja esta usando `hasPageAccess` corretamente na sidebar - nenhuma alteracao necessaria.
+### 2. Atualizar MobileMenu (`src/pages/MobileMenu.tsx`)
+- Adicionar "Novo Pagamento" como item do menu mobile tambem, com pageKey `new_payment`
+- Garantir que o usuario veja todas as paginas que tem acesso
 
 ## Detalhes Tecnicos
 
-### MobileMenu.tsx - Mudancas
+### BottomTabBar - Tabs atualizados
 ```text
-- Adicionar pageKey a cada item de menu
-- Usar hasPageAccess para filtrar itens
-- Operadores verao apenas itens que tem permissao
-```
-
-### Transactions.tsx - Mudancas
-```text
-- Se isAdmin: query por company_id (todas da empresa)
-- Se operador: query por company_id + created_by = user.id (so as proprias)
+Tabs disponiveis (filtrados por permissao):
+- Home (/) -> pageKey: dashboard
+- Novo Pagamento (/pix/new) -> pageKey: new_payment  [NOVO]
+- Menu (/menu) -> sem pageKey (sempre visivel)
+- Transacoes (/transactions) -> pageKey: transactions
 ```
 
 ### Arquivos afetados
-- `src/pages/MobileMenu.tsx`
-- `src/pages/Transactions.tsx`
+- `src/components/layout/BottomTabBar.tsx` - adicionar tab Novo Pagamento
+- `src/pages/MobileMenu.tsx` - adicionar item Novo Pagamento no menu
