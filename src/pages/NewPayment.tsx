@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Key,
@@ -37,6 +39,13 @@ interface PaymentData {
   boletoCode?: string;
   amount: string;
   description?: string;
+  categoryId?: string;
+}
+
+interface CategoryItem {
+  id: string;
+  name: string;
+  classification: "cost" | "expense";
 }
 
 const pixKeyLabels: Record<PixKeyType, string> = {
@@ -63,10 +72,29 @@ export default function NewPayment() {
     amount: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currentCompany } = useAuth();
   const { payByKey, payByQRCode, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing } = useBilletPayment();
+
+  useEffect(() => {
+    if (!currentCompany?.id) return;
+    supabase
+      .from("categories")
+      .select("id, name, classification")
+      .eq("company_id", currentCompany.id)
+      .eq("is_active", true)
+      .order("name")
+      .then(({ data }) => {
+        if (data) setCategories(data as CategoryItem[]);
+      });
+  }, [currentCompany?.id]);
+
+  const costCategories = categories.filter((c) => c.classification === "cost");
+  const expenseCategories = categories.filter((c) => c.classification === "expense");
+  const selectedCategory = categories.find((c) => c.id === pixData.categoryId);
 
   const handleNext = () => {
     // Validate current step
@@ -120,11 +148,12 @@ export default function NewPayment() {
 
     try {
       const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
+      const categoryDescription = selectedCategory?.name || pixData.description;
 
       if (pixData.type === 'boleto') {
         const result = await payBillet({
           digitable_code: pixData.boletoCode || '',
-          description: pixData.description || 'Pagamento de boleto',
+          description: categoryDescription || 'Pagamento de boleto',
           amount: amount > 0 ? amount : undefined,
         });
 
@@ -136,7 +165,7 @@ export default function NewPayment() {
         const result = await payByKey({
           pix_key: pixData.key || '',
           valor: amount,
-          descricao: pixData.description,
+          descricao: categoryDescription,
         });
 
         if (result) {
@@ -146,7 +175,7 @@ export default function NewPayment() {
         const result = await payByQRCode({
           qr_code: pixData.copyPaste || '',
           valor: amount,
-          descricao: pixData.description,
+          descricao: categoryDescription,
         });
 
         if (result) {
@@ -356,13 +385,13 @@ export default function NewPayment() {
           />
         )}
 
-        {/* Step 2: Amount and Description */}
+        {/* Step 2: Amount and Category */}
         {step === 2 && (
           <Card>
             <CardHeader>
-              <CardTitle>Valor e Descrição</CardTitle>
+              <CardTitle>Informação do pagamento</CardTitle>
               <CardDescription>
-                Informe o valor do pagamento
+                Informe o valor e a categoria do pagamento
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -379,7 +408,6 @@ export default function NewPayment() {
                     className="pl-12 text-2xl font-bold h-14"
                     value={pixData.amount}
                     onChange={(e) => {
-                      // Allow only numbers and comma
                       const value = e.target.value.replace(/[^\d,]/g, "");
                       setPixData({ ...pixData, amount: value });
                     }}
@@ -388,14 +416,45 @@ export default function NewPayment() {
               </div>
 
               <div className="space-y-2">
-                <Label>Descrição (opcional)</Label>
-                <Textarea
-                  placeholder="Ex: Pagamento fornecedor, compra de insumos..."
-                  value={pixData.description || ""}
-                  onChange={(e) =>
-                    setPixData({ ...pixData, description: e.target.value })
-                  }
-                />
+                <Label>Categoria</Label>
+                {categories.length > 0 ? (
+                  <Select
+                    value={pixData.categoryId || ""}
+                    onValueChange={(v) =>
+                      setPixData({ ...pixData, categoryId: v })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {costCategories.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Custos</SelectLabel>
+                          {costCategories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {expenseCategories.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Despesas</SelectLabel>
+                          {expenseCategories.map((cat) => (
+                            <SelectItem key={cat.id} value={cat.id}>
+                              {cat.name}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-lg">
+                    Nenhuma categoria cadastrada. Cadastre categorias na tela de Categorias.
+                  </p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -452,11 +511,14 @@ export default function NewPayment() {
                   </div>
                 </div>
 
-                {pixData.description && (
+                {selectedCategory && (
                   <div className="flex justify-between items-start">
-                    <span className="text-muted-foreground">Descrição</span>
+                    <span className="text-muted-foreground">Categoria</span>
                     <span className="font-medium text-right max-w-[60%]">
-                      {pixData.description}
+                      {selectedCategory.name}
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({selectedCategory.classification === "cost" ? "Custo" : "Despesa"})
+                      </span>
                     </span>
                   </div>
                 )}
