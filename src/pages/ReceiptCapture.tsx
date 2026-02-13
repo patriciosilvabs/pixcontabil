@@ -78,22 +78,49 @@ export default function ReceiptCapture() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const normalizeImageOrientation = useCallback(async (file: File): Promise<{ blob: Blob; previewUrl: string }> => {
+    // Only process image files
+    if (!file.type.startsWith("image/")) {
+      const previewUrl = URL.createObjectURL(file);
+      return { blob: file, previewUrl };
+    }
+
+    const bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+    const canvas = document.createElement("canvas");
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext("2d")!;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+
+    const blob = await new Promise<Blob>((resolve) => {
+      canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.9);
+    });
+
+    const previewUrl = URL.createObjectURL(blob);
+    return { blob, previewUrl };
+  }, []);
+
   const handleFileSelect = useCallback(async (file: File) => {
-    // Create preview URL
-    const previewUrl = URL.createObjectURL(file);
+    setReceiptData((prev) => ({ ...prev, isProcessing: true }));
+
+    // Normalize orientation via Canvas (fixes mobile EXIF rotation)
+    const { blob, previewUrl } = await normalizeImageOrientation(file);
+
+    // Build a corrected File object preserving the original name
+    const fileName = file.name.replace(/\.[^.]+$/, ".jpg");
+    const correctedFile = new File([blob], fileName, { type: "image/jpeg" });
 
     setReceiptData((prev) => ({
       ...prev,
-      file,
+      file: correctedFile,
       previewUrl,
       isProcessing: true,
     }));
 
     // Simulate OCR processing
-    // In production, this would call the OCR edge function
     await new Promise((resolve) => setTimeout(resolve, 2000));
 
-    // Simulated OCR result
     const mockOcrData = {
       cnpj: "12.345.678/0001-90",
       date: "2024-01-15",
@@ -105,7 +132,7 @@ export default function ReceiptCapture() {
     setReceiptData((prev) => ({
       ...prev,
       ocrData: mockOcrData,
-      classification: "cost" as ClassificationType, // AI suggestion
+      classification: "cost" as ClassificationType,
       isProcessing: false,
     }));
 
@@ -113,7 +140,7 @@ export default function ReceiptCapture() {
       title: "Comprovante processado!",
       description: "Os dados foram extraídos automaticamente pela IA.",
     });
-  }, [toast]);
+  }, [toast, normalizeImageOrientation]);
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
