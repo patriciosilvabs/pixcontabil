@@ -2,7 +2,7 @@ import { format } from "date-fns";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
-import { supabase } from "@/integrations/supabase/client";
+import { extractStoragePath, getSignedReceiptUrl } from "@/utils/storageHelpers";
 
 interface TransactionRow {
   date: string;
@@ -12,31 +12,6 @@ interface TransactionRow {
   classification: string;
   status: string;
   receiptUrl: string;
-}
-
-/**
- * Extract the relative storage path from a file_url.
- * Handles both legacy full URLs (containing /object/public/receipts/)
- * and new relative paths.
- */
-function extractStoragePath(fileUrl: string): string {
-  const marker = "/object/public/receipts/";
-  const idx = fileUrl.indexOf(marker);
-  if (idx !== -1) return fileUrl.substring(idx + marker.length);
-  // Also handle /object/sign/receipts/ or similar
-  const marker2 = "/receipts/";
-  const idx2 = fileUrl.lastIndexOf(marker2);
-  if (idx2 !== -1 && fileUrl.startsWith("http")) return fileUrl.substring(idx2 + marker2.length);
-  return fileUrl; // already a relative path
-}
-
-async function getSignedReceiptUrl(filePath: string): Promise<string> {
-  const path = extractStoragePath(filePath);
-  const { data, error } = await supabase.storage
-    .from("receipts")
-    .createSignedUrl(path, 3600); // 1 hour
-  if (error || !data?.signedUrl) return "";
-  return data.signedUrl;
 }
 
 async function mapTransactions(transactions: any[]): Promise<TransactionRow[]> {

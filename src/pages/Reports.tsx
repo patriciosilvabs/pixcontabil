@@ -3,7 +3,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSummary";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -212,42 +212,8 @@ export default function Reports() {
               </Card>
             </div>
 
-            {/* Transactions Table */}
-            <Card>
-              <CardHeader><CardTitle className="text-base">Transações ({transactions.length})</CardTitle></CardHeader>
-              <CardContent className="p-0">
-                {transactions.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-8">Nenhuma transação no período</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Data</TableHead>
-                        <TableHead>Descrição</TableHead>
-                        <TableHead>Categoria</TableHead>
-                        <TableHead className="text-right">Valor</TableHead>
-                        <TableHead>Status</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {transactions.slice(0, 50).map((t) => (
-                        <TableRow key={t.id}>
-                          <TableCell className="text-sm">{format(new Date(t.created_at), "dd/MM/yyyy")}</TableCell>
-                          <TableCell className="text-sm">{t.description || t.beneficiary_name || "—"}</TableCell>
-                          <TableCell className="text-sm">{t.categories?.name || "—"}</TableCell>
-                          <TableCell className="text-right font-mono-numbers font-medium">{formatCurrency(Number(t.amount))}</TableCell>
-                          <TableCell>
-                            <span className={`text-xs font-medium ${t.status === "completed" ? "text-success" : t.status === "failed" ? "text-destructive" : "text-muted-foreground"}`}>
-                              {t.status === "completed" ? "Concluído" : t.status === "failed" ? "Falhou" : t.status === "cancelled" ? "Cancelado" : "Pendente"}
-                            </span>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </CardContent>
-            </Card>
+            {/* Daily Summary with Receipts */}
+            <DailyTransactionSummary transactions={transactions} />
           </>
         )}
       </div>
