@@ -11,7 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Plus, Pencil, Power, FolderOpen, Filter, FileUp } from "lucide-react";
+import { Loader2, Plus, Pencil, Power, FolderOpen, Filter, FileUp, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { BatchCategoryDialog } from "@/components/categories/BatchCategoryDialog";
 
 type Classification = "cost" | "expense";
@@ -35,6 +39,8 @@ export default function Categories() {
   const [isSaving, setIsSaving] = useState(false);
   const [filter, setFilter] = useState<"all" | Classification>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [form, setForm] = useState({ name: "", classification: "cost" as Classification, keywords: "" });
 
   const fetchCategories = async () => {
@@ -105,6 +111,24 @@ export default function Categories() {
     }
   };
 
+  const openDeleteConfirm = (id: string) => {
+    setDeletingId(id);
+    setConfirmDeleteOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    const { error } = await supabase.from("categories").delete().eq("id", deletingId);
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao remover categoria", description: error.message });
+    } else {
+      toast({ title: "Categoria removida permanentemente!" });
+      fetchCategories();
+    }
+    setConfirmDeleteOpen(false);
+    setDeletingId(null);
+  };
+
   const filtered = categories.filter((c) => filter === "all" || c.classification === filter);
 
   return (
@@ -173,6 +197,9 @@ export default function Categories() {
                         <Button variant="ghost" size="icon" onClick={() => toggleActive(cat)}>
                           <Power className="h-4 w-4" />
                         </Button>
+                        <Button variant="ghost" size="icon" onClick={() => openDeleteConfirm(cat.id)} className="text-destructive hover:text-destructive">
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -226,6 +253,23 @@ export default function Categories() {
             onSuccess={fetchCategories}
           />
         )}
+
+        <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remover categoria</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja remover esta categoria permanentemente? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancelar</AlertDialogCancel>
+              <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+                Remover
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </MainLayout>
   );
