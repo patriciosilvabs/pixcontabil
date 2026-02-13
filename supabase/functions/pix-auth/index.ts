@@ -128,75 +128,94 @@ Deno.serve(async (req) => {
       const tokenUrl = `${baseUrl}/oauth/token`;
       console.log(`[pix-auth] ONZ token URL: ${tokenUrl}`);
 
-      // ONZ requires mTLS with client certificate
-      let httpClient: Deno.HttpClient | undefined;
-      if (pixConfig.certificate_encrypted) {
-        try {
-          const certPem = atob(pixConfig.certificate_encrypted);
-          const keyPem = pixConfig.certificate_key_encrypted
-            ? atob(pixConfig.certificate_key_encrypted)
-            : certPem;
-
-          // Build createHttpClient options
-          const clientOptions: any = { cert: certPem, key: keyPem };
-
-          // If a CA certificate is available (for trusting ONZ's private CA), add it
-          const caCertB64 = Deno.env.get('ONZ_CA_CERT');
-          if (caCertB64) {
-            try {
-              const caCertPem = atob(caCertB64);
-              clientOptions.caCerts = [caCertPem];
-              console.log('[pix-auth] ONZ: Added custom CA certificate for server trust');
-            } catch (e) {
-              console.warn('[pix-auth] ONZ: Failed to decode CA cert from ONZ_CA_CERT:', e);
-            }
-          } else {
-            console.warn('[pix-auth] ONZ: No CA certificate configured (ONZ_CA_CERT). Server TLS validation may fail.');
-          }
-
-          httpClient = Deno.createHttpClient(clientOptions);
-          console.log('[pix-auth] ONZ: mTLS client created successfully');
-        } catch (e) {
-          console.error('[pix-auth] ONZ: Failed to create mTLS client:', e);
-          return new Response(
-            JSON.stringify({ error: 'Certificado mTLS inválido para ONZ. Verifique se está corretamente codificado em Base64.' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      } else {
-        console.warn('[pix-auth] ONZ: No certificate configured, attempting without mTLS');
-      }
-
-      const fetchOptions: any = {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          clientId: pixConfig.client_id,
-          clientSecret: pixConfig.client_secret_encrypted,
-          grantType: 'client_credentials',
-        }),
-      };
-      if (httpClient) fetchOptions.client = httpClient;
-
-      const tokenResponse = await fetch(tokenUrl, fetchOptions);
-      httpClient?.close();
-
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        console.error('[pix-auth] ONZ token request failed:', errorText);
+      if (!pixConfig.certificate_encrypted) {
         return new Response(
-          JSON.stringify({ error: 'Falha ao autenticar com ONZ Infopago', details: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Certificado mTLS é obrigatório para ONZ. Configure o certificado nas configurações.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const tokenData = await tokenResponse.json();
-      accessToken = tokenData.accessToken || tokenData.access_token;
-      // ONZ returns expiresAt as unix timestamp
-      if (tokenData.expiresAt) {
-        expiresInSeconds = Math.floor((tokenData.expiresAt * 1000 - Date.now()) / 1000);
-      } else if (tokenData.expires_in) {
-        expiresInSeconds = tokenData.expires_in;
+      const certPem = atob(pixConfig.certificate_encrypted);
+      const keyPem = pixConfig.certificate_key_encrypted
+        ? atob(pixConfig.certificate_key_encrypted)
+        : certPem;
+
+      // Build caCerts list from available sources
+      const caCerts: string[] = [];
+
+      // 1. Check for explicit CA cert in env
+      const caCertB64 = Deno.env.get('ONZ_CA_CERT');
+      if (caCertB64) {
+        try {
+          caCerts.push(atob(caCertB64));
+          console.log('[pix-auth] ONZ: Using CA cert from ONZ_CA_CERT secret');
+        } catch (e) {
+          console.warn('[pix-auth] ONZ: Failed to decode ONZ_CA_CERT');
+        }
+      }
+
+      // 2. Also add the client cert itself as potential CA (some ONZ setups use self-signed CA chains)
+      caCerts.push(certPem);
+
+      let httpClient: Deno.HttpClient;
+      try {
+        httpClient = Deno.createHttpClient({
+          cert: certPem,
+          key: keyPem,
+          caCerts,
+        });
+        console.log(`[pix-auth] ONZ: mTLS client created with ${caCerts.length} CA cert(s)`);
+      } catch (e) {
+        console.error('[pix-auth] ONZ: Failed to create mTLS client:', e);
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS inválido para ONZ.', details: e.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const requestBody = JSON.stringify({
+        clientId: pixConfig.client_id,
+        clientSecret: pixConfig.client_secret_encrypted,
+        grantType: 'client_credentials',
+      });
+
+      try {
+        const tokenResponse = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: requestBody,
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+        httpClient.close();
+
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          console.error('[pix-auth] ONZ token request failed:', errorText);
+          return new Response(
+            JSON.stringify({ error: 'Falha ao autenticar com ONZ Infopago', details: errorText }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const tokenData = await tokenResponse.json();
+        accessToken = tokenData.accessToken || tokenData.access_token;
+        if (tokenData.expiresAt) {
+          expiresInSeconds = Math.floor((tokenData.expiresAt * 1000 - Date.now()) / 1000);
+        } else if (tokenData.expires_in) {
+          expiresInSeconds = tokenData.expires_in;
+        }
+      } catch (e) {
+        httpClient.close();
+        console.error('[pix-auth] ONZ fetch error:', e);
+        return new Response(
+          JSON.stringify({ 
+            error: 'Falha na conexão mTLS com ONZ Infopago', 
+            details: e.message,
+            hint: 'O servidor ONZ usa um CA privado. Configure o certificado CA como secret ONZ_CA_CERT (Base64 do PEM). Extraia do .pfx: openssl pkcs12 -in arquivo.pfx -cacerts -nokeys -out ca.pem'
+          }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
     // ========== TRANSFEERA ==========
