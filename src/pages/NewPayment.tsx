@@ -29,6 +29,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
+import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 
 type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
@@ -68,6 +69,8 @@ export default function NewPayment() {
     amount: "",
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerMode, setScannerMode] = useState<"qrcode" | "barcode">("qrcode");
   const navigate = useNavigate();
   const { toast } = useToast();
   const { currentCompany } = useAuth();
@@ -305,7 +308,14 @@ export default function NewPayment() {
                     <p className="text-muted-foreground">
                       Clique para abrir a câmera e escanear o QR Code
                     </p>
-                    <Button variant="outline" className="mt-4">
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => {
+                        setScannerMode("qrcode");
+                        setScannerOpen(true);
+                      }}
+                    >
                       Abrir Câmera
                     </Button>
                   </div>
@@ -317,7 +327,14 @@ export default function NewPayment() {
                     <p className="text-muted-foreground">
                       Escaneie o código de barras com a câmera do seu dispositivo
                     </p>
-                    <Button variant="outline" className="mt-4">
+                    <Button
+                      variant="outline"
+                      className="mt-4"
+                      onClick={() => {
+                        setScannerMode("barcode");
+                        setScannerOpen(true);
+                      }}
+                    >
                       Abrir Câmera
                     </Button>
                   </div>
@@ -543,6 +560,24 @@ export default function NewPayment() {
           </Button>
         </div>
       </div>
+
+      <BarcodeScanner
+        mode={scannerMode}
+        isOpen={scannerOpen}
+        onScan={(result) => {
+          setScannerOpen(false);
+          if (scannerMode === "qrcode") {
+            setPixData({ ...pixData, type: "copy_paste", copyPaste: result });
+          } else {
+            setPixData({ ...pixData, boletoCode: result });
+          }
+          toast({
+            title: "Código escaneado!",
+            description: scannerMode === "qrcode" ? "QR Code Pix capturado." : "Código de barras capturado.",
+          });
+        }}
+        onClose={() => setScannerOpen(false)}
+      />
     </MainLayout>
   );
 }
