@@ -133,9 +133,25 @@ Deno.serve(async (req) => {
       const balanceUrl = `${config.base_url}/accounts/balances/`;
       console.log(`[pix-balance] ONZ: GET ${balanceUrl}`);
 
-      const res = await fetch(balanceUrl, {
+      // ONZ requires mTLS with client certificate
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (e) {
+          console.error('[pix-balance] ONZ: Failed to create mTLS client:', e);
+        }
+      }
+
+      const onzFetchOptions: any = {
         headers: { 'Authorization': `Bearer ${accessToken}` },
-      });
+      };
+      if (httpClient) onzFetchOptions.client = httpClient;
+
+      const res = await fetch(balanceUrl, onzFetchOptions);
+      httpClient?.close();
 
       if (!res.ok) {
         const errText = await res.text();
