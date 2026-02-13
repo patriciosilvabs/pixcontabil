@@ -1,64 +1,38 @@
 
+# Adicionar Filtros de Data e Classificacao acima do Resumo Diario
 
-# Adicionar Resumo Visual com Comprovantes na Tela de Relatorios
+## O que muda
 
-## Objetivo
-
-Mostrar diretamente na pagina de Relatorios um resumo dos pagamentos agrupados por dia, com os respectivos comprovantes visiveis inline. A contabilidade podera navegar pelos dias/semanas sem precisar exportar, visualizando cada despesa e seu comprovante na propria tela.
-
-## Como Vai Funcionar
-
-A secao de resumo visual substitui a tabela simples atual. As transacoes serao agrupadas por dia, e cada grupo mostra:
-
-- A data como cabecalho (ex: "Segunda, 10/02/2026")
-- O subtotal do dia
-- Cada transacao com descricao, categoria, classificacao, valor e status
-- Uma miniatura clicavel do comprovante (que abre em tamanho grande num dialog)
-
-Quando o periodo selecionado for "Hoje", mostra apenas 1 dia. Para "Esta Semana" ou "Este Mes", mostra multiplos dias colapsados em acordeao (Accordion), com cada dia expansivel.
-
-## Layout
-
-```text
-+-- 10/02/2026 (Segunda) — Subtotal: R$ 2.340,00 --------+
-|                                                           |
-|  [thumb]  Compra de insumos    Insumos  Custo  R$ 800,00 |
-|  [thumb]  Agua mineral         Bebidas  Custo  R$ 140,00 |
-|  [thumb]  Energia eletrica     Energia  Despesa R$1400,00 |
-+-----------------------------------------------------------+
-
-+-- 09/02/2026 (Domingo) — Subtotal: R$ 560,00 -----------+
-|  (clique para expandir)                                   |
-+-----------------------------------------------------------+
-```
-
-Ao clicar na miniatura do comprovante, abre um Dialog com a imagem em tamanho grande.
+Mover os controles de filtro (periodo + novo filtro de classificacao) para uma barra de filtros logo acima do componente "Resumo por Dia", tornando a consulta mais acessivel e permitindo filtrar por Custo, Despesa ou Todos.
 
 ## Alteracoes
 
-### Arquivo: `src/pages/Reports.tsx`
+### 1. `src/pages/Reports.tsx`
 
-1. **Agrupar transacoes por dia**: Criar um `useMemo` que agrupa as transacoes por data (`dd/MM/yyyy`), calculando subtotal de cada dia
-2. **Substituir a tabela** pela secao de resumo visual usando o componente `Accordion` (Radix) para cada dia
-3. **Miniaturas de comprovantes**: Para cada transacao com `receipts[0].file_url`, gerar signed URL e exibir um `<img>` em miniatura (64x64px)
-4. **Dialog de imagem ampliada**: Ao clicar na miniatura, abrir um `Dialog` com a imagem em tamanho legivel
-5. **Estado de signed URLs**: Criar estado `signedUrls` (Record<string, string>) e carregar as URLs assinadas ao montar os dados
-6. **Manter graficos e cards de resumo** no topo -- o resumo visual fica abaixo dos graficos, no lugar da tabela atual
-7. **Manter exportacao** -- os botoes de exportar PDF/CSV/XLSX continuam funcionando normalmente
+- Adicionar novo estado `classificationFilter` com opcoes: `"all"`, `"cost"`, `"expense"`
+- Mover o `Select` de periodo e o botao de exportacao para uma barra de filtros posicionada entre os graficos e o resumo diario (acima do card "Resumo por Dia")
+- Adicionar um segundo `Select` para classificacao com opcoes: "Todos", "Custos", "Despesas"
+- Filtrar as transacoes passadas ao `DailyTransactionSummary` com base no `classificationFilter` selecionado (filtrando por `categories.classification`)
+- Os cards de resumo e graficos continuam usando todas as transacoes do periodo (sem filtro de classificacao), pois mostram a visao geral
+- O filtro de classificacao aplica-se apenas ao resumo diario com comprovantes
 
-### Importacoes adicionais
+### 2. Layout da barra de filtros
 
-- `Accordion, AccordionContent, AccordionItem, AccordionTrigger` de `@/components/ui/accordion`
-- `Dialog, DialogContent, DialogTrigger` de `@/components/ui/dialog`
-- `Image, Eye` de `lucide-react`
-- `extractStoragePath` e logica de signed URL (reutilizar do `reportExports.ts` ou criar helper compartilhado)
+```text
++------------------------------------------------------------------+
+|  Periodo: [Este Mes v]   Classificacao: [Todos v]   [Exportar v] |
++------------------------------------------------------------------+
+|  Resumo por Dia (X transacoes)                                    |
+|  ...                                                              |
++------------------------------------------------------------------+
+```
 
-## Detalhes Tecnicos
+- Barra com `flex` responsiva: em mobile os selects ficam empilhados, em desktop ficam lado a lado
+- O header da pagina (titulo "Relatorios") fica limpo, sem controles
 
-- Agrupamento por dia: `transactions.reduce()` usando `format(new Date(t.created_at), "yyyy-MM-dd")` como chave
-- Signed URLs geradas em batch usando `Promise.all` ao carregar as transacoes, armazenadas em estado local
-- Miniaturas usam `object-fit: cover` para manter proporcao dentro do quadrado
-- Dialog usa `max-w-3xl` para a imagem ficar grande e legivel
-- Fallback para transacoes sem comprovante: exibe icone de "sem imagem"
-- Accordion inicia com o primeiro dia expandido (o mais recente)
+### Detalhes tecnicos
 
+- Novo estado: `const [classificationFilter, setClassificationFilter] = useState<"all" | "cost" | "expense">("all")`
+- Transacoes filtradas: `const filteredTransactions = useMemo(() => classificationFilter === "all" ? transactions : transactions.filter(t => t.categories?.classification === classificationFilter), [transactions, classificationFilter])`
+- Passar `filteredTransactions` para `DailyTransactionSummary` em vez de `transactions`
+- Os totais dos cards e graficos continuam usando `transactions` (sem filtro)
