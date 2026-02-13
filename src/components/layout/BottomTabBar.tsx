@@ -1,10 +1,11 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, LayoutGrid, ArrowLeftRight } from "lucide-react";
+import { Home, LayoutGrid, ArrowLeftRight, PlusCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
 const allTabs = [
   { name: "Home", href: "/", icon: Home, pageKey: "dashboard" },
+  { name: "Novo Pix", href: "/pix/new", icon: PlusCircle, pageKey: "new_payment" },
   { name: "Menu", href: "/menu", icon: LayoutGrid },
   { name: "Transações", href: "/transactions", icon: ArrowLeftRight, pageKey: "transactions" },
 ];
