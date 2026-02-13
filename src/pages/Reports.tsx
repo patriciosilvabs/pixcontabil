@@ -15,6 +15,7 @@ import { exportCSV, exportXLSX, exportPDF } from "@/utils/reportExports";
 import { toast } from "sonner";
 
 type PeriodFilter = "today" | "week" | "month" | "last3months";
+type ClassificationFilter = "all" | "cost" | "expense";
 
 const COLORS = ["hsl(270, 91%, 55%)", "hsl(158, 64%, 52%)", "hsl(43, 96%, 56%)", "hsl(0, 84%, 60%)", "hsl(200, 70%, 50%)"];
 
@@ -24,6 +25,7 @@ export default function Reports() {
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>("month");
+  const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
 
   const dateRange = useMemo(() => {
     const now = new Date();
@@ -76,6 +78,13 @@ export default function Reports() {
     { name: "Sem classificação", value: totalAmount - totalCosts - totalExpenses },
   ].filter((d) => d.value > 0);
 
+  const filteredTransactions = useMemo(() =>
+    classificationFilter === "all"
+      ? transactions
+      : transactions.filter(t => t.categories?.classification === classificationFilter),
+    [transactions, classificationFilter]
+  );
+
   const formatCurrency = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
   const periodLabels: Record<PeriodFilter, string> = {
@@ -101,29 +110,7 @@ export default function Reports() {
             </h1>
             <p className="text-muted-foreground">Resumo financeiro da empresa</p>
           </div>
-          <div className="flex gap-2">
-            <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
-              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">Hoje</SelectItem>
-                <SelectItem value="week">Esta Semana</SelectItem>
-                <SelectItem value="month">Este Mês</SelectItem>
-                <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
-              </SelectContent>
-            </Select>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" disabled={transactions.length === 0}>
-                  <Download className="h-4 w-4 mr-2" /> Exportar
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem onClick={async () => { toast.info("Gerando CSV…"); await exportCSV(transactions); toast.success("CSV gerado!"); }}>CSV</DropdownMenuItem>
-                <DropdownMenuItem onClick={async () => { toast.info("Gerando XLSX…"); await exportXLSX(transactions); toast.success("XLSX gerado!"); }}>XLSX</DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportPDF}>PDF com Comprovantes</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+        
         </div>
 
         {isLoading ? (
@@ -212,8 +199,39 @@ export default function Reports() {
               </Card>
             </div>
 
-            {/* Daily Summary with Receipts */}
-            <DailyTransactionSummary transactions={transactions} />
+            {/* Filter Bar + Daily Summary */}
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+              <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
+                <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Hoje</SelectItem>
+                  <SelectItem value="week">Esta Semana</SelectItem>
+                  <SelectItem value="month">Este Mês</SelectItem>
+                  <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
+                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="cost">Custos</SelectItem>
+                  <SelectItem value="expense">Despesas</SelectItem>
+                </SelectContent>
+              </Select>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" disabled={transactions.length === 0}>
+                    <Download className="h-4 w-4 mr-2" /> Exportar
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent>
+                  <DropdownMenuItem onClick={async () => { toast.info("Gerando CSV…"); await exportCSV(transactions); toast.success("CSV gerado!"); }}>CSV</DropdownMenuItem>
+                  <DropdownMenuItem onClick={async () => { toast.info("Gerando XLSX…"); await exportXLSX(transactions); toast.success("XLSX gerado!"); }}>XLSX</DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportPDF}>PDF com Comprovantes</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <DailyTransactionSummary transactions={filteredTransactions} />
           </>
         )}
       </div>
