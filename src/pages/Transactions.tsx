@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { formatCurrency, formatDateTime } from "@/lib/utils";
 import { useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -65,6 +65,7 @@ const statusConfig = {
 
 export default function Transactions() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { currentCompany } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") || "all");
@@ -228,11 +229,11 @@ export default function Transactions() {
                             {status.label}
                           </Badge>
                           {transaction.hasReceipt ? (
-                            <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate(`/pix/receipt/${transaction.id}`)}>
                               <Eye className="h-4 w-4" />
                             </Button>
                           ) : (
-                            <Button variant="outline" size="sm" className="text-warning border-warning/30">
+                            <Button variant="outline" size="sm" className="text-warning border-warning/30" onClick={() => navigate(`/pix/receipt/${transaction.id}`)}>
                               <FileText className="h-3 w-3 mr-1" />
                               Anexar
                             </Button>
