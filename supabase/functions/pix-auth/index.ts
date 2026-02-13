@@ -136,7 +136,25 @@ Deno.serve(async (req) => {
           const keyPem = pixConfig.certificate_key_encrypted
             ? atob(pixConfig.certificate_key_encrypted)
             : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+
+          // Build createHttpClient options
+          const clientOptions: any = { cert: certPem, key: keyPem };
+
+          // If a CA certificate is available (for trusting ONZ's private CA), add it
+          const caCertB64 = Deno.env.get('ONZ_CA_CERT');
+          if (caCertB64) {
+            try {
+              const caCertPem = atob(caCertB64);
+              clientOptions.caCerts = [caCertPem];
+              console.log('[pix-auth] ONZ: Added custom CA certificate for server trust');
+            } catch (e) {
+              console.warn('[pix-auth] ONZ: Failed to decode CA cert from ONZ_CA_CERT:', e);
+            }
+          } else {
+            console.warn('[pix-auth] ONZ: No CA certificate configured (ONZ_CA_CERT). Server TLS validation may fail.');
+          }
+
+          httpClient = Deno.createHttpClient(clientOptions);
           console.log('[pix-auth] ONZ: mTLS client created successfully');
         } catch (e) {
           console.error('[pix-auth] ONZ: Failed to create mTLS client:', e);
