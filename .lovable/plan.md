@@ -1,32 +1,67 @@
 
 
-# Resolver erro NotValidForName na conexao mTLS com ONZ
+# Proxy intermediario para conexao ONZ
 
-## Diagnostico
-O certificado TLS do servidor `cashout.infopago.com.br` possui o hostname correto no campo CN (Common Name), porem **nao possui a extensao SubjectAltName (SAN)**. Desde 2017 (RFC 6125 / CA/Browser Forum), bibliotecas TLS modernas exigem SAN e ignoram o CN. O runtime Deno (rustls) segue esse padrao estritamente.
+## Problema
+O certificado TLS do servidor ONZ (`cashout.infopago.com.br`) nao possui a extensao SubjectAltName (SAN). O runtime Deno (rustls) nas Edge Functions rejeita a conexao independentemente dos certificados do cliente. Nao ha workaround possivel no codigo.
 
-## Resultado das tentativas de workaround
+## Solucao proposta: Proxy com Node.js
 
-### Passo 1 - Tentativas realizadas (TODAS FALHARAM)
+Criar um servidor proxy simples que roda em uma plataforma que usa **OpenSSL** (que aceita CN sem SAN). As Edge Functions se conectam ao proxy, e o proxy repassa a requisicao para a ONZ com mTLS.
 
-1. **`Deno.connectTls` com `unsafelyDisableHostnameVerification: true`**: A flag é ignorada pelo Supabase Edge Functions (Deno Deploy). O handshake TLS é lazy — `connectTls` retorna sucesso mas o erro `NotValidForName` ocorre no primeiro `write`.
-
-2. **`node:https` com `checkServerIdentity` customizado**: O shim `node:https` no Supabase Edge Functions redireciona internamente para `fetch` do Deno (rustls). A opção `checkServerIdentity` é completamente ignorada. O erro mudou para `UnknownIssuer` porque os `caCerts` não são repassados corretamente pelo shim.
-
-### Conclusão
-**Não existe workaround possível no código** dentro do ambiente Supabase Edge Functions. O runtime usa rustls que exige SAN estritamente, e nenhuma API disponível permite desabilitar a verificação de hostname.
-
-## Próximos passos (requer ação externa)
-
-### Passo 2 - Solicitar correção à ONZ Infopago (RECOMENDADO)
-A ONZ precisa atualizar o certificado do servidor `cashout.infopago.com.br` para incluir a extensão SubjectAltName:
+```text
+Edge Functions (Deno/rustls)
+        |
+        | HTTPS (certificado valido com SAN)
+        v
+  Proxy Node.js (OpenSSL)
+        |
+        | mTLS (aceita CN sem SAN)
+        v
+  cashout.infopago.com.br
 ```
-DNS:cashout.infopago.com.br
-```
-Isso é um padrão obrigatório desde 2017. A correção deve ser simples para a equipe de infraestrutura.
 
-### Passo 3 - Proxy intermediário (alternativa temporária)
-Configurar um servidor proxy (ex: VPS com nginx + OpenSSL) que:
-1. Aceite conexões HTTPS com certificado válido (com SAN)
-2. Faça proxy reverso para `cashout.infopago.com.br` usando OpenSSL (que aceita CN sem SAN)
-3. As Edge Functions se conectam ao proxy em vez do servidor ONZ diretamente
+## Opcoes de hospedagem do proxy
+
+1. **VPS simples** (DigitalOcean, Vultr, etc.) - ~5 USD/mes
+   - Servidor Node.js ou nginx com OpenSSL
+   - Controle total
+
+2. **AWS Lambda / Google Cloud Function** - custo por uso
+   - Funcao serverless com Node.js (usa OpenSSL)
+   - Sem servidor para manter
+
+3. **Railway / Render / Fly.io** - plano gratuito disponivel
+   - Deploy facil de um servidor Node.js
+   - Menor complexidade operacional
+
+## Implementacao
+
+### Passo 1 - Criar o servidor proxy (externo ao Lovable)
+Um servidor Node.js simples que:
+- Recebe requisicoes HTTPS das Edge Functions
+- Faz a conexao mTLS com a ONZ usando os certificados do cliente
+- Repassa headers e body sem modificacao
+- Retorna a resposta da ONZ
+
+### Passo 2 - Configurar os certificados no proxy
+- Upload dos certificados mTLS (.crt e .key) para o servidor proxy
+- Configurar o certificado CA da ONZ
+
+### Passo 3 - Atualizar as Edge Functions
+- Alterar o bloco ONZ em todas as 7 Edge Functions para apontar para o proxy em vez de `cashout.infopago.com.br`
+- Adicionar secret `ONZ_PROXY_URL` com a URL do proxy
+- Remover a logica de mTLS das Edge Functions (o proxy cuida disso)
+
+### Passo 4 - Seguranca do proxy
+- Autenticacao via API key entre Edge Functions e proxy
+- HTTPS obrigatorio
+- Rate limiting
+
+## Alternativa recomendada
+Antes de implementar o proxy, **enviar um email/ticket para a ONZ** solicitando a correcao do certificado. A correcao e simples (adicionar SAN) e elimina a necessidade do proxy. Se desejar, posso redigir o texto do email.
+
+## O que o Lovable pode fazer
+- Atualizar as Edge Functions para usar o proxy (Passo 3)
+- O proxy em si precisa ser hospedado **fora do Lovable** em uma das plataformas listadas acima
+
