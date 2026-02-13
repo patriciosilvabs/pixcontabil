@@ -93,30 +93,32 @@ Deno.serve(async (req) => {
         qrcInfo.amount = parseFloat(amountMatch[2]);
       }
     }
-    // ========== ONZ ==========
+    // ========== ONZ (via proxy) ==========
     else if (provider === 'onz') {
       const infoUrl = `${config.base_url}/pix/qrcode/decode`;
-      let httpClient: Deno.HttpClient | undefined;
-      if (config.certificate_encrypted) {
-        try {
-          const certPem = atob(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-        } catch (e) {
-          console.error('[pix-qrc-info] ONZ: Failed to create mTLS client:', e);
-        }
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+
+      if (!proxyUrl || !proxyApiKey) {
+        return new Response(
+          JSON.stringify({ error: 'ONZ proxy not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      const onzFetchOptions: any = {
+      const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '')}/proxy`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ qrcode: qr_code }),
-      };
-      if (httpClient) onzFetchOptions.client = httpClient;
+        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+        body: JSON.stringify({
+          url: infoUrl,
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+          body: { qrcode: qr_code },
+        }),
+      });
 
-      const resp = await fetch(infoUrl, onzFetchOptions);
-      httpClient?.close();
-      qrcInfo = await resp.json();
+      const proxyResult = await proxyResponse.json();
+      qrcInfo = proxyResult.data;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
