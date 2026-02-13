@@ -1,32 +1,47 @@
 
 
-# Salvar Certificados ONZ no Banco de Dados
+# Resolver erro UnknownIssuer - Extrair CA do .pfx da ONZ
 
-## Resumo
-Salvar o par de certificado e chave privada do INFOPAGO_70 na tabela `pix_configs` para habilitar mTLS com o endpoint Cash-out da ONZ Infopago.
+## O problema
+O Deno nao confia no servidor `cashout.infopago.com.br` porque ele usa uma CA (Autoridade Certificadora) privada. Precisamos do certificado dessa CA para o Deno aceitar a conexao.
 
-## Arquivos identificados
-- **Certificado publico**: `INFOPAGO_70-3.crt` (CN=INFOPAGO_70, CA=onz.software, valido ate 2035)
-- **Chave privada**: `INFOPAGO_70.key` (RSA 4096-bit)
-- Segundo par disponivel: `INFOPAGO_70-4.crt` + `INFOPAGO_70-2.key` (CA=ONZ-SECURE-AREA-INFOP) - reserva
+## O que voce tem
+- `INFOPAGO_70.crt` - certificado do cliente (ja configurado)
+- `INFOPAGO_70.key` - chave privada (ja configurada)
+- `INFOPAGO_70.csr` - requisicao de assinatura (nao usado)
+- `INFOPAGO_70.pfx` - pacote que contem tudo (cliente + CA + chave)
 
-## O que sera feito
+## O que falta
+O certificado CA que esta **dentro** do .pfx precisa ser extraido e configurado como secret.
 
-### 1. Codificar certificado e chave em Base64
-O conteudo PEM dos arquivos sera codificado em Base64 usando a funcao SQL `encode(convert_to(...), 'base64')`.
+## Passo a passo para voce
 
-### 2. Atualizar pix_configs
-Executar UPDATE na tabela `pix_configs` onde `provider = 'onz'`:
-- `certificate_encrypted` = Base64 do conteudo completo do INFOPAGO_70-3.crt
-- `certificate_key_encrypted` = Base64 do conteudo completo do INFOPAGO_70.key
+### 1. Abrir o Prompt de Comando na pasta dos certificados
+Navegue ate a pasta onde estao os arquivos INFOPAGO_70 e abra um terminal (CMD ou PowerShell).
 
-### 3. Testar conexao
-Chamar a Edge Function `pix-auth` para verificar se o mTLS funciona com `https://cashout.infopago.com.br/api/v2/oauth/token`.
+### 2. Extrair o CA do .pfx (um unico comando)
+Para Cash-out:
+```
+openssl pkcs12 -in INFOPAGO_70.pfx -cacerts -nokeys -out ca-onz.pem -passin pass:Xfbfvi.tyja4biGL4QQgqokmHKBNK_yE4oPztxNn.d!bq*zkbL_CwtvbWrMzhkwY
+```
 
-## Detalhes tecnicos
-- O campo `certificate_encrypted` ja existe na tabela `pix_configs` (atualmente NULL)
-- O campo `certificate_key_encrypted` ja existe na tabela `pix_configs` (atualmente NULL)
-- As Edge Functions ja foram atualizadas para usar mTLS com ONZ (implementacao anterior)
-- O registro ONZ tem ID: `355c96b2-e46f-4cfe-bbf7-4c034b5a87c9`
-- Nenhuma alteracao de codigo necessaria - apenas dados no banco
+### 3. Verificar o resultado
+Abra o arquivo `ca-onz.pem` com o Bloco de Notas. Ele deve comecar com `-----BEGIN CERTIFICATE-----`.
+
+- **Se o arquivo estiver vazio ou nao existir**: o .pfx nao contem o CA separado. Nesse caso, use o comando alternativo abaixo para capturar direto do servidor:
+```
+openssl s_client -connect cashout.infopago.com.br:443 -showcerts < nul 2>nul
+```
+Copie o ULTIMO bloco `-----BEGIN CERTIFICATE-----` ate `-----END CERTIFICATE-----` e salve como `ca-onz.pem`.
+
+### 4. Me enviar o conteudo
+Cole aqui o conteudo do arquivo `ca-onz.pem` (o texto que comeca com `-----BEGIN CERTIFICATE-----`).
+
+## O que farei com o certificado CA
+1. Codificar em Base64 e atualizar o secret `ONZ_CA_CERT`
+2. A Edge Function `pix-auth` ja esta preparada para usar esse secret
+3. A conexao mTLS deve funcionar sem o erro `UnknownIssuer`
+
+## Alteracao de codigo (se necessario)
+Se o .pfx nao contiver CA separado e o comando do servidor tambem nao funcionar, modificarei a Edge Function para tentar uma abordagem alternativa de captura dinamica do certificado do servidor.
 
