@@ -61,7 +61,7 @@ app.post('/proxy', async (req, res) => {
   const agentOptions = {
     cert: clientCert,
     key: clientKey,
-    rejectUnauthorized: true,
+    rejectUnauthorized: !!caCert, // Only verify if CA cert is provided
   };
   if (caCert) {
     agentOptions.ca = caCert;
