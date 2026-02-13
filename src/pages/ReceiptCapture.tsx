@@ -160,17 +160,13 @@ export default function ReceiptCapture() {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("receipts")
-        .getPublicUrl(filePath);
-
+      // Save relative path (bucket is private, signed URLs generated on demand)
       // Insert receipt record
       const { error: receiptError } = await supabase
         .from("receipts")
         .insert({
           transaction_id: transactionId,
-          file_url: urlData.publicUrl,
+          file_url: filePath,
           file_name: receiptData.file.name,
           file_type: receiptData.file.type,
           uploaded_by: user.id,

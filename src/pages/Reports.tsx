@@ -118,8 +118,8 @@ export default function Reports() {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent>
-                <DropdownMenuItem onClick={() => exportCSV(transactions)}>CSV</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => exportXLSX(transactions)}>XLSX</DropdownMenuItem>
+                <DropdownMenuItem onClick={async () => { toast.info("Gerando CSV…"); await exportCSV(transactions); toast.success("CSV gerado!"); }}>CSV</DropdownMenuItem>
+                <DropdownMenuItem onClick={async () => { toast.info("Gerando XLSX…"); await exportXLSX(transactions); toast.success("XLSX gerado!"); }}>XLSX</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleExportPDF}>PDF com Comprovantes</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -2,6 +2,7 @@ import { format } from "date-fns";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { supabase } from "@/integrations/supabase/client";
 
 interface TransactionRow {
   date: string;
@@ -13,36 +14,67 @@ interface TransactionRow {
   receiptUrl: string;
 }
 
-function mapTransactions(transactions: any[]): TransactionRow[] {
-  return transactions.map((t) => ({
-    date: format(new Date(t.created_at), "dd/MM/yyyy"),
-    description: t.description || t.beneficiary_name || "",
-    amount: Number(t.amount),
-    category: t.categories?.name || "",
-    classification:
-      t.categories?.classification === "cost"
-        ? "Custo"
-        : t.categories?.classification === "expense"
-        ? "Despesa"
-        : "",
-    status:
-      t.status === "completed"
-        ? "Concluído"
-        : t.status === "failed"
-        ? "Falhou"
-        : t.status === "cancelled"
-        ? "Cancelado"
-        : "Pendente",
-    receiptUrl: t.receipts?.[0]?.file_url || "",
-  }));
+/**
+ * Extract the relative storage path from a file_url.
+ * Handles both legacy full URLs (containing /object/public/receipts/)
+ * and new relative paths.
+ */
+function extractStoragePath(fileUrl: string): string {
+  const marker = "/object/public/receipts/";
+  const idx = fileUrl.indexOf(marker);
+  if (idx !== -1) return fileUrl.substring(idx + marker.length);
+  // Also handle /object/sign/receipts/ or similar
+  const marker2 = "/receipts/";
+  const idx2 = fileUrl.lastIndexOf(marker2);
+  if (idx2 !== -1 && fileUrl.startsWith("http")) return fileUrl.substring(idx2 + marker2.length);
+  return fileUrl; // already a relative path
+}
+
+async function getSignedReceiptUrl(filePath: string): Promise<string> {
+  const path = extractStoragePath(filePath);
+  const { data, error } = await supabase.storage
+    .from("receipts")
+    .createSignedUrl(path, 3600); // 1 hour
+  if (error || !data?.signedUrl) return "";
+  return data.signedUrl;
+}
+
+async function mapTransactions(transactions: any[]): Promise<TransactionRow[]> {
+  const rows: TransactionRow[] = [];
+  for (const t of transactions) {
+    const rawUrl = t.receipts?.[0]?.file_url || "";
+    const receiptUrl = rawUrl ? await getSignedReceiptUrl(rawUrl) : "";
+    rows.push({
+      date: format(new Date(t.created_at), "dd/MM/yyyy"),
+      description: t.description || t.beneficiary_name || "",
+      amount: Number(t.amount),
+      category: t.categories?.name || "",
+      classification:
+        t.categories?.classification === "cost"
+          ? "Custo"
+          : t.categories?.classification === "expense"
+          ? "Despesa"
+          : "",
+      status:
+        t.status === "completed"
+          ? "Concluído"
+          : t.status === "failed"
+          ? "Falhou"
+          : t.status === "cancelled"
+          ? "Cancelado"
+          : "Pendente",
+      receiptUrl,
+    });
+  }
+  return rows;
 }
 
 const fmt = (v: number) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: 2 });
 
 // ─── CSV ───────────────────────────────────────────────
-export function exportCSV(transactions: any[]) {
-  const rows = mapTransactions(transactions);
+export async function exportCSV(transactions: any[]) {
+  const rows = await mapTransactions(transactions);
   const header = "Data,Descrição,Valor,Categoria,Classificação,Status,Comprovante\n";
   const body = rows
     .map((r) =>
@@ -53,8 +85,8 @@ export function exportCSV(transactions: any[]) {
 }
 
 // ─── XLSX ──────────────────────────────────────────────
-export function exportXLSX(transactions: any[]) {
-  const rows = mapTransactions(transactions);
+export async function exportXLSX(transactions: any[]) {
+  const rows = await mapTransactions(transactions);
   const data = rows.map((r) => ({
     Data: r.date,
     Descrição: r.description,
@@ -89,7 +121,7 @@ export async function exportPDF(
   companyName: string,
   periodLabel: string
 ) {
-  const rows = mapTransactions(transactions);
+  const rows = await mapTransactions(transactions);
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
 
   // Header
@@ -121,35 +153,57 @@ export async function exportPDF(
     headStyles: { fillColor: [100, 45, 180] },
   });
 
-  // Receipt pages — fetch images and embed
-  const imageTransactions = transactions.filter((t) => {
-    const url = t.receipts?.[0]?.file_url;
-    if (!url) return false;
-    const ext = url.split(".").pop()?.toLowerCase() || "";
-    return ["jpg", "jpeg", "png", "webp"].includes(ext);
-  });
+  // Receipt pages — fetch images and embed with proper sizing
+  const MAX_WIDTH = 180; // mm (14mm margin each side)
+  const MAX_HEIGHT = 250; // mm (leave space for label at top)
 
-  for (const t of imageTransactions) {
-    const url = t.receipts[0].file_url;
+  for (const t of transactions) {
+    const rawUrl = t.receipts?.[0]?.file_url;
+    if (!rawUrl) continue;
+    const ext = rawUrl.split(".").pop()?.toLowerCase() || "";
+    if (!["jpg", "jpeg", "png", "webp"].includes(ext)) continue;
+
     try {
-      const resp = await fetch(url);
+      const signedUrl = await getSignedReceiptUrl(rawUrl);
+      if (!signedUrl) continue;
+
+      const resp = await fetch(signedUrl);
       if (!resp.ok) continue;
       const blob = await resp.blob();
       const base64 = await blobToBase64(blob);
-      const ext = url.split(".").pop()?.toLowerCase();
       const imgFormat = ext === "png" ? "PNG" : "JPEG";
+
+      // Get image dimensions for proper aspect ratio scaling
+      const dims = await getImageDimensions(base64);
+      let imgW = MAX_WIDTH;
+      let imgH = (dims.height / dims.width) * MAX_WIDTH;
+
+      // If too tall, constrain by height instead
+      if (imgH > MAX_HEIGHT) {
+        imgH = MAX_HEIGHT;
+        imgW = (dims.width / dims.height) * MAX_HEIGHT;
+      }
 
       doc.addPage();
       doc.setFontSize(11);
       const label = `${format(new Date(t.created_at), "dd/MM/yyyy")} — ${t.beneficiary_name || t.description || "Sem descrição"} — R$ ${fmt(Number(t.amount))}`;
       doc.text(label, 14, 15);
-      doc.addImage(base64, imgFormat, 14, 22, 180, 0);
+      doc.addImage(base64, imgFormat, 14, 22, imgW, imgH);
     } catch {
       // skip if image fails to load
     }
   }
 
   doc.save(`relatorio-${format(new Date(), "yyyy-MM-dd")}.pdf`);
+}
+
+function getImageDimensions(base64: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.width, height: img.height });
+    img.onerror = () => resolve({ width: 1, height: 1 }); // fallback
+    img.src = base64;
+  });
 }
 
 function blobToBase64(blob: Blob): Promise<string> {
