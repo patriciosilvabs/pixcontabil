@@ -1,45 +1,36 @@
 
 
-# Corrigir Links de Comprovantes e Melhorar Tamanho no PDF
+# Corrigir Orientacao de Fotos Capturadas no Mobile
 
-## Problemas Identificados
+## Problema
 
-1. **"Bucket not found" nos links da planilha**: O bucket `receipts` e **privado**, mas o codigo usa `getPublicUrl()` que gera URLs publicas que nao funcionam. Precisa usar URLs assinadas (signed URLs) com tempo de expiracao.
+Quando o usuario tira uma foto pelo celular, a camera salva a imagem com metadados EXIF de orientacao (ex: rotacao de 90 graus). Porem, ao fazer upload direto do arquivo, esses metadados sao ignorados pelo storage e pelo jsPDF, resultando em imagens exibidas na horizontal em vez de na vertical.
 
-2. **Imagens muito pequenas no PDF**: O `addImage` usa largura fixa de 180mm mas altura automatica (`0`), o que pode resultar em imagens ilegíveis dependendo da proporcao.
+## Solucao
+
+Processar a imagem atraves de um Canvas antes do upload, aplicando a orientacao correta. Isso "fixa" a rotacao diretamente nos pixels da imagem, eliminando a dependencia dos metadados EXIF.
 
 ## Alteracoes
 
-### 1. Corrigir Upload - Salvar caminho relativo (`src/pages/ReceiptCapture.tsx`)
+### Arquivo: `src/pages/ReceiptCapture.tsx`
 
-- Substituir `getPublicUrl()` por salvar apenas o **caminho relativo** do arquivo (ex: `companyId/transactionId/timestamp_file.png`) no campo `file_url` da tabela `receipts`
-- Isso permite gerar signed URLs sob demanda, em vez de salvar uma URL publica que nao funciona
+Na funcao `handleFileSelect`, antes de fazer o upload:
 
-### 2. Gerar Signed URLs nos Relatorios (`src/utils/reportExports.ts`)
+1. Carregar o arquivo em um `createImageBitmap` com a opcao `imageOrientation: "from-image"` -- isso faz o navegador aplicar automaticamente a rotacao EXIF
+2. Desenhar o bitmap num Canvas com as dimensoes corretas (largura x altura ja rotacionadas)
+3. Exportar o Canvas como Blob (JPEG com qualidade 0.9)
+4. Usar esse Blob corrigido como o arquivo a ser enviado ao storage
+5. Atualizar o preview para usar o Canvas corrigido tambem
 
-- Importar o cliente Supabase
-- Criar funcao auxiliar `getSignedReceiptUrl(filePath)` que chama `supabase.storage.from("receipts").createSignedUrl(filePath, 3600)` (1h de validade)
-- No `mapTransactions`, gerar signed URLs para os comprovantes antes de montar CSV/XLSX
-- No `exportPDF`, usar signed URLs para buscar as imagens
-- As funcoes `exportCSV`, `exportXLSX` e `exportPDF` passam a ser `async`
+### Arquivo: `src/utils/reportExports.ts`
 
-### 3. Melhorar Tamanho das Imagens no PDF (`src/utils/reportExports.ts`)
-
-- Carregar a imagem em um elemento `Image` do HTML para obter as dimensoes reais (largura x altura)
-- Calcular a proporcao para preencher a pagina A4 de forma legivel:
-  - Largura maxima: 180mm (margem de 14mm em cada lado)
-  - Altura maxima: 250mm (deixando espaco para o cabecalho da pagina)
-  - Manter proporcao original (aspect ratio)
-- Isso garante que a imagem ocupe o maximo de espaco possivel na pagina sem distorcer
-
-### 4. Corrigir exibicao em outros locais que usam receipt URLs
-
-- Na pagina de Relatorios (`src/pages/Reports.tsx`) e qualquer lugar que exiba imagens de comprovantes, usar signed URLs em vez de URLs publicas
+Nenhuma alteracao necessaria -- ao corrigir a imagem no momento da captura, o PDF ja recebera a imagem com orientacao correta.
 
 ## Detalhes Tecnicos
 
-- `createSignedUrl(path, expiresIn)` retorna uma URL temporaria que funciona mesmo com bucket privado
-- Para os dados ja salvos no banco com URL publica completa, extrair o caminho relativo removendo o prefixo do storage URL
-- Funcao auxiliar para extrair o path: pegar tudo apos `/object/public/receipts/`
-- As signed URLs nos CSV/XLSX terao validade de 1 hora -- suficiente para a contabilidade acessar apos exportar
+- `createImageBitmap(file, { imageOrientation: "from-image" })` e suportado em todos os navegadores modernos (Chrome, Safari, Firefox)
+- O Canvas automaticamente recebe as dimensoes corretas (ex: uma foto retrato 3000x4000 em vez de 4000x3000)
+- A conversao para JPEG com qualidade 0.9 mantem boa qualidade visual e reduz o tamanho do arquivo
+- O nome do arquivo original e preservado, apenas a extensao muda para `.jpg` se necessario
+- Fotos ja salvas incorretamente no storage nao serao corrigidas retroativamente -- apenas novas capturas
 
