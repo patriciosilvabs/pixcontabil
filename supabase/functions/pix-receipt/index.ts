@@ -117,13 +117,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ========== ONZ ==========
+    // ========== ONZ (via proxy) ==========
     if (provider === 'onz') {
       const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
-      const resp = await fetch(receiptUrl, {
-        headers: { 'Authorization': `Bearer ${access_token}` },
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+
+      if (!proxyUrl || !proxyApiKey) {
+        return new Response(
+          JSON.stringify({ error: 'ONZ proxy not configured' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '')}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+        body: JSON.stringify({
+          url: receiptUrl,
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${access_token}` },
+        }),
       });
-      const data = await resp.json();
+
+      const proxyResult = await proxyResponse.json();
+      const data = proxyResult.data;
       return new Response(
         JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
