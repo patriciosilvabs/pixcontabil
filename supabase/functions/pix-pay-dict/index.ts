@@ -186,14 +186,30 @@ Deno.serve(async (req) => {
         idExterno: externalId,
       };
 
-      const payResponse = await fetch(payUrl, {
+      // ONZ requires mTLS with client certificate
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (e) {
+          console.error('[pix-pay-dict] ONZ: Failed to create mTLS client:', e);
+        }
+      }
+
+      const onzFetchOptions: any = {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${access_token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(onzPayload),
-      });
+      };
+      if (httpClient) onzFetchOptions.client = httpClient;
+
+      const payResponse = await fetch(payUrl, onzFetchOptions);
+      httpClient?.close();
 
       if (!payResponse.ok) {
         const errorText = await payResponse.text();

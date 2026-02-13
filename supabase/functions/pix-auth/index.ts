@@ -128,12 +128,25 @@ Deno.serve(async (req) => {
       const tokenUrl = `${baseUrl}/oauth/token`;
       console.log(`[pix-auth] ONZ token URL: ${tokenUrl}`);
 
-      // ONZ may use a certificate not in Deno's default trust store
+      // ONZ requires mTLS with client certificate
       let httpClient: Deno.HttpClient | undefined;
-      try {
-        httpClient = Deno.createHttpClient({ caCerts: [] });
-      } catch (_e) {
-        // fallback: no custom client
+      if (pixConfig.certificate_encrypted) {
+        try {
+          const certPem = atob(pixConfig.certificate_encrypted);
+          const keyPem = pixConfig.certificate_key_encrypted
+            ? atob(pixConfig.certificate_key_encrypted)
+            : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+          console.log('[pix-auth] ONZ: mTLS client created successfully');
+        } catch (e) {
+          console.error('[pix-auth] ONZ: Failed to create mTLS client:', e);
+          return new Response(
+            JSON.stringify({ error: 'Certificado mTLS inválido para ONZ. Verifique se está corretamente codificado em Base64.' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } else {
+        console.warn('[pix-auth] ONZ: No certificate configured, attempting without mTLS');
       }
 
       const fetchOptions: any = {
