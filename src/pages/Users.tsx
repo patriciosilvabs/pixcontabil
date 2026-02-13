@@ -14,7 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
-import { Loader2, Users as UsersIcon, Shield, DollarSign } from "lucide-react";
+import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus } from "lucide-react";
 
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
@@ -43,6 +43,9 @@ export default function Users() {
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editDialog, setEditDialog] = useState(false);
+  const [addDialog, setAddDialog] = useState(false);
+  const [addEmail, setAddEmail] = useState("");
+  const [isAdding, setIsAdding] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
   const [editRole, setEditRole] = useState<"admin" | "operator">("operator");
   const [editLimit, setEditLimit] = useState("");
@@ -182,14 +185,76 @@ export default function Users() {
     }
   };
 
+  const handleAddUser = async () => {
+    if (!currentCompany || !addEmail.trim()) return;
+    setIsAdding(true);
+    try {
+      // Find user by email in profiles
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id, full_name, email")
+        .eq("email", addEmail.trim().toLowerCase())
+        .single();
+
+      if (profileError || !profile) {
+        toast({ variant: "destructive", title: "Usuário não encontrado", description: "Nenhum usuário cadastrado com este email." });
+        return;
+      }
+
+      // Check if already a member
+      const { data: existing } = await supabase
+        .from("company_members")
+        .select("id")
+        .eq("company_id", currentCompany.id)
+        .eq("user_id", profile.user_id)
+        .single();
+
+      if (existing) {
+        toast({ variant: "destructive", title: "Já é membro", description: "Este usuário já faz parte da empresa." });
+        return;
+      }
+
+      // Add as company member
+      const { error: memberError } = await supabase
+        .from("company_members")
+        .insert({ company_id: currentCompany.id, user_id: profile.user_id });
+
+      if (memberError) throw memberError;
+
+      // Create default page permissions (all enabled)
+      const permRows = PAGE_OPTIONS.map(p => ({
+        user_id: profile.user_id,
+        company_id: currentCompany.id,
+        page_key: p.key,
+        has_access: true,
+      }));
+
+      await supabase.from("user_page_permissions").insert(permRows);
+
+      toast({ title: "Usuário adicionado!", description: `${profile.full_name} foi vinculado à empresa.` });
+      setAddDialog(false);
+      setAddEmail("");
+      fetchMembers();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro", description: error.message });
+    } finally {
+      setIsAdding(false);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="p-6 lg:p-8 max-w-5xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <UsersIcon className="h-6 w-6 text-primary" /> Usuários
-          </h1>
-          <p className="text-muted-foreground">Membros da empresa {currentCompany?.name}</p>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <UsersIcon className="h-6 w-6 text-primary" /> Usuários
+            </h1>
+            <p className="text-muted-foreground">Membros da empresa {currentCompany?.name}</p>
+          </div>
+          <Button onClick={() => setAddDialog(true)} className="gap-2">
+            <UserPlus className="h-4 w-4" /> Adicionar
+          </Button>
         </div>
 
         <Card>
@@ -298,6 +363,32 @@ export default function Users() {
               <Button variant="outline" onClick={() => setEditDialog(false)}>Cancelar</Button>
               <Button onClick={handleSave} disabled={isSaving}>
                 {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={addDialog} onOpenChange={setAddDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Adicionar Usuário</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Email do usuário</Label>
+                <Input
+                  type="email"
+                  value={addEmail}
+                  onChange={(e) => setAddEmail(e.target.value)}
+                  placeholder="usuario@email.com"
+                />
+                <p className="text-xs text-muted-foreground">O usuário precisa já ter uma conta no sistema.</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); }}>Cancelar</Button>
+              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim()}>
+                {isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Adicionar
               </Button>
             </DialogFooter>
           </DialogContent>
