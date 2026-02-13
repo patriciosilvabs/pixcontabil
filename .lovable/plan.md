@@ -1,38 +1,45 @@
 
-# Adicionar Campo de Pesquisa nas Subcategorias (ReceiptCapture)
 
-## Problema
-Com muitas categorias cadastradas, o usuario precisa rolar bastante para encontrar a categoria desejada. Um campo de busca facilita a localizacao rapida.
+# Corrigir Links de Comprovantes e Melhorar Tamanho no PDF
+
+## Problemas Identificados
+
+1. **"Bucket not found" nos links da planilha**: O bucket `receipts` e **privado**, mas o codigo usa `getPublicUrl()` que gera URLs publicas que nao funcionam. Precisa usar URLs assinadas (signed URLs) com tempo de expiracao.
+
+2. **Imagens muito pequenas no PDF**: O `addImage` usa largura fixa de 180mm mas altura automatica (`0`), o que pode resultar em imagens ilegíveis dependendo da proporcao.
 
 ## Alteracoes
 
-### Arquivo: `src/pages/ReceiptCapture.tsx`
+### 1. Corrigir Upload - Salvar caminho relativo (`src/pages/ReceiptCapture.tsx`)
 
-1. **Adicionar estado de busca**: `const [categorySearch, setCategorySearch] = useState("")`
-2. **Resetar busca** quando trocar a classificacao (cost/expense) -- no onClick dos botoes CUSTO/DESPESA, resetar `categorySearch` para `""`
-3. **Adicionar campo Input de pesquisa** entre o label "Categoria" e os botoes de subcategoria:
-   - Placeholder: "Buscar categoria..."
-   - Icone de lupa (Search do lucide-react)
-   - Filtra as categorias exibidas em tempo real pelo texto digitado
-4. **Filtrar categorias**: Alem do filtro por classificacao, aplicar `.filter(c => c.name.toLowerCase().includes(categorySearch.toLowerCase()))`
-5. **Mostrar mensagem** quando nenhuma categoria corresponder a busca: "Nenhuma categoria encontrada"
+- Substituir `getPublicUrl()` por salvar apenas o **caminho relativo** do arquivo (ex: `companyId/transactionId/timestamp_file.png`) no campo `file_url` da tabela `receipts`
+- Isso permite gerar signed URLs sob demanda, em vez de salvar uma URL publica que nao funciona
 
-### Layout
+### 2. Gerar Signed URLs nos Relatorios (`src/utils/reportExports.ts`)
 
-```text
-Categoria
-+--------------------------------------+
-| [lupa] Buscar categoria...           |
-+--------------------------------------+
+- Importar o cliente Supabase
+- Criar funcao auxiliar `getSignedReceiptUrl(filePath)` que chama `supabase.storage.from("receipts").createSignedUrl(filePath, 3600)` (1h de validade)
+- No `mapTransactions`, gerar signed URLs para os comprovantes antes de montar CSV/XLSX
+- No `exportPDF`, usar signed URLs para buscar as imagens
+- As funcoes `exportCSV`, `exportXLSX` e `exportPDF` passam a ser `async`
 
-[Afiacao de cortadores]  [Agua]  [Agua utilizada...]
-[Azeites e oleos...]  [Bebidas para revenda...]
-...
-```
+### 3. Melhorar Tamanho das Imagens no PDF (`src/utils/reportExports.ts`)
 
-### Detalhes Tecnicos
+- Carregar a imagem em um elemento `Image` do HTML para obter as dimensoes reais (largura x altura)
+- Calcular a proporcao para preencher a pagina A4 de forma legivel:
+  - Largura maxima: 180mm (margem de 14mm em cada lado)
+  - Altura maxima: 250mm (deixando espaco para o cabecalho da pagina)
+  - Manter proporcao original (aspect ratio)
+- Isso garante que a imagem ocupe o maximo de espaco possivel na pagina sem distorcer
 
-- Importar `Search` do lucide-react e `Input` de `@/components/ui/input`
-- O campo Input fica dentro da div `space-y-2` existente, logo abaixo do label "Categoria"
-- Filtro case-insensitive usando `toLowerCase()`
-- Sem debounce necessario pois e filtragem local em memoria
+### 4. Corrigir exibicao em outros locais que usam receipt URLs
+
+- Na pagina de Relatorios (`src/pages/Reports.tsx`) e qualquer lugar que exiba imagens de comprovantes, usar signed URLs em vez de URLs publicas
+
+## Detalhes Tecnicos
+
+- `createSignedUrl(path, expiresIn)` retorna uma URL temporaria que funciona mesmo com bucket privado
+- Para os dados ja salvos no banco com URL publica completa, extrair o caminho relativo removendo o prefixo do storage URL
+- Funcao auxiliar para extrair o path: pegar tudo apos `/object/public/receipts/`
+- As signed URLs nos CSV/XLSX terao validade de 1 hora -- suficiente para a contabilidade acessar apos exportar
+
