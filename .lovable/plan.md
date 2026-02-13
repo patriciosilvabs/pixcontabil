@@ -1,76 +1,52 @@
 
+# Corrigir Consulta de Saldo para Todos os Provedores
 
-# Adicionar Controle de Acesso por Pagina com Checkboxes
+## Problema Identificado
 
-## Objetivo
+Ao trocar para Woovi (OpenPix), o saldo aparece como R$ 0,00 porque:
 
-Permitir que o administrador defina, para cada usuario, quais paginas ele pode acessar. Cada pagina do sistema tera um checkbox no dialog de edicao do usuario, incluindo o Dashboard.
+1. O endpoint de saldo da Woovi esta errado no codigo: usa `/api/v1/subaccount/{pixKey}` (subconta), mas o correto e `/api/v1/balance` (saldo da conta principal)
+2. O campo `pix_key` esta vazio na configuracao atual, o que gera uma URL invalida
 
-## Nova Tabela no Banco de Dados
+## Correcao
 
-Criar uma tabela `user_page_permissions` para armazenar as permissoes de acesso por usuario e empresa:
+### Arquivo: `supabase/functions/pix-balance/index.ts`
 
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | Identificador |
-| user_id | uuid | Referencia ao usuario |
-| company_id | uuid | Referencia a empresa |
-| page_key | text | Identificador da pagina (ex: "dashboard", "transactions") |
-| has_access | boolean | Se o usuario pode acessar |
-| created_at | timestamptz | Data de criacao |
+Corrigir o bloco Woovi para usar o endpoint correto da API OpenPix:
 
-Paginas disponiveis como opcoes de checkbox:
+**De (errado):**
+```
+const pixKey = config.pix_key;
+const balanceUrl = `${config.base_url}/api/v1/subaccount/${encodeURIComponent(pixKey)}`;
+// Header: Authorization: accessToken
+```
 
-- `dashboard` -- Dashboard
-- `new_payment` -- Novo Pagamento
-- `transactions` -- Transacoes
-- `categories` -- Categorias
-- `reports` -- Relatorios
-- `users` -- Usuarios
-- `companies` -- Empresas
-- `settings` -- Configuracoes
+**Para (correto):**
+```
+const balanceUrl = `${config.base_url}/api/v1/balance`;
+// Header: Authorization: accessToken
+```
 
-Admins sempre tem acesso total (nao sao restringidos pelas permissoes).
+A resposta da API OpenPix retorna o saldo no campo `balance.total` ou `balance.available` (em centavos). Ajustar o parse para buscar o campo correto e dividir por 100.
 
-## Politicas de Seguranca (RLS)
+**Mudanca no parse:**
+```
+// Antes:
+balance = (data?.SubAccount?.balance ?? data?.subAccount?.balance ?? 0) / 100;
 
-- Admins podem gerenciar todas as permissoes (ALL)
-- Membros da empresa podem visualizar suas proprias permissoes (SELECT onde user_id = auth.uid())
+// Depois:
+balance = (data?.balance?.available ?? data?.balance?.total ?? 0) / 100;
+```
 
-## Alteracoes nos Arquivos
+### Arquivo unico alterado
 
-### 1. Migracao SQL
-- Criar tabela `user_page_permissions`
-- Habilitar RLS
-- Criar policies para admin (ALL) e usuario (SELECT proprio)
-- Inserir permissoes padrao para membros existentes (todas as paginas liberadas)
+Apenas `supabase/functions/pix-balance/index.ts` precisa ser corrigido. Nenhuma alteracao no frontend, pois o hook `usePixBalance` ja trata a resposta corretamente.
 
-### 2. `src/pages/Users.tsx`
-- Adicionar ao dialog de edicao uma secao "Acesso as Paginas" com checkboxes para cada pagina
-- Carregar permissoes atuais do usuario ao abrir o dialog
-- Salvar permissoes ao clicar em "Salvar"
-- Estado local: `editPermissions` como `Record<string, boolean>`
+### Validacao dos 3 provedores no mesmo codigo
 
-### 3. `src/contexts/AuthContext.tsx`
-- Adicionar `pagePermissions` ao contexto (array de page_keys permitidos)
-- Carregar permissoes do usuario ao fazer login (fetchUserData)
-- Expor funcao `hasPageAccess(pageKey: string): boolean` que retorna true para admins sempre
+Apos a correcao, o fluxo de cada provedor sera:
 
-### 4. `src/components/auth/AuthGuard.tsx`
-- Adicionar prop opcional `requiredPage?: string`
-- Verificar se o usuario tem acesso a pagina usando `hasPageAccess`
-- Redirecionar para "/" se nao tiver permissao
-
-### 5. `src/App.tsx`
-- Adicionar `requiredPage` em cada rota protegida (ex: `requiredPage="dashboard"` no Dashboard)
-
-### 6. `src/components/layout/MainLayout.tsx` e `src/components/layout/BottomTabBar.tsx`
-- Ocultar itens de menu para paginas que o usuario nao tem acesso
-
-## Detalhes Tecnicos
-
-- Admins nao sao restringidos -- `hasPageAccess` retorna `true` sempre para role "admin"
-- Quando um novo membro e criado, todas as paginas sao liberadas por padrao
-- O sistema de permissoes e complementar ao sistema de roles existente (admin/operator)
-- Operadores continuam sem ver saldo mesmo tendo acesso ao Dashboard
-
+- **Transfeera**: `GET /statement/balance` -- campo `value` (ja funciona, retorna R$ 11,91)
+- **Woovi**: `GET /api/v1/balance` -- campo `balance.available` em centavos, dividido por 100
+- **ONZ**: `GET /accounts/balances/` -- campo `available` (ja implementado)
+- **EFI**: `GET /v2/gn/saldo` -- campo `saldo` com mTLS (ja implementado)
