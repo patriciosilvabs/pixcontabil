@@ -45,6 +45,8 @@ export default function Users() {
   const [editDialog, setEditDialog] = useState(false);
   const [addDialog, setAddDialog] = useState(false);
   const [addEmail, setAddEmail] = useState("");
+  const [addName, setAddName] = useState("");
+  const [addPassword, setAddPassword] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
   const [editRole, setEditRole] = useState<"admin" | "operator">("operator");
@@ -186,54 +188,46 @@ export default function Users() {
   };
 
   const handleAddUser = async () => {
-    if (!currentCompany || !addEmail.trim()) return;
+    if (!currentCompany || !addEmail.trim() || !addName.trim() || !addPassword.trim()) return;
+    if (addPassword.length < 6) {
+      toast({ variant: "destructive", title: "Senha deve ter no mínimo 6 caracteres" });
+      return;
+    }
     setIsAdding(true);
     try {
-      // Find user by email in profiles
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("user_id, full_name, email")
-        .eq("email", addEmail.trim().toLowerCase())
-        .single();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
 
-      if (profileError || !profile) {
-        toast({ variant: "destructive", title: "Usuário não encontrado", description: "Nenhum usuário cadastrado com este email." });
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/create-user`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({
+            full_name: addName.trim(),
+            email: addEmail.trim().toLowerCase(),
+            password: addPassword,
+            company_id: currentCompany.id,
+          }),
+        }
+      );
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Erro", description: result.error });
         return;
       }
 
-      // Check if already a member
-      const { data: existing } = await supabase
-        .from("company_members")
-        .select("id")
-        .eq("company_id", currentCompany.id)
-        .eq("user_id", profile.user_id)
-        .single();
-
-      if (existing) {
-        toast({ variant: "destructive", title: "Já é membro", description: "Este usuário já faz parte da empresa." });
-        return;
-      }
-
-      // Add as company member
-      const { error: memberError } = await supabase
-        .from("company_members")
-        .insert({ company_id: currentCompany.id, user_id: profile.user_id });
-
-      if (memberError) throw memberError;
-
-      // Create default page permissions (all enabled)
-      const permRows = PAGE_OPTIONS.map(p => ({
-        user_id: profile.user_id,
-        company_id: currentCompany.id,
-        page_key: p.key,
-        has_access: true,
-      }));
-
-      await supabase.from("user_page_permissions").insert(permRows);
-
-      toast({ title: "Usuário adicionado!", description: `${profile.full_name} foi vinculado à empresa.` });
+      toast({ title: "Usuário cadastrado!", description: `${addName.trim()} foi criado e vinculado à empresa.` });
       setAddDialog(false);
       setAddEmail("");
+      setAddName("");
+      setAddPassword("");
       fetchMembers();
     } catch (error: any) {
       toast({ variant: "destructive", title: "Erro", description: error.message });
@@ -375,20 +369,36 @@ export default function Users() {
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label>Email do usuário</Label>
+                <Label>Nome completo</Label>
+                <Input
+                  value={addName}
+                  onChange={(e) => setAddName(e.target.value)}
+                  placeholder="Nome do usuário"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
                 <Input
                   type="email"
                   value={addEmail}
                   onChange={(e) => setAddEmail(e.target.value)}
                   placeholder="usuario@email.com"
                 />
-                <p className="text-xs text-muted-foreground">O usuário precisa já ter uma conta no sistema.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Senha</Label>
+                <Input
+                  type="password"
+                  value={addPassword}
+                  onChange={(e) => setAddPassword(e.target.value)}
+                  placeholder="Mínimo 6 caracteres"
+                />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); }}>Cancelar</Button>
-              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim()}>
-                {isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Adicionar
+              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); setAddName(""); setAddPassword(""); }}>Cancelar</Button>
+              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim() || !addName.trim() || !addPassword.trim()}>
+                {isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Cadastrar
               </Button>
             </DialogFooter>
           </DialogContent>
