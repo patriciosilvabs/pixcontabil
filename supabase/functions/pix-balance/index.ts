@@ -105,8 +105,7 @@ Deno.serve(async (req) => {
 
     // ========== WOOVI (OpenPix) ==========
     else if (provider === 'woovi') {
-      const pixKey = config.pix_key;
-      const balanceUrl = `${config.base_url}/api/v1/subaccount/${encodeURIComponent(pixKey)}`;
+      const balanceUrl = `${config.base_url}/api/v1/balance`;
       console.log(`[pix-balance] Woovi: GET ${balanceUrl}`);
 
       const res = await fetch(balanceUrl, {
@@ -123,8 +122,9 @@ Deno.serve(async (req) => {
       }
 
       const data = await res.json();
-      // Woovi returns balance in cents
-      balance = (data?.SubAccount?.balance ?? data?.subAccount?.balance ?? 0) / 100;
+      console.log('[pix-balance] Woovi balance response:', JSON.stringify(data));
+      // OpenPix returns balance in cents
+      balance = (data?.balance?.available ?? data?.balance?.total ?? 0) / 100;
     }
 
     // ========== ONZ Infopago ==========
