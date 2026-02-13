@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
 
     // ========== WOOVI (OpenPix) ==========
     else if (provider === 'woovi') {
-      const balanceUrl = `${config.base_url}/api/v1/balance`;
+      const balanceUrl = `${config.base_url}/api/v1/account/`;
       console.log(`[pix-balance] Woovi: GET ${balanceUrl}`);
 
       const res = await fetch(balanceUrl, {
@@ -123,8 +123,9 @@ Deno.serve(async (req) => {
 
       const data = await res.json();
       console.log('[pix-balance] Woovi balance response:', JSON.stringify(data));
-      // OpenPix returns balance in cents
-      balance = (data?.balance?.available ?? data?.balance?.total ?? 0) / 100;
+      // Find default account or use first one; balance is in cents
+      const defaultAccount = data?.accounts?.find((a: any) => a.isDefault) ?? data?.accounts?.[0];
+      balance = (defaultAccount?.balance?.available ?? defaultAccount?.balance?.total ?? 0) / 100;
     }
 
     // ========== ONZ Infopago ==========
