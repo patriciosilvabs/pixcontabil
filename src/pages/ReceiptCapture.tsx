@@ -136,17 +136,79 @@ export default function ReceiptCapture() {
       return;
     }
 
+    if (!transactionId || !currentCompany) {
+      toast({ variant: "destructive", title: "Erro", description: "Transação ou empresa não encontrada." });
+      return;
+    }
+
     setIsSubmitting(true);
 
-    // Simulate upload and save
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    try {
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
 
-    toast({
-      title: "Comprovante salvo!",
-      description: "A transação foi classificada com sucesso.",
-    });
+      // Upload file to storage
+      const timestamp = Date.now();
+      const filePath = `${currentCompany.id}/${transactionId}/${timestamp}_${receiptData.file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from("receipts")
+        .upload(filePath, receiptData.file);
 
-    navigate("/");
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("receipts")
+        .getPublicUrl(filePath);
+
+      // Insert receipt record
+      const { error: receiptError } = await supabase
+        .from("receipts")
+        .insert({
+          transaction_id: transactionId,
+          file_url: urlData.publicUrl,
+          file_name: receiptData.file.name,
+          file_type: receiptData.file.type,
+          uploaded_by: user.id,
+          ocr_status: "pending" as const,
+        });
+
+      if (receiptError) throw receiptError;
+
+      // Update category on transaction if selected
+      if (receiptData.subcategory) {
+        const selectedCategory = categories.find(
+          (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
+        );
+        if (selectedCategory) {
+          await supabase
+            .from("transactions")
+            .update({
+              category_id: selectedCategory.id,
+              classified_by: user.id,
+              classified_at: new Date().toISOString(),
+            })
+            .eq("id", transactionId);
+        }
+      }
+
+      toast({
+        title: "Comprovante salvo!",
+        description: "A transação foi classificada com sucesso.",
+      });
+
+      navigate("/transactions");
+    } catch (error: any) {
+      console.error("Erro ao salvar comprovante:", error);
+      toast({
+        variant: "destructive",
+        title: "Erro ao salvar",
+        description: error.message || "Tente novamente.",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleRemoveFile = () => {
