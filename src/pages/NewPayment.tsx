@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { usePixPayment } from "@/hooks/usePixPayment";
@@ -25,6 +25,8 @@ import {
   Loader2,
   Check,
   AlertCircle,
+  DollarSign,
+  TrendingUp,
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 
@@ -39,13 +41,7 @@ interface PaymentData {
   boletoCode?: string;
   amount: string;
   description?: string;
-  categoryId?: string;
-}
-
-interface CategoryItem {
-  id: string;
-  name: string;
-  classification: "cost" | "expense";
+  classification?: "cost" | "expense";
 }
 
 const pixKeyLabels: Record<PixKeyType, string> = {
@@ -72,29 +68,11 @@ export default function NewPayment() {
     amount: "",
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const navigate = useNavigate();
   const { toast } = useToast();
   const { currentCompany } = useAuth();
   const { payByKey, payByQRCode, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing } = useBilletPayment();
-
-  useEffect(() => {
-    if (!currentCompany?.id) return;
-    supabase
-      .from("categories")
-      .select("id, name, classification")
-      .eq("company_id", currentCompany.id)
-      .eq("is_active", true)
-      .order("name")
-      .then(({ data }) => {
-        if (data) setCategories(data as CategoryItem[]);
-      });
-  }, [currentCompany?.id]);
-
-  const costCategories = categories.filter((c) => c.classification === "cost");
-  const expenseCategories = categories.filter((c) => c.classification === "expense");
-  const selectedCategory = categories.find((c) => c.id === pixData.categoryId);
 
   const handleNext = () => {
     // Validate current step
@@ -148,7 +126,8 @@ export default function NewPayment() {
 
     try {
       const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
-      const categoryDescription = selectedCategory?.name || pixData.description;
+      const classificationLabel = pixData.classification === "cost" ? "Custo" : "Despesa";
+      const categoryDescription = classificationLabel;
 
       if (pixData.type === 'boleto') {
         const result = await payBillet({
@@ -385,13 +364,13 @@ export default function NewPayment() {
           />
         )}
 
-        {/* Step 2: Amount and Category */}
+        {/* Step 2: Amount and Classification */}
         {step === 2 && (
           <Card>
             <CardHeader>
               <CardTitle>Informação do pagamento</CardTitle>
               <CardDescription>
-                Informe o valor e a categoria do pagamento
+                Informe o valor e a classificação
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -416,45 +395,35 @@ export default function NewPayment() {
               </div>
 
               <div className="space-y-2">
-                <Label>Categoria</Label>
-                {categories.length > 0 ? (
-                  <Select
-                    value={pixData.categoryId || ""}
-                    onValueChange={(v) =>
-                      setPixData({ ...pixData, categoryId: v })
-                    }
+                <Label>Classificação</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPixData({ ...pixData, classification: "cost" })}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-6 transition-all font-semibold text-lg",
+                      pixData.classification === "cost"
+                        ? "border-primary bg-gradient-primary text-primary-foreground shadow-primary"
+                        : "border-border bg-card text-muted-foreground hover:border-primary/50"
+                    )}
                   >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione a categoria" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {costCategories.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Custos</SelectLabel>
-                          {costCategories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                      {expenseCategories.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Despesas</SelectLabel>
-                          {expenseCategories.map((cat) => (
-                            <SelectItem key={cat.id} value={cat.id}>
-                              {cat.name}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <p className="text-sm text-muted-foreground p-3 bg-muted/50 rounded-lg">
-                    Nenhuma categoria cadastrada. Cadastre categorias na tela de Categorias.
-                  </p>
-                )}
+                    <DollarSign className="h-7 w-7" />
+                    CUSTO
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPixData({ ...pixData, classification: "expense" })}
+                    className={cn(
+                      "flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-6 transition-all font-semibold text-lg",
+                      pixData.classification === "expense"
+                        ? "border-destructive bg-destructive text-destructive-foreground shadow-md"
+                        : "border-border bg-card text-muted-foreground hover:border-destructive/50"
+                    )}
+                  >
+                    <TrendingUp className="h-7 w-7" />
+                    DESPESA
+                  </button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -511,14 +480,11 @@ export default function NewPayment() {
                   </div>
                 </div>
 
-                {selectedCategory && (
-                  <div className="flex justify-between items-start">
-                    <span className="text-muted-foreground">Categoria</span>
-                    <span className="font-medium text-right max-w-[60%]">
-                      {selectedCategory.name}
-                      <span className="text-xs text-muted-foreground ml-1">
-                        ({selectedCategory.classification === "cost" ? "Custo" : "Despesa"})
-                      </span>
+                {pixData.classification && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-muted-foreground">Classificação</span>
+                    <span className="font-medium">
+                      {pixData.classification === "cost" ? "Custo" : "Despesa"}
                     </span>
                   </div>
                 )}
