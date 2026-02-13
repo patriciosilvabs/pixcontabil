@@ -29,100 +29,20 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <Routes>
-            {/* Public routes */}
             <Route path="/auth" element={<Auth />} />
-            
-            {/* Protected routes */}
-            <Route
-              path="/"
-              element={
-                <AuthGuard>
-                  <Dashboard />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/pix/new"
-              element={
-                <AuthGuard>
-                  <NewPayment />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/pix/receipt/:transactionId"
-              element={
-                <AuthGuard>
-                  <ReceiptCapture />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/transactions"
-              element={
-                <AuthGuard>
-                  <Transactions />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/categories"
-              element={
-                <AuthGuard requireAdmin>
-                  <Categories />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/reports"
-              element={
-                <AuthGuard requireAdmin>
-                  <Reports />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/users"
-              element={
-                <AuthGuard requireAdmin>
-                  <Users />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/companies"
-              element={
-                <AuthGuard requireAdmin>
-                  <Companies />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/settings"
-              element={
-                <AuthGuard>
-                  <Settings />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/settings/pix-integration"
-              element={
-                <AuthGuard requireAdmin>
-                  <PixIntegration />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path="/menu"
-              element={
-                <AuthGuard>
-                  <MobileMenu />
-                </AuthGuard>
-              }
-            />
-            
-            {/* Catch-all */}
+
+            <Route path="/" element={<AuthGuard requiredPage="dashboard"><Dashboard /></AuthGuard>} />
+            <Route path="/pix/new" element={<AuthGuard requiredPage="new_payment"><NewPayment /></AuthGuard>} />
+            <Route path="/pix/receipt/:transactionId" element={<AuthGuard><ReceiptCapture /></AuthGuard>} />
+            <Route path="/transactions" element={<AuthGuard requiredPage="transactions"><Transactions /></AuthGuard>} />
+            <Route path="/categories" element={<AuthGuard requireAdmin requiredPage="categories"><Categories /></AuthGuard>} />
+            <Route path="/reports" element={<AuthGuard requireAdmin requiredPage="reports"><Reports /></AuthGuard>} />
+            <Route path="/users" element={<AuthGuard requireAdmin requiredPage="users"><Users /></AuthGuard>} />
+            <Route path="/companies" element={<AuthGuard requireAdmin requiredPage="companies"><Companies /></AuthGuard>} />
+            <Route path="/settings" element={<AuthGuard requiredPage="settings"><Settings /></AuthGuard>} />
+            <Route path="/settings/pix-integration" element={<AuthGuard requireAdmin><PixIntegration /></AuthGuard>} />
+            <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

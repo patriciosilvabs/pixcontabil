@@ -11,6 +11,7 @@ interface AuthContextType {
   companies: Company[];
   currentCompany: Company | null;
   companyMembership: CompanyMember | null;
+  pagePermissions: string[];
   isAdmin: boolean;
   isOperator: boolean;
   isLoading: boolean;
@@ -19,6 +20,7 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   setCurrentCompany: (company: Company) => void;
   refreshProfile: () => Promise<void>;
+  hasPageAccess: (pageKey: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,6 +33,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [currentCompany, setCurrentCompanyState] = useState<Company | null>(null);
   const [companyMembership, setCompanyMembership] = useState<CompanyMember | null>(null);
+  const [pagePermissions, setPagePermissions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const isAdmin = role === "admin";
@@ -86,6 +89,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (membershipData) {
           setCompanyMembership(membershipData as CompanyMember);
+        }
+
+        // Fetch page permissions for current company
+        const { data: permData } = await supabase
+          .from("user_page_permissions")
+          .select("page_key")
+          .eq("user_id", userId)
+          .eq("company_id", companyToSet.id)
+          .eq("has_access", true);
+
+        if (permData) {
+          setPagePermissions(permData.map((p: any) => p.page_key));
         }
       }
     } catch (error) {
@@ -191,6 +206,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const hasPageAccess = useCallback((pageKey: string): boolean => {
+    if (isAdmin) return true;
+    return pagePermissions.includes(pageKey);
+  }, [isAdmin, pagePermissions]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -201,6 +221,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         companies,
         currentCompany,
         companyMembership,
+        pagePermissions,
         isAdmin,
         isOperator,
         isLoading,
@@ -209,6 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signOut,
         setCurrentCompany,
         refreshProfile,
+        hasPageAccess,
       }}
     >
       {children}

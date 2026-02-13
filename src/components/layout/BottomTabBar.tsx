@@ -1,16 +1,18 @@
 import { Link, useLocation } from "react-router-dom";
 import { Home, LayoutGrid, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
-const tabs = [
-  { name: "Home", href: "/", icon: Home },
+const allTabs = [
+  { name: "Home", href: "/", icon: Home, pageKey: "dashboard" },
   { name: "Menu", href: "/menu", icon: LayoutGrid },
-  { name: "Transações", href: "/transactions", icon: ArrowLeftRight },
+  { name: "Transações", href: "/transactions", icon: ArrowLeftRight, pageKey: "transactions" },
 ];
 
 export function BottomTabBar() {
+  const { hasPageAccess } = useAuth();
   const location = useLocation();
-
+  const tabs = allTabs.filter(t => !t.pageKey || hasPageAccess(t.pageKey));
   const isActive = (href: string) => {
     if (href === "/") return location.pathname === "/";
     return location.pathname.startsWith(href);
