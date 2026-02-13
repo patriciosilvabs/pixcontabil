@@ -66,7 +66,7 @@ const statusConfig = {
 export default function Transactions() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { currentCompany } = useAuth();
+  const { currentCompany, isAdmin, user } = useAuth();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") || "all");
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
@@ -78,10 +78,17 @@ export default function Transactions() {
 
     const fetchTransactions = async () => {
       setIsLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from("transactions")
         .select("*, categories(name, classification), receipts(id)")
-        .eq("company_id", currentCompany.id)
+        .eq("company_id", currentCompany.id);
+
+      // Operators only see their own transactions
+      if (!isAdmin && user) {
+        query = query.eq("created_by", user.id);
+      }
+
+      const { data, error } = await query
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -105,7 +112,7 @@ export default function Transactions() {
     };
 
     fetchTransactions();
-  }, [currentCompany]);
+  }, [currentCompany, isAdmin, user]);
 
   const filteredTransactions = transactions.filter((t) => {
     const matchesSearch = t.beneficiary.toLowerCase().includes(searchQuery.toLowerCase());

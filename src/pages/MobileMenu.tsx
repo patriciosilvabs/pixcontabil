@@ -17,20 +17,18 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
 export default function MobileMenu() {
-  const { profile, isAdmin, signOut } = useAuth();
+  const { profile, isAdmin, signOut, hasPageAccess } = useAuth();
 
-  const menuItems = [
-    ...(isAdmin
-      ? [
-          { name: "Categorias", href: "/categories", icon: FolderOpen },
-          { name: "Relatórios", href: "/reports", icon: FileText },
-          { name: "Usuários", href: "/users", icon: Users },
-          { name: "Empresas", href: "/companies", icon: Building2 },
-          { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2 },
-        ]
-      : []),
-    { name: "Configurações", href: "/settings", icon: Settings },
+  const allMenuItems = [
+    { name: "Categorias", href: "/categories", icon: FolderOpen, pageKey: "categories" },
+    { name: "Relatórios", href: "/reports", icon: FileText, pageKey: "reports" },
+    { name: "Usuários", href: "/users", icon: Users, pageKey: "users" },
+    { name: "Empresas", href: "/companies", icon: Building2, pageKey: "companies" },
+    { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, pageKey: "pix_integration" },
+    { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },
   ];
+
+  const menuItems = allMenuItems.filter((item) => hasPageAccess(item.pageKey));
 
   return (
     <MainLayout>
