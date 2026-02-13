@@ -1,39 +1,56 @@
 
-# Substituir "Descricao opcional" por Selecao de Categoria (Custo/Despesa)
+# Simplificar Etapa 2: Apenas Custo ou Despesa (sem dropdown)
 
 ## Resumo
 
-Na etapa 2 do fluxo de Novo Pagamento, substituir o campo de texto "Descricao (opcional)" por um seletor de categoria que busca as categorias cadastradas da empresa, agrupadas por classificacao (Custo ou Despesa). Tambem renomear o titulo da secao para "Informacao do pagamento".
+Na etapa 2 do Novo Pagamento, substituir o dropdown de categorias por dois botoes grandes: **CUSTO** e **DESPESA**. A categoria especifica (ex: Insumos, Embalagens) sera selecionada depois, na tela de anexo do comprovante (que ja tem esse fluxo implementado).
 
-## Alteracoes
+## O que muda
 
 ### Arquivo: `src/pages/NewPayment.tsx`
 
-1. **Importar `useAuth` e `useEffect`** para buscar categorias da empresa
-2. **Adicionar estado** para lista de categorias e categoria selecionada (`categoryId`)
-3. **Buscar categorias** da tabela `categories` filtradas por `company_id` e `is_active = true`
-4. **Atualizar o `PaymentData` interface**: trocar `description?: string` por `categoryId?: string`
-5. **Etapa 2 - Substituir o campo Textarea** por:
-   - Label: "Informacao do pagamento"
-   - Um `Select` com as categorias agrupadas por classificacao:
-     - Grupo "Custo" com as categorias de classificacao `cost`
-     - Grupo "Despesa" com as categorias de classificacao `expense`
-6. **Etapa 3 (confirmacao)**: mostrar o nome da categoria selecionada e sua classificacao em vez da descricao livre
-7. **Atualizar `handleConfirmPayment`**: passar o `category_id` na criacao da transacao em vez de `descricao`
+1. **Remover** o estado `categories`, o `useEffect` de fetch de categorias, e as variaveis `costCategories`, `expenseCategories`, `selectedCategory`
+2. **Substituir `categoryId`** no `PaymentData` por `classification?: "cost" | "expense"`
+3. **Etapa 2**: Remover o `Select` dropdown e colocar dois botoes lado a lado:
+   - Botao **CUSTO** (com icone DollarSign, estilo gradient quando selecionado)
+   - Botao **DESPESA** (com icone TrendingUp, estilo vermelho quando selecionado)
+   - Subtitulo: "Classificacao" em vez de "Categoria"
+4. **Etapa 3 (confirmacao)**: Mostrar "Custo" ou "Despesa" em vez do nome da categoria
+5. **`handleConfirmPayment`**: Passar a classificacao como descricao do pagamento (ex: "Custo" ou "Despesa")
+6. **Remover imports** desnecessarios: `SelectGroup`, `SelectLabel` (se nao usados em outro lugar do arquivo)
 
-### Fluxo Atualizado
+### Layout da Etapa 2 (Mobile e Desktop)
+
+```text
++------------------------------------------+
+|  Informacao do pagamento                 |
+|  Informe o valor e a classificacao       |
+|                                          |
+|  Valor (R$)                              |
+|  +--------------------------------------+|
+|  | R$  3,55                             ||
+|  +--------------------------------------+|
+|                                          |
+|  Classificacao                           |
+|  +------------------+  +---------------+|
+|  |    $             |  |    ^          ||
+|  |   CUSTO          |  |   DESPESA     ||
+|  +------------------+  +---------------+|
++------------------------------------------+
+```
+
+### Fluxo completo atualizado
 
 ```text
 Etapa 1: Tipo de pagamento (chave, copia e cola, QR, boleto)
-Etapa 2: Valor + Categoria (Custo ou Despesa) -- era "Valor e Descricao"
+Etapa 2: Valor + Classificacao (Custo ou Despesa) -- botoes, sem dropdown
 Etapa 3: Confirmacao
-  -> Apos confirmacao: Tela de captura de comprovante (ja existente)
+  -> Apos confirmacao: Tela de comprovante (onde escolhe a categoria especifica)
 ```
 
 ### Detalhes Tecnicos
 
-- A query de categorias usa `supabase.from("categories").select("id, name, classification").eq("company_id", currentCompany.id).eq("is_active", true).order("name")`
-- O `Select` usa `SelectGroup` com `SelectLabel` para separar visualmente "Custos" e "Despesas"
-- O campo `description` no `PaymentData` sera mantido internamente como o nome da categoria selecionada (para compatibilidade com o fluxo de pagamento existente), mas a interface mostrara o seletor
-- A `categoryId` sera passada para a transacao no `handleConfirmPayment` para vincular a categoria ao pagamento
-- Se nao houver categorias cadastradas, exibir uma mensagem orientando o usuario a cadastrar categorias primeiro
+- Os botoes usam o mesmo estilo ja existente na tela `ReceiptCapture.tsx` (CUSTO com `bg-gradient-primary`, DESPESA com `bg-destructive`)
+- A classificacao sera passada na descricao do pagamento para registro
+- A categoria especifica continua sendo escolhida na tela de anexo do comprovante, que ja possui esse fluxo com subcategorias
+- Importar `DollarSign` e `TrendingUp` do lucide-react (ja disponivel no projeto)
