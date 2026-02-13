@@ -1,52 +1,45 @@
 
-# Corrigir Consulta de Saldo para Todos os Provedores
+# Corrigir Permissoes e Isolamento de Dados
 
-## Problema Identificado
+## Problemas Identificados
 
-Ao trocar para Woovi (OpenPix), o saldo aparece como R$ 0,00 porque:
+1. **Configuracoes aparecendo sem permissao**: A pagina "Menu" no mobile mostra "Configuracoes" para todos os usuarios, sem verificar se o usuario tem acesso.
 
-1. O endpoint de saldo da Woovi esta errado no codigo: usa `/api/v1/subaccount/{pixKey}` (subconta), mas o correto e `/api/v1/balance` (saldo da conta principal)
-2. O campo `pix_key` esta vazio na configuracao atual, o que gera uma URL invalida
+2. **Menu mobile nao filtra por permissoes**: O menu mobile so verifica se o usuario e admin, mas nao usa `hasPageAccess` para filtrar os itens visiveis para operadores.
 
-## Correcao
+3. **Historico mostrando dados de outros usuarios**: A pagina de Transacoes busca todas as transacoes da empresa (`company_id`), sem filtrar por `created_by` para operadores. Apenas admins devem ver todas as transacoes.
 
-### Arquivo: `supabase/functions/pix-balance/index.ts`
+## Plano de Implementacao
 
-Corrigir o bloco Woovi para usar o endpoint correto da API OpenPix:
+### 1. Corrigir MobileMenu.tsx
+- Importar `hasPageAccess` do `useAuth`
+- Filtrar os itens do menu usando `hasPageAccess` para cada item que tenha um `pageKey`
+- Adicionar `pageKey` aos itens do menu (ex: `settings` para Configuracoes)
+- Manter "Configuracoes" condicionada a `hasPageAccess("settings")`
 
-**De (errado):**
-```
-const pixKey = config.pix_key;
-const balanceUrl = `${config.base_url}/api/v1/subaccount/${encodeURIComponent(pixKey)}`;
-// Header: Authorization: accessToken
-```
+### 2. Corrigir Transactions.tsx - Isolamento de dados por usuario
+- Importar `isAdmin` e `user` do `useAuth`
+- Para operadores: adicionar filtro `.eq("created_by", user.id)` na query
+- Para admins: manter a query atual (ver todas as transacoes da empresa)
 
-**Para (correto):**
-```
-const balanceUrl = `${config.base_url}/api/v1/balance`;
-// Header: Authorization: accessToken
-```
+### 3. Revisar MainLayout.tsx (sidebar desktop)
+- Ja esta usando `hasPageAccess` corretamente na sidebar - nenhuma alteracao necessaria.
 
-A resposta da API OpenPix retorna o saldo no campo `balance.total` ou `balance.available` (em centavos). Ajustar o parse para buscar o campo correto e dividir por 100.
+## Detalhes Tecnicos
 
-**Mudanca no parse:**
-```
-// Antes:
-balance = (data?.SubAccount?.balance ?? data?.subAccount?.balance ?? 0) / 100;
-
-// Depois:
-balance = (data?.balance?.available ?? data?.balance?.total ?? 0) / 100;
+### MobileMenu.tsx - Mudancas
+```text
+- Adicionar pageKey a cada item de menu
+- Usar hasPageAccess para filtrar itens
+- Operadores verao apenas itens que tem permissao
 ```
 
-### Arquivo unico alterado
+### Transactions.tsx - Mudancas
+```text
+- Se isAdmin: query por company_id (todas da empresa)
+- Se operador: query por company_id + created_by = user.id (so as proprias)
+```
 
-Apenas `supabase/functions/pix-balance/index.ts` precisa ser corrigido. Nenhuma alteracao no frontend, pois o hook `usePixBalance` ja trata a resposta corretamente.
-
-### Validacao dos 3 provedores no mesmo codigo
-
-Apos a correcao, o fluxo de cada provedor sera:
-
-- **Transfeera**: `GET /statement/balance` -- campo `value` (ja funciona, retorna R$ 11,91)
-- **Woovi**: `GET /api/v1/balance` -- campo `balance.available` em centavos, dividido por 100
-- **ONZ**: `GET /accounts/balances/` -- campo `available` (ja implementado)
-- **EFI**: `GET /v2/gn/saldo` -- campo `saldo` com mTLS (ja implementado)
+### Arquivos afetados
+- `src/pages/MobileMenu.tsx`
+- `src/pages/Transactions.tsx`
