@@ -35,24 +35,24 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
-  const { profile, isAdmin, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
+  const { profile, isAdmin, currentCompany, companies, setCurrentCompany, signOut, hasPageAccess } = useAuth();
   const location = useLocation();
   const [balanceVisible, setBalanceVisible] = React.useState(true);
 
   const navigation = [
-    { name: "Dashboard", href: "/", icon: Home },
-    { name: "Novo Pagamento", href: "/pix/new", icon: Send },
-    { name: "Histórico", href: "/transactions", icon: History },
-    { name: "Categorias", href: "/categories", icon: FolderOpen, adminOnly: true },
-    { name: "Relatórios", href: "/reports", icon: FileText, adminOnly: true },
-    { name: "Usuários", href: "/users", icon: Users, adminOnly: true },
-    { name: "Empresas", href: "/companies", icon: Building2, adminOnly: true },
+    { name: "Dashboard", href: "/", icon: Home, pageKey: "dashboard" },
+    { name: "Novo Pagamento", href: "/pix/new", icon: Send, pageKey: "new_payment" },
+    { name: "Histórico", href: "/transactions", icon: History, pageKey: "transactions" },
+    { name: "Categorias", href: "/categories", icon: FolderOpen, adminOnly: true, pageKey: "categories" },
+    { name: "Relatórios", href: "/reports", icon: FileText, adminOnly: true, pageKey: "reports" },
+    { name: "Usuários", href: "/users", icon: Users, adminOnly: true, pageKey: "users" },
+    { name: "Empresas", href: "/companies", icon: Building2, adminOnly: true, pageKey: "companies" },
     { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, adminOnly: true },
-    { name: "Configurações", href: "/settings", icon: Settings },
+    { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },
   ];
 
   const filteredNavigation = navigation.filter(
-    (item) => !item.adminOnly || isAdmin
+    (item) => (!item.adminOnly || isAdmin) && (!item.pageKey || hasPageAccess(item.pageKey))
   );
 
   const isActive = (href: string) => {

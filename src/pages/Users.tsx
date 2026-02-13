@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -14,6 +15,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
 import { Loader2, Users as UsersIcon, Shield, DollarSign } from "lucide-react";
+
+const PAGE_OPTIONS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "new_payment", label: "Novo Pagamento" },
+  { key: "transactions", label: "Transações" },
+  { key: "categories", label: "Categorias" },
+  { key: "reports", label: "Relatórios" },
+  { key: "users", label: "Usuários" },
+  { key: "companies", label: "Empresas" },
+  { key: "settings", label: "Configurações" },
+];
 
 interface MemberRow {
   id: string;
@@ -34,13 +46,13 @@ export default function Users() {
   const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
   const [editRole, setEditRole] = useState<"admin" | "operator">("operator");
   const [editLimit, setEditLimit] = useState("");
+  const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchMembers = async () => {
     if (!currentCompany) return;
     setIsLoading(true);
     try {
-      // Fetch members
       const { data: membersData, error } = await supabase
         .from("company_members")
         .select("*")
@@ -50,7 +62,6 @@ export default function Users() {
       if (error) throw error;
       if (!membersData) { setMembers([]); return; }
 
-      // Fetch profiles and roles for each member
       const enriched: MemberRow[] = [];
       for (const m of membersData) {
         const { data: profile } = await supabase
@@ -81,15 +92,27 @@ export default function Users() {
 
   useEffect(() => { fetchMembers(); }, [currentCompany]);
 
-  const openEdit = (m: MemberRow) => {
+  const openEdit = async (m: MemberRow) => {
     setEditingMember(m);
     setEditRole((m.role as "admin" | "operator") || "operator");
     setEditLimit(m.payment_limit?.toString() || "");
+
+    // Load permissions
+    const { data: perms } = await supabase
+      .from("user_page_permissions")
+      .select("page_key, has_access")
+      .eq("user_id", m.user_id)
+      .eq("company_id", m.company_id);
+
+    const permMap: Record<string, boolean> = {};
+    PAGE_OPTIONS.forEach(p => permMap[p.key] = true); // default all true
+    perms?.forEach((p: any) => { permMap[p.page_key] = p.has_access; });
+    setEditPermissions(permMap);
     setEditDialog(true);
   };
 
   const handleSave = async () => {
-    if (!editingMember) return;
+    if (!editingMember || !currentCompany) return;
     setIsSaving(true);
     try {
       // Update payment limit
@@ -106,6 +129,35 @@ export default function Users() {
           .update({ role: editRole })
           .eq("user_id", editingMember.user_id);
         if (roleError) throw roleError;
+      }
+
+      // Upsert page permissions
+      const permRows = PAGE_OPTIONS.map(p => ({
+        user_id: editingMember.user_id,
+        company_id: currentCompany.id,
+        page_key: p.key,
+        has_access: editPermissions[p.key] ?? true,
+      }));
+
+      for (const row of permRows) {
+        const { data: existing } = await supabase
+          .from("user_page_permissions")
+          .select("id")
+          .eq("user_id", row.user_id)
+          .eq("company_id", row.company_id)
+          .eq("page_key", row.page_key)
+          .single();
+
+        if (existing) {
+          await supabase
+            .from("user_page_permissions")
+            .update({ has_access: row.has_access })
+            .eq("id", existing.id);
+        } else {
+          await supabase
+            .from("user_page_permissions")
+            .insert(row);
+        }
       }
 
       toast({ title: "Usuário atualizado!" });
@@ -203,7 +255,7 @@ export default function Users() {
         </Card>
 
         <Dialog open={editDialog} onOpenChange={setEditDialog}>
-          <DialogContent>
+          <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Editar Membro</DialogTitle>
             </DialogHeader>
@@ -221,6 +273,25 @@ export default function Users() {
               <div className="space-y-2">
                 <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite de Pagamento (R$)</Label>
                 <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Acesso às Páginas</Label>
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  {PAGE_OPTIONS.map(page => (
+                    <div key={page.key} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`perm-${page.key}`}
+                        checked={editPermissions[page.key] ?? true}
+                        onCheckedChange={(checked) =>
+                          setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))
+                        }
+                      />
+                      <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">
+                        {page.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
             <DialogFooter>

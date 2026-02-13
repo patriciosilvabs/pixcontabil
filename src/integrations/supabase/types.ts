@@ -658,6 +658,41 @@ export type Database = {
           },
         ]
       }
+      user_page_permissions: {
+        Row: {
+          company_id: string
+          created_at: string
+          has_access: boolean
+          id: string
+          page_key: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          has_access?: boolean
+          id?: string
+          page_key: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          has_access?: boolean
+          id?: string
+          page_key?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_page_permissions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_roles: {
         Row: {
           created_at: string

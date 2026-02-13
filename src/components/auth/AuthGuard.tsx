@@ -6,10 +6,11 @@ import { Loader2 } from "lucide-react";
 interface AuthGuardProps {
   children: React.ReactNode;
   requireAdmin?: boolean;
+  requiredPage?: string;
 }
 
-export function AuthGuard({ children, requireAdmin = false }: AuthGuardProps) {
-  const { user, isLoading, isAdmin } = useAuth();
+export function AuthGuard({ children, requireAdmin = false, requiredPage }: AuthGuardProps) {
+  const { user, isLoading, isAdmin, hasPageAccess } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -25,6 +26,12 @@ export function AuthGuard({ children, requireAdmin = false }: AuthGuardProps) {
     }
   }, [user, isLoading, requireAdmin, isAdmin, navigate]);
 
+  useEffect(() => {
+    if (!isLoading && user && requiredPage && !hasPageAccess(requiredPage)) {
+      navigate("/", { replace: true });
+    }
+  }, [user, isLoading, requiredPage, hasPageAccess, navigate]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -36,13 +43,9 @@ export function AuthGuard({ children, requireAdmin = false }: AuthGuardProps) {
     );
   }
 
-  if (!user) {
-    return null;
-  }
-
-  if (requireAdmin && !isAdmin) {
-    return null;
-  }
+  if (!user) return null;
+  if (requireAdmin && !isAdmin) return null;
+  if (requiredPage && !hasPageAccess(requiredPage)) return null;
 
   return <>{children}</>;
 }
