@@ -1,68 +1,77 @@
 
+# Relatorios com Exportacao CSV, XLSX e PDF com Comprovantes
 
-# Corrigir Fluxo de Anexar Comprovante
+## Resumo
 
-## Problema
-
-A pagina de captura de comprovante (`ReceiptCapture.tsx`) nao salva nada no banco de dados. O `handleSubmit` apenas simula um delay e navega para a home. Por isso, mesmo apos "anexar" um comprovante, a transacao continua mostrando o botao "Anexar" no historico.
-
-## Causa Raiz
-
-- Linha 141-142: `await new Promise((resolve) => setTimeout(resolve, 1500))` -- apenas simula, nao salva nada
-- O arquivo nunca e enviado para o storage
-- Nenhum registro e criado na tabela `receipts`
-- Ao voltar para `/transactions`, o `hasReceipt` continua `false`
-
-## Solucao
-
-Corrigir o `handleSubmit` para:
-
-1. Fazer upload do arquivo para um bucket de storage
-2. Criar um registro na tabela `receipts` vinculado a transacao
-3. Atualizar o `category_id` da transacao com a categoria selecionada
-4. Navegar de volta para `/transactions` apos salvar
+Atualizar a pagina de Relatorios para suportar tres formatos de exportacao (CSV, XLSX, PDF), onde cada transacao inclui o link para o comprovante anexado. No PDF, as imagens dos comprovantes serao exibidas visualmente. No CSV e XLSX, uma coluna com a URL do comprovante sera incluida.
 
 ## Alteracoes
 
-### 1. Criar bucket de storage (migracao SQL)
+### 1. Instalar dependencias
 
-```sql
-INSERT INTO storage.buckets (id, name, public) VALUES ('receipts', 'receipts', true);
+- `xlsx` (SheetJS) -- para gerar arquivos XLSX
+- `jspdf` + `jspdf-autotable` -- para gerar PDFs formatados com tabelas
 
-CREATE POLICY "Members can upload receipts"
-ON storage.objects FOR INSERT
-WITH CHECK (bucket_id = 'receipts' AND auth.role() = 'authenticated');
+### 2. Atualizar a query de dados (`src/pages/Reports.tsx`)
 
-CREATE POLICY "Members can view receipts"
-ON storage.objects FOR SELECT
-USING (bucket_id = 'receipts' AND auth.role() = 'authenticated');
+A query atual busca `transactions` com join em `categories`, mas nao busca `receipts`. Atualizar para:
+
+```
+.select("*, categories(name, classification), receipts(file_url, file_name)")
 ```
 
-### 2. Arquivo: `src/pages/ReceiptCapture.tsx`
+Isso traz a URL do comprovante junto com cada transacao.
 
-Reescrever a funcao `handleSubmit` para:
+### 3. Adicionar botoes de exportacao
 
-- Gerar um path unico para o arquivo: `{company_id}/{transaction_id}/{timestamp}_{filename}`
-- Fazer upload via `supabase.storage.from('receipts').upload(path, file)`
-- Obter a URL publica do arquivo
-- Inserir registro na tabela `receipts` com:
-  - `transaction_id`: do parametro da URL
-  - `file_url`: URL publica do storage
-  - `file_name`: nome do arquivo original
-  - `file_type`: tipo MIME do arquivo
-  - `uploaded_by`: usuario logado (via `session.user.id`)
-  - `ocr_status`: 'pending'
-- Se o usuario selecionou uma categoria, atualizar `category_id` na tabela `transactions`
-- Navegar para `/transactions` em vez de `/` apos salvar com sucesso
+Substituir o botao unico "CSV" por um dropdown ou tres botoes:
+- CSV
+- XLSX
+- PDF
 
-### 3. Arquivo: `src/pages/Transactions.tsx`
+### 4. Exportacao CSV
 
-Nenhuma alteracao necessaria -- o codigo ja verifica `hasReceipt` corretamente via join com `receipts(id)`. Uma vez que o registro exista no banco, o botao "Anexar" sera substituido pelo icone de visualizar automaticamente.
+Adicionar coluna "Comprovante" com a URL publica do arquivo. Formato:
+
+```
+Data,Descricao,Valor,Categoria,Classificacao,Status,Comprovante
+15/01/2025,Insumos,2450.00,Insumos,Custo,completed,https://...url...
+```
+
+### 5. Exportacao XLSX
+
+Usar a biblioteca `xlsx` para gerar uma planilha com as mesmas colunas do CSV, incluindo a coluna "Comprovante" com a URL. A URL sera clicavel no Excel.
+
+### 6. Exportacao PDF
+
+Usar `jspdf` + `jspdf-autotable` para gerar um PDF contendo:
+
+1. **Cabecalho**: Nome da empresa, periodo do relatorio, data de geracao
+2. **Resumo**: Total de saidas, custos, despesas (cards resumo)
+3. **Tabela**: Data | Favorecido | Valor | Categoria | Classificacao | Status | Comprovante
+4. **Paginas de comprovantes**: Apos a tabela, cada comprovante que for imagem (JPG/PNG) sera inserido em uma pagina separada com o titulo da transacao acima da imagem
+
+Para inserir as imagens no PDF:
+- Buscar cada imagem via `fetch()` da URL publica do storage
+- Converter para base64
+- Inserir com `doc.addImage()`
+- Cada comprovante em uma pagina separada com legenda (data, valor, favorecido)
+
+### 7. Arquivo: `src/pages/Reports.tsx`
+
+Alteracoes especificas:
+- Importar `jsPDF` e `autoTable` das novas dependencias
+- Importar `utils` do `xlsx`
+- Atualizar o `useEffect` para incluir `receipts` no select
+- Criar funcao `exportXLSX()` -- gera planilha com SheetJS
+- Criar funcao `exportPDF()` -- gera PDF com cabecalho, resumo, tabela e imagens
+- Atualizar funcao `exportCSV()` -- adicionar coluna de comprovante
+- Substituir botao unico por dropdown com tres opcoes
 
 ### Detalhes Tecnicos
 
-- A tabela `receipts` ja possui RLS para INSERT: `uploaded_by = auth.uid()` e `transaction_id` pertence a empresa do usuario
-- A tabela `transactions` ja possui RLS para UPDATE: usuario criador ou admin
-- O `subcategory` selecionado pelo usuario sera mapeado para o `category_id` correspondente na tabela `categories`
-- O OCR ainda usa dados simulados (mock), mas a estrutura esta pronta para integracao futura
-
+- As imagens dos comprovantes ja estao no bucket `receipts` (publico), entao podem ser acessadas via URL publica
+- O join `receipts(file_url, file_name)` retorna um array (uma transacao pode ter multiplos comprovantes); usaremos o primeiro
+- Para o PDF, imagens serao carregadas via `fetch` e convertidas para base64 com `FileReader`/`canvas`
+- PDFs e comprovantes que nao sao imagem terao apenas o link no PDF, sem preview visual
+- O XLSX usa a funcao `HYPERLINK` para tornar URLs clicareis
