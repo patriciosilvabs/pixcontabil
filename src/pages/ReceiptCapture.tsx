@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +19,7 @@ import {
   AlertCircle,
   X,
   Sparkles,
+  Search,
 } from "lucide-react";
 
 type ClassificationType = "cost" | "expense";
@@ -51,6 +53,7 @@ export default function ReceiptCapture() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [categorySearch, setCategorySearch] = useState("");
 
   useEffect(() => {
     if (!currentCompany) return;
@@ -408,6 +411,7 @@ export default function ReceiptCapture() {
                           subcategory: null,
                         }))
                       }
+                      onClickCapture={() => setCategorySearch("")}
                     >
                       <DollarSign className="h-6 w-6" />
                       <span className="font-bold">CUSTO</span>
@@ -432,6 +436,7 @@ export default function ReceiptCapture() {
                           subcategory: null,
                         }))
                       }
+                      onClickCapture={() => setCategorySearch("")}
                     >
                       <TrendingUp className="h-6 w-6" />
                       <span className="font-bold">DESPESA</span>
@@ -442,9 +447,19 @@ export default function ReceiptCapture() {
                   {receiptData.classification && (
                     <div className="space-y-2">
                       <label className="text-sm font-medium">Categoria</label>
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar categoria..."
+                          value={categorySearch}
+                          onChange={(e) => setCategorySearch(e.target.value)}
+                          className="pl-9"
+                        />
+                      </div>
                       <div className="flex flex-wrap gap-2">
                         {categories
                           .filter((c) => c.classification === receiptData.classification)
+                          .filter((c) => c.name.toLowerCase().includes(categorySearch.toLowerCase()))
                           .map((cat) => (
                           <Button
                             key={cat.id}
@@ -464,6 +479,12 @@ export default function ReceiptCapture() {
                             {cat.name}
                           </Button>
                         ))}
+                        {categories
+                          .filter((c) => c.classification === receiptData.classification)
+                          .filter((c) => c.name.toLowerCase().includes(categorySearch.toLowerCase()))
+                          .length === 0 && (
+                          <p className="text-sm text-muted-foreground py-2">Nenhuma categoria encontrada</p>
+                        )}
                       </div>
                     </div>
                   )}
