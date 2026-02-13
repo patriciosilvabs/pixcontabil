@@ -1,62 +1,74 @@
 
 
-# Implementar Camera para QR Code e Codigo de Barras
+# Corrigir Conexao ONZ Infopago com mTLS
 
 ## Problema
-Os botoes "Abrir Camera" na pagina de Novo Pagamento nao fazem nada. Eles nao tem nenhum evento `onClick` conectado - sao apenas botoes visuais sem funcionalidade.
+O ONZ Infopago requer autenticacao mTLS (certificado digital) igual a EFI Pay, mas o sistema esta tentando conectar sem certificado. O erro `UnknownIssuer` ocorre porque o servidor do ONZ usa um certificado de uma CA privada que so e aceita quando a conexao mTLS e estabelecida com o certificado do cliente.
 
-## Solucao
-Implementar leitura de QR Code e codigo de barras usando a camera do dispositivo com a biblioteca `html5-qrcode`, que suporta tanto QR Codes quanto codigos de barras (incluindo ITF usado em boletos brasileiros).
+## Informacoes da Documentacao ONZ (do screenshot)
+- **QRCodes API**: `https://api.pix.infopago.com.br`
+- **Contas (Cash-out) API**: `https://cashout.infopago.com.br/api/v2/`
+- **Certificado CASH-OUT** com senha fornecida
 
-## Etapas
+## O que precisa ser feito
 
-### 1. Instalar dependencia
-- Adicionar `html5-qrcode` - biblioteca leve que usa a camera do dispositivo para decodificar QR Codes e codigos de barras sem necessidade de servidor
+### 1. Atualizar base_url no banco de dados
+Alterar de `https://secureapi.bancodigital.onz.software/api/v2` para `https://cashout.infopago.com.br/api/v2`
 
-### 2. Criar componente de Scanner (`src/components/payment/BarcodeScanner.tsx`)
-- Componente reutilizavel que abre a camera traseira do dispositivo
-- Suporta dois modos: `qrcode` e `barcode`
-- Usa `Html5Qrcode` para decodificar em tempo real
-- Renderiza dentro de um Dialog/modal para facilitar o uso
-- Callback `onScan(result: string)` retorna o valor decodificado
-- Callback `onClose()` para fechar o scanner
-- Tratamento de erros (camera nao disponivel, permissao negada)
+### 2. Converter e armazenar o certificado CASH-OUT
+O usuario precisa converter o certificado .p12 para formato PEM e codificar em Base64:
 
-### 3. Integrar no NewPayment.tsx
-- Na aba **QR Code**: ao clicar "Abrir Camera", abrir o scanner no modo `qrcode`. O resultado preenchera o campo `copyPaste` (Copia e Cola) e mudara o tipo para `copy_paste`, ja que o QR Code Pix e um codigo Copia e Cola
-- Na aba **Boleto**: ao clicar "Abrir Camera", abrir o scanner no modo `barcode`. O resultado preenchera o campo `boletoCode` (linha digitavel)
-- Apos escanear com sucesso, fechar o scanner automaticamente
-
-## Detalhes Tecnicos
-
-### Componente BarcodeScanner
 ```text
-Props:
-- mode: "qrcode" | "barcode"
-- isOpen: boolean
-- onScan: (result: string) => void
-- onClose: () => void
-
-Formatos suportados:
-- QR Code: QR_CODE
-- Boleto: ITF, CODE_128 (codigos de barras bancarios)
-
-Ciclo de vida:
-- Ao abrir: solicita permissao da camera, inicia decodificacao
-- Ao escanear: chama onScan, para a camera
-- Ao fechar: para a camera, limpa recursos
+Passos:
+1. Extrair certificado: openssl pkcs12 -in certificado.p12 -clcerts -nokeys -out cert.pem
+2. Extrair chave privada: openssl pkcs12 -in certificado.p12 -nocerts -nodes -out key.pem
+3. Codificar em Base64:
+   - cert: base64 -w0 cert.pem
+   - key: base64 -w0 key.pem
+4. Salvar os valores base64 nos campos certificate_encrypted e certificate_key_encrypted da pix_configs
 ```
 
-### Mudancas no NewPayment.tsx
-```text
-- Adicionar estado: scannerMode e scannerOpen
-- Botao "Abrir Camera" do QR Code -> abre scanner modo qrcode
-- Botao "Abrir Camera" do Boleto -> abre scanner modo barcode
-- onScan preenche os campos corretos automaticamente
-```
+A senha do certificado CASH-OUT e: `Xfbfvi.tyja4biGL4QQgqokmHKBNK_yE4oPztxNn.d!bq*zkbL_CwtvbWrMzhkwY`
 
-### Arquivos afetados
-- `src/components/payment/BarcodeScanner.tsx` (novo)
-- `src/pages/NewPayment.tsx` (editar)
-- `package.json` (nova dependencia: html5-qrcode)
+### 3. Adicionar mTLS ao provedor ONZ em todas as Edge Functions
+Aplicar o mesmo padrao usado pela EFI Pay (Deno.createHttpClient com cert/key) nas seguintes funcoes:
+
+**pix-auth/index.ts** (autenticacao OAuth):
+- Verificar se certificate_encrypted existe
+- Decodificar cert e key de Base64
+- Criar httpClient com mTLS
+- Usar para a requisicao de token OAuth
+- Fechar httpClient apos uso
+
+**pix-pay-dict/index.ts** (pagamentos):
+- Criar httpClient mTLS para chamadas ao endpoint ONZ
+- Usar nas requisicoes de pagamento
+
+**pix-balance/index.ts** (consulta saldo):
+- Criar httpClient mTLS para consulta de saldo
+
+**pix-qrc-info/index.ts** (decodificar QR Code):
+- Criar httpClient mTLS para decodificacao de QR Code
+
+### 4. Arquivos afetados
+- `supabase/functions/pix-auth/index.ts` - adicionar mTLS ao bloco ONZ
+- `supabase/functions/pix-pay-dict/index.ts` - adicionar mTLS ao bloco ONZ
+- `supabase/functions/pix-balance/index.ts` - adicionar mTLS ao bloco ONZ
+- `supabase/functions/pix-qrc-info/index.ts` - adicionar mTLS ao bloco ONZ
+- Banco de dados: atualizar base_url e certificados na tabela pix_configs
+
+### 5. Padrao de codigo mTLS (igual EFI)
+```text
+// Dentro de cada bloco ONZ:
+let httpClient: Deno.HttpClient | undefined;
+if (config.certificate_encrypted) {
+  const certPem = atob(config.certificate_encrypted);
+  const keyPem = config.certificate_key_encrypted 
+    ? atob(config.certificate_key_encrypted) 
+    : certPem;
+  httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+}
+// ... usar httpClient nas chamadas fetch ...
+httpClient?.close();
+```
 
