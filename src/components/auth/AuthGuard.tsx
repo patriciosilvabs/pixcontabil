@@ -1,7 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
+
+const PAGE_ROUTES: { pageKey: string; path: string }[] = [
+  { pageKey: "dashboard", path: "/" },
+  { pageKey: "new_payment", path: "/pix/new" },
+  { pageKey: "transactions", path: "/transactions" },
+  { pageKey: "categories", path: "/categories" },
+  { pageKey: "reports", path: "/reports" },
+  { pageKey: "users", path: "/users" },
+  { pageKey: "companies", path: "/companies" },
+  { pageKey: "settings", path: "/settings" },
+];
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -14,6 +25,13 @@ export function AuthGuard({ children, requireAdmin = false, requiredPage }: Auth
   const navigate = useNavigate();
   const location = useLocation();
 
+  const firstAccessibleRoute = useMemo(() => {
+    for (const route of PAGE_ROUTES) {
+      if (hasPageAccess(route.pageKey)) return route.path;
+    }
+    return "/menu";
+  }, [hasPageAccess]);
+
   useEffect(() => {
     if (!isLoading && !user) {
       navigate("/auth", { state: { from: location }, replace: true });
@@ -22,15 +40,15 @@ export function AuthGuard({ children, requireAdmin = false, requiredPage }: Auth
 
   useEffect(() => {
     if (!isLoading && user && requireAdmin && !isAdmin) {
-      navigate("/", { replace: true });
+      navigate(firstAccessibleRoute, { replace: true });
     }
-  }, [user, isLoading, requireAdmin, isAdmin, navigate]);
+  }, [user, isLoading, requireAdmin, isAdmin, navigate, firstAccessibleRoute]);
 
   useEffect(() => {
     if (!isLoading && user && requiredPage && !hasPageAccess(requiredPage)) {
-      navigate("/", { replace: true });
+      navigate(firstAccessibleRoute, { replace: true });
     }
-  }, [user, isLoading, requiredPage, hasPageAccess, navigate]);
+  }, [user, isLoading, requiredPage, hasPageAccess, navigate, firstAccessibleRoute]);
 
   if (isLoading) {
     return (
