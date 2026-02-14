@@ -59,7 +59,8 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
 
           {/* Center - Logo */}
           <div className="flex flex-col items-center">
-            <span className="font-bold text-lg tracking-wider">PIXFLOW</span>
+            <span className="font-bold text-lg tracking-wider">PIX CONTÁBIL</span>
+            <div className="w-12 h-0.5 bg-white/40 rounded-full mt-0.5" />
           </div>
 
           {/* Right actions */}

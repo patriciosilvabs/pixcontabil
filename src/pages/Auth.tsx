@@ -54,7 +54,7 @@ export default function Auth() {
             <div className="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center">
               <DollarSign className="h-6 w-6 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">PixFlow</span>
+            <span className="text-2xl font-bold text-white">Pix Contábil</span>
           </div>
 
           <h1 className="text-4xl font-bold text-white mb-4">
@@ -83,7 +83,7 @@ export default function Auth() {
         </div>
 
         <p className="text-white/50 text-sm">
-          © 2024 PixFlow. Todos os direitos reservados.
+          © 2024 Pix Contábil. Todos os direitos reservados.
         </p>
       </div>
 
@@ -95,7 +95,7 @@ export default function Auth() {
             <div className="h-12 w-12 rounded-xl bg-gradient-primary flex items-center justify-center shadow-primary">
               <DollarSign className="h-7 w-7 text-white" />
             </div>
-            <span className="text-2xl font-bold text-foreground">PixFlow</span>
+            <span className="text-2xl font-bold text-foreground">Pix Contábil</span>
           </div>
 
           <Card className="border-0 shadow-lg">
@@ -128,7 +128,7 @@ export default function Auth() {
           </Card>
 
           <p className="text-center text-sm text-muted-foreground mt-6 lg:hidden">
-            © 2024 PixFlow. Todos os direitos reservados.
+            © 2024 Pix Contábil. Todos os direitos reservados.
           </p>
         </div>
       </div>

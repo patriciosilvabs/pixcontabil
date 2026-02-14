@@ -75,7 +75,7 @@ export function MainLayout({ children }: MainLayoutProps) {
           <div className="h-9 w-9 rounded-xl bg-gradient-primary flex items-center justify-center shadow-primary">
             <DollarSign className="h-5 w-5 text-white" />
           </div>
-          <span className="font-bold text-lg text-sidebar-foreground">PixFlow</span>
+          <span className="font-bold text-lg text-sidebar-foreground">Pix Contábil</span>
         </div>
 
         {/* Company selector */}
