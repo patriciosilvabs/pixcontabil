@@ -89,7 +89,7 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
       </div>
 
       {/* Green sub-bar with account info */}
-      <div className="bg-primary/90 text-white px-4 py-2 flex items-center justify-between text-xs">
+      <div className="bg-foreground text-background px-4 py-2 flex items-center justify-between text-xs">
         <div className="flex items-center gap-1.5">
           <Building2 className="h-3.5 w-3.5" />
           <span className="font-medium">Conta: 0001</span>
