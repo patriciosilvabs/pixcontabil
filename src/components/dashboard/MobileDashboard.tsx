@@ -22,14 +22,14 @@ interface MobileDashboardProps {
 }
 
 const quickActions = [
-  { label: "MENU PIX", icon: Wallet, href: "/pix/new?tab=key" },
+  { label: "MENU PIX", icon: Wallet, href: "/pix/new" },
   { label: "PAGAR QR CODE", icon: QrCode, href: "/pix/new?tab=qrcode" },
   { label: "COPIA E COLA", icon: ClipboardPaste, href: "/pix/new?tab=copy_paste" },
   { label: "COM CHAVE", icon: Key, href: "/pix/new?tab=key" },
-  { label: "FAVORECIDOS", icon: Star, href: "/transactions" },
-  { label: "TRANSAÇÕES AGENDADAS", icon: CalendarClock, href: "/transactions" },
+  { label: "FAVORECIDOS", icon: Star, href: "/transactions?filter=favorites" },
+  { label: "AGENDADAS", icon: CalendarClock, href: "/transactions?status=pending" },
   { label: "BOLETO", icon: FileText, href: "/pix/new?tab=boleto" },
-  { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new" },
+  { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new?tab=key" },
 ];
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
