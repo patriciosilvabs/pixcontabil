@@ -25,8 +25,6 @@ import {
   Loader2,
   Check,
   AlertCircle,
-  DollarSign,
-  TrendingUp,
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
@@ -138,13 +136,11 @@ export default function NewPayment() {
 
     try {
       const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
-      const classificationLabel = pixData.classification === "cost" ? "Custo" : "Despesa";
-      const categoryDescription = classificationLabel;
 
       if (pixData.type === 'boleto') {
         const result = await payBillet({
           digitable_code: pixData.boletoCode || '',
-          description: categoryDescription || 'Pagamento de boleto',
+          description: 'Pagamento de boleto',
           amount: amount > 0 ? amount : undefined,
         });
 
@@ -156,7 +152,7 @@ export default function NewPayment() {
         const result = await payByKey({
           pix_key: pixData.key || '',
           valor: amount,
-          descricao: categoryDescription,
+          descricao: 'Pagamento Pix',
         });
 
         if (result) {
@@ -166,7 +162,7 @@ export default function NewPayment() {
         const result = await payByQRCode({
           qr_code: pixData.copyPaste || '',
           valor: amount,
-          descricao: categoryDescription,
+          descricao: 'Pagamento Pix',
         });
 
         if (result) {
@@ -396,7 +392,7 @@ export default function NewPayment() {
             <CardHeader>
               <CardTitle>Informação do pagamento</CardTitle>
               <CardDescription>
-                Informe o valor e a classificação
+                Informe o valor do pagamento
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
@@ -420,37 +416,6 @@ export default function NewPayment() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label>Classificação</Label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setPixData({ ...pixData, classification: "cost" })}
-                    className={cn(
-                      "flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-6 transition-all font-semibold text-lg",
-                      pixData.classification === "cost"
-                        ? "border-primary bg-gradient-primary text-primary-foreground shadow-primary"
-                        : "border-border bg-card text-muted-foreground hover:border-primary/50"
-                    )}
-                  >
-                    <DollarSign className="h-7 w-7" />
-                    CUSTO
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPixData({ ...pixData, classification: "expense" })}
-                    className={cn(
-                      "flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-6 transition-all font-semibold text-lg",
-                      pixData.classification === "expense"
-                        ? "border-destructive bg-destructive text-destructive-foreground shadow-md"
-                        : "border-border bg-card text-muted-foreground hover:border-destructive/50"
-                    )}
-                  >
-                    <TrendingUp className="h-7 w-7" />
-                    DESPESA
-                  </button>
-                </div>
-              </div>
             </CardContent>
           </Card>
         )}
@@ -506,14 +471,6 @@ export default function NewPayment() {
                   </div>
                 </div>
 
-                {pixData.classification && (
-                  <div className="flex justify-between items-center">
-                    <span className="text-muted-foreground">Classificação</span>
-                    <span className="font-medium">
-                      {pixData.classification === "cost" ? "Custo" : "Despesa"}
-                    </span>
-                  </div>
-                )}
               </div>
 
               <div className="flex items-start gap-3 p-4 bg-warning/10 rounded-lg">
