@@ -69,7 +69,16 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 15, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : undefined, disableFlip: false },
+          {
+            fps: 15,
+            qrbox: mode === "qrcode"
+              ? { width: 250, height: 250 }
+              : (viewfinderWidth: number, viewfinderHeight: number) => ({
+                  width: Math.floor(viewfinderWidth * 0.9),
+                  height: Math.floor(viewfinderHeight * 0.5),
+                }),
+            disableFlip: false,
+          },
           (decodedText) => {
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
