@@ -105,7 +105,6 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
           qrbox: isBarcode
             ? { width: 300, height: 150 }
             : { width: 250, height: 250 },
-          aspectRatio: isBarcode ? 1.777778 : undefined,
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
           },
