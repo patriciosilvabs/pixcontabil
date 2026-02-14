@@ -7,13 +7,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Camera, X } from "lucide-react";
+import { AlertCircle, Camera, X, Keyboard, ArrowLeft } from "lucide-react";
 
 interface BarcodeScannerProps {
   mode: "qrcode" | "barcode";
   isOpen: boolean;
   onScan: (result: string) => void;
   onClose: () => void;
+  onManualInput?: () => void;
 }
 
 const qrcodeFormats = [Html5QrcodeSupportedFormats.QR_CODE];
@@ -25,7 +26,7 @@ const barcodeFormats = [
   Html5QrcodeSupportedFormats.EAN_13,
 ];
 
-export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScannerProps) {
+export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }: BarcodeScannerProps) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -43,7 +44,6 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
       setIsStarting(true);
       hasScannedRef.current = false;
 
-      // Small delay to ensure DOM element is rendered
       await new Promise((r) => setTimeout(r, 300));
 
       const containerId = containerIdRef.current;
@@ -68,12 +68,9 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
             onScan(decodedText);
-            // Stop after successful scan
             scanner.stop().catch(() => {});
           },
-          () => {
-            // Ignore scan failures (continuous scanning)
-          }
+          () => {}
         );
       } catch (err: any) {
         console.error("[BarcodeScanner] Error:", err);
@@ -107,13 +104,90 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
     onClose();
   };
 
+  const handleManualInput = () => {
+    handleClose();
+    onManualInput?.();
+  };
+
+  // Fullscreen barcode mode
+  if (mode === "barcode") {
+    if (!isOpen) return null;
+
+    return (
+      <div className="fixed inset-0 z-[100] bg-black flex flex-col">
+        {/* Scanner area - takes full screen */}
+        <div className="relative flex-1">
+          {error ? (
+            <div className="flex flex-col items-center justify-center h-full gap-4 px-6">
+              <AlertCircle className="h-16 w-16 text-red-500" />
+              <p className="text-center text-white text-lg">{error}</p>
+              <Button
+                className="bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-3 text-lg rounded-lg"
+                onClick={handleClose}
+              >
+                VOLTAR
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div
+                id={containerIdRef.current}
+                className="w-full h-full"
+                style={{ minHeight: "100%" }}
+              />
+
+              {/* Overlay guide text */}
+              <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none">
+                <p
+                  className="text-white/80 text-sm font-medium whitespace-nowrap"
+                  style={{
+                    writingMode: "vertical-rl",
+                    textOrientation: "mixed",
+                    letterSpacing: "0.1em",
+                  }}
+                >
+                  Posicione o código de barra na linha verde
+                </p>
+              </div>
+
+              {/* Action buttons on the left */}
+              <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-10">
+                <Button
+                  className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-4 text-base rounded-lg shadow-lg"
+                  onClick={handleClose}
+                >
+                  <ArrowLeft className="mr-2 h-5 w-5" />
+                  VOLTAR
+                </Button>
+                <Button
+                  className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-4 text-base rounded-lg shadow-lg"
+                  onClick={handleManualInput}
+                >
+                  <Keyboard className="mr-2 h-5 w-5" />
+                  DIGITAR CÓDIGO
+                </Button>
+              </div>
+
+              {isStarting && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                  <p className="text-white text-lg font-medium">Iniciando câmera...</p>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // QR Code mode - keep dialog
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className={`p-0 gap-0 overflow-hidden ${mode === "barcode" ? "sm:max-w-lg max-w-[95vw]" : "sm:max-w-md"}`}>
+      <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
         <DialogHeader className="p-4 pb-2">
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
-            {mode === "qrcode" ? "Escanear QR Code" : "Escanear Código de Barras"}
+            Escanear QR Code
           </DialogTitle>
         </DialogHeader>
 
@@ -130,7 +204,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
             <>
               <div
                 id={containerIdRef.current}
-                className={`w-full rounded-lg overflow-hidden bg-black ${mode === "barcode" ? "min-h-[350px]" : "min-h-[300px]"}`}
+                className="w-full rounded-lg overflow-hidden bg-black min-h-[300px]"
               />
               {isStarting && (
                 <p className="text-center text-sm text-muted-foreground mt-3">
@@ -138,9 +212,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
                 </p>
               )}
               <p className="text-center text-xs text-muted-foreground mt-3">
-                {mode === "qrcode"
-                  ? "Aponte a câmera para o QR Code Pix"
-                  : "Aponte a câmera para o código de barras do boleto"}
+                Aponte a câmera para o QR Code Pix
               </p>
             </>
           )}
