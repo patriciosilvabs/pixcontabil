@@ -94,6 +94,9 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         const scanner = new Html5Qrcode(containerId, {
           formatsToSupport: allFormats,
           verbose: false,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         });
 
         if (cancelled) {
@@ -104,20 +107,23 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         scannerRef.current = scanner;
 
         const config: any = {
-          fps: 10,
+          fps: 20,
           disableFlip: false,
+          experimentalFeatures: {
+            useBarCodeDetectorIfSupported: true,
+          },
         };
 
         // Use appropriate qrbox based on container size
         if (mode === "qrcode") {
           config.qrbox = { width: 250, height: 250 };
         } else {
-          // For barcodes, use a wide rectangular area
+          // For barcodes - wide and thin rectangle matching barcode shape
           const w = element.clientWidth;
           const h = element.clientHeight;
           config.qrbox = {
-            width: Math.max(250, Math.floor(w * 0.85)),
-            height: Math.max(80, Math.floor(h * 0.3)),
+            width: Math.max(280, Math.floor(w * 0.9)),
+            height: Math.max(120, Math.floor(h * 0.25)),
           };
         }
 
