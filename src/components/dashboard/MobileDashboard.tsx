@@ -73,8 +73,8 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
               to={action.href}
               className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
             >
-              <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-900/30 flex items-center justify-center">
-                <action.icon className="h-6 w-6 text-rose-600 dark:text-rose-400" />
+              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
+                <action.icon className="h-6 w-6 text-primary-foreground" />
               </div>
               <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
                 {action.label}
