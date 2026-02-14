@@ -1,22 +1,46 @@
 
-# Fazer cada botao abrir diretamente sua funcao
 
-## Problema
-A pagina `NewPayment` nao le o parametro `?tab=` da URL. Quando o usuario clica em "COPIA E COLA" no dashboard, ele e redirecionado para `/pix/new?tab=copy_paste`, mas a pagina abre sempre na aba "Chave" (valor padrao).
+## Correcao da Extracao da Chave Pix do QR Code EMV
 
-## Solucao
-Adicionar leitura do parametro `?tab=` na pagina `NewPayment.tsx` para definir a aba ativa automaticamente ao carregar.
+### Problema Identificado
 
-## Mudancas
+O parser EMV no `pix-qrc-info` usa uma regex que procura por `52`, `53` ou `54` como terminador da chave Pix. Porem, a propria chave `+559298468405` contem `52` no meio (posicoes 12-13), fazendo a regex parar cedo demais.
 
-### `src/pages/NewPayment.tsx`
-1. Importar `useSearchParams` de `react-router-dom` (ja importa `useNavigate`)
-2. Adicionar `const [searchParams] = useSearchParams()`
-3. Adicionar um `useEffect` que le `searchParams.get("tab")` e, se for um valor valido (`key`, `copy_paste`, `qrcode`, `boleto`), atualiza `pixData.type` com esse valor
+- Chave real: `+559298468405` (14 caracteres)
+- Chave extraida: `+55929846840` (12 caracteres, truncada)
+- Resultado: Woovi rejeita com "Chave Pix de destino nao encontrada"
 
-Isso garante que:
-- `/pix/new?tab=copy_paste` abre direto em Copia e Cola
-- `/pix/new?tab=qrcode` abre direto em QR Code
-- `/pix/new?tab=boleto` abre direto em Boleto
-- `/pix/new?tab=key` abre direto em Chave
-- `/pix/new` (sem parametro) abre em Chave (padrao atual)
+### Solucao
+
+Alterar o parser para usar o campo de comprimento (length) do TLV do EMV diretamente, em vez de depender de um terminador regex. O formato EMV ja informa o tamanho exato da chave no campo `01XX`, onde `XX` e o comprimento.
+
+### Arquivo Alterado
+
+**`supabase/functions/pix-qrc-info/index.ts`** (linhas 86-90)
+
+Substituir a regex atual:
+```
+const pixKeyMatch = qr_code.match(/0014br\.gov\.bcb\.pix01(\d{2})(.+?)(?:52|53|54)/i);
+if (pixKeyMatch) {
+  const keyLen = parseInt(pixKeyMatch[1]);
+  qrcInfo.pix_key = pixKeyMatch[2].substring(0, keyLen);
+}
+```
+
+Pela abordagem baseada em posicao:
+```
+const pixTagMatch = qr_code.match(/0014br\.gov\.bcb\.pix01(\d{2})/i);
+if (pixTagMatch) {
+  const keyLen = parseInt(pixTagMatch[1]);
+  const startIndex = pixTagMatch.index + pixTagMatch[0].length;
+  qrcInfo.pix_key = qr_code.substring(startIndex, startIndex + keyLen);
+}
+```
+
+Isso extrai exatamente o numero correto de caracteres apos o campo de comprimento, sem depender de encontrar um terminador que pode existir dentro da propria chave.
+
+### Resultado Esperado
+
+- Chave extraida corretamente: `+559298468405`
+- Woovi recebe a chave completa e processa o pagamento normalmente
+
