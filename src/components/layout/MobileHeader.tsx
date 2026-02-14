@@ -59,8 +59,11 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
 
           {/* Center - Logo */}
           <div className="flex flex-col items-center">
-            <span className="font-bold text-lg tracking-wider">PIX CONTÁBIL</span>
-            <div className="w-12 h-0.5 bg-white/40 rounded-full mt-0.5" />
+            <div className="flex items-center gap-1.5">
+              <span className="font-bold text-lg tracking-wider">PIX</span>
+              <span className="font-bold text-sm tracking-wider bg-white/20 px-2 py-0.5 rounded">CONTÁBIL</span>
+            </div>
+            <span className="text-[9px] text-white/70 tracking-wide mt-0.5">Sistema de Pagamento Contábil</span>
           </div>
 
           {/* Right actions */}
