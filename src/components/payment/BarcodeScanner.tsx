@@ -118,17 +118,17 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         }
         // For barcode mode: NO qrbox = scan entire video frame
 
-        const videoConstraints = isBarcode
-          ? {
-              facingMode: "environment",
-              width: { min: 1280, ideal: 1920 },
-              height: { min: 720, ideal: 1080 },
-              aspectRatio: { ideal: 1.7777 },
-            }
-          : { facingMode: "environment" };
+        // HD video constraints for barcode mode to resolve dense bars
+        if (isBarcode) {
+          config.videoConstraints = {
+            facingMode: "environment",
+            width: { min: 1280, ideal: 1920 },
+            height: { min: 720, ideal: 1080 },
+          };
+        }
 
         await scanner.start(
-          videoConstraints,
+          { facingMode: "environment" },
           config,
           (decodedText) => {
             if (hasScannedRef.current) return;
