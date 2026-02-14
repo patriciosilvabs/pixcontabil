@@ -91,7 +91,10 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         const isBarcode = mode === "barcode";
 
-        const scanner = new Html5Qrcode(containerId);
+        const scanner = new Html5Qrcode(containerId, {
+          formatsToSupport: isBarcode ? barcodeFormats : qrFormats,
+          verbose: false,
+        });
 
         if (cancelled) {
           scanner.stop().catch(() => {});
