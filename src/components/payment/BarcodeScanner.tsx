@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from "@zxing/library";
+import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat, MultiFormatReader, BinaryBitmap, HybridBinarizer, HTMLCanvasElementLuminanceSource } from "@zxing/library";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import {
   Dialog,
@@ -110,15 +110,88 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         hints.set(DecodeHintType.TRY_HARDER, true);
         hints.set(DecodeHintType.ASSUME_GS1, false);
 
-        // 250ms interval = ~4 scans/sec for faster detection
-        const reader = new BrowserMultiFormatReader(hints, 250);
+        // Primary reader at 200ms for fast scanning
+        const reader = new BrowserMultiFormatReader(hints, 200);
         zxingReaderRef.current = reader;
 
+        // Secondary MultiFormatReader for cropped canvas decoding
+        const mfReader = new MultiFormatReader();
+        mfReader.setHints(hints);
+        
         console.log("[BarcodeScanner] Starting ZXing continuous decode...");
 
         // Track partial reads to combine them
         const partialReads: string[] = [];
         let lastReadTime = 0;
+        
+        // Crop-scan the center strip of the video every 500ms
+        let cropInterval: ReturnType<typeof setInterval> | null = null;
+        
+        const tryCropScan = () => {
+          if (cancelled || hasScannedRef.current || !videoEl.videoWidth) return;
+          try {
+            const vw = videoEl.videoWidth;
+            const vh = videoEl.videoHeight;
+            // Crop a horizontal strip from center (full width, 30% height)
+            const stripH = Math.round(vh * 0.3);
+            const stripY = Math.round((vh - stripH) / 2);
+            
+            const canvas = document.createElement("canvas");
+            canvas.width = vw;
+            canvas.height = stripH;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(videoEl, 0, stripY, vw, stripH, 0, 0, vw, stripH);
+            
+            const luminance = new HTMLCanvasElementLuminanceSource(canvas);
+            const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
+            const cropResult = mfReader.decode(bitmap);
+            if (cropResult && !hasScannedRef.current) {
+              const text = cropResult.getText().replace(/\s/g, "");
+              console.log("[BarcodeScanner] Crop scan read:", text, "len:", text.length);
+              handleResult(text, Date.now());
+            }
+          } catch {
+            // No barcode found in crop - normal
+          }
+        };
+        
+        const handleResult = (text: string, now: number) => {
+          if (hasScannedRef.current) return;
+          
+          // Brazilian boleto barcodes are exactly 44 digits
+          // Typed line (linha digitável) is 47-48 digits
+          const isCompleteBoleto = /^\d{44}$/.test(text) || /^\d{47,48}$/.test(text);
+          
+          if (isCompleteBoleto) {
+            hasScannedRef.current = true;
+            console.log("[BarcodeScanner] Complete boleto detected:", text);
+            if (cropInterval) clearInterval(cropInterval);
+            onScan(text);
+            setTimeout(() => stopScanner(), 100);
+            return;
+          }
+
+          // For non-boleto codes (shorter barcodes like EAN), accept if it looks valid
+          if (text.length >= 8 && text.length < 44) {
+            if (now - lastReadTime < 2000) {
+              partialReads.push(text);
+            } else {
+              partialReads.length = 0;
+              partialReads.push(text);
+            }
+            lastReadTime = now;
+
+            const matches = partialReads.filter(r => r === text);
+            if (matches.length >= 2) {
+              hasScannedRef.current = true;
+              console.log("[BarcodeScanner] Confirmed barcode (2x match):", text);
+              if (cropInterval) clearInterval(cropInterval);
+              onScan(text);
+              setTimeout(() => stopScanner(), 100);
+            }
+          }
+        };
 
         await reader.decodeFromConstraints(
           {
@@ -134,47 +207,15 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             if (cancelled || hasScannedRef.current) return;
             if (result) {
               const text = result.getText().replace(/\s/g, "");
-              const format = result.getBarcodeFormat();
               const now = Date.now();
-              
-              console.log("[BarcodeScanner] ZXing read:", text, "len:", text.length, "format:", format);
-
-              // Brazilian boleto barcodes are exactly 44 digits
-              // Typed line (linha digitável) is 47 digits
-              const isCompleteBoleto = /^\d{44,47}$/.test(text);
-              
-              if (isCompleteBoleto) {
-                // Complete barcode detected - accept immediately
-                hasScannedRef.current = true;
-                console.log("[BarcodeScanner] Complete boleto detected:", text);
-                onScan(text);
-                setTimeout(() => stopScanner(), 100);
-                return;
-              }
-
-              // For non-boleto codes (shorter barcodes like EAN), accept if it looks valid
-              if (text.length >= 8 && text.length < 44) {
-                // Collect multiple reads to verify consistency
-                if (now - lastReadTime < 2000) {
-                  partialReads.push(text);
-                } else {
-                  partialReads.length = 0;
-                  partialReads.push(text);
-                }
-                lastReadTime = now;
-
-                // If we get the same result 3 times, it's reliable
-                const matches = partialReads.filter(r => r === text);
-                if (matches.length >= 3) {
-                  hasScannedRef.current = true;
-                  console.log("[BarcodeScanner] Confirmed barcode (3x match):", text);
-                  onScan(text);
-                  setTimeout(() => stopScanner(), 100);
-                }
-              }
+              console.log("[BarcodeScanner] ZXing read:", text, "len:", text.length);
+              handleResult(text, now);
             }
           }
         );
+        
+        // Start crop scanning after video is ready
+        cropInterval = setInterval(tryCropScan, 500);
 
         console.log("[BarcodeScanner] ZXing decode started successfully");
         if (mountedRef.current) setIsStarting(false);
