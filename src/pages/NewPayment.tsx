@@ -82,7 +82,7 @@ export default function NewPayment() {
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany } = useAuth();
-  const { payByKey, payByQRCode, isProcessing: isPixProcessing } = usePixPayment();
+  const { payByKey, payByQRCode, getQRCodeInfo, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing } = useBilletPayment();
 
   const handleNext = () => {
@@ -543,14 +543,34 @@ export default function NewPayment() {
       <BarcodeScanner
         mode={scannerMode}
         isOpen={scannerOpen}
-        onScan={(result) => {
+        onScan={async (result) => {
           setScannerOpen(false);
           if (scannerMode === "qrcode") {
-            setPixData({ ...pixData, type: "copy_paste", copyPaste: result });
+            setPixData((prev) => ({ ...prev, type: "copy_paste", copyPaste: result }));
             toast({
               title: "QR Code escaneado!",
-              description: "QR Code Pix capturado.",
+              description: "Consultando informações do QR Code...",
             });
+            // Try to get QR code info (amount, recipient, etc.)
+            const info = await getQRCodeInfo({ qr_code: result });
+            if (info && info.amount && info.amount > 0) {
+              setPixData((prev) => ({
+                ...prev,
+                type: "copy_paste",
+                copyPaste: result,
+                amount: info.amount.toFixed(2).replace(".", ","),
+              }));
+              toast({
+                title: "QR Code identificado!",
+                description: `Valor: R$ ${info.amount.toFixed(2).replace(".", ",")}${info.merchant_name ? ` • ${info.merchant_name}` : ''}`,
+              });
+              setStep(2);
+            } else {
+              toast({
+                title: "QR Code capturado!",
+                description: "Informe o valor manualmente.",
+              });
+            }
           } else {
             // Parse boleto to extract amount
             const boletoInfo = parseBoleto(result);
