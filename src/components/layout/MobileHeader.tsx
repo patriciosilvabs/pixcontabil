@@ -86,35 +86,6 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
           </div>
         </div>
 
-        {/* MINHA EMPRESA pill */}
-        <div className="flex justify-center pb-2">
-          {companies.length > 1 ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button className="bg-white text-primary font-bold text-xs px-5 py-1.5 rounded-full shadow-sm hover:bg-white/90 transition-colors tracking-wide">
-                  MINHA EMPRESA
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent className="w-56">
-                <DropdownMenuLabel>Empresas</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {companies.map((company) => (
-                  <DropdownMenuItem
-                    key={company.id}
-                    onClick={() => setCurrentCompany(company)}
-                    className={cn(currentCompany?.id === company.id && "bg-accent")}
-                  >
-                    {company.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <span className="bg-white text-primary font-bold text-xs px-5 py-1.5 rounded-full shadow-sm tracking-wide">
-              MINHA EMPRESA
-            </span>
-          )}
-        </div>
       </div>
 
       {/* Green sub-bar with account info */}
