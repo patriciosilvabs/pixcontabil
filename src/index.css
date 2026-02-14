@@ -318,4 +318,11 @@
   .barcode-fullscreen #qr-shaded-region {
     display: none !important;
   }
+
+  /* Ensure scanner video fills container properly */
+  div[id^="scanner-"] video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
 }

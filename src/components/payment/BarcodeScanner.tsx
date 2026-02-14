@@ -21,7 +21,6 @@ const barcodeFormats = [
   Html5QrcodeSupportedFormats.ITF,
   Html5QrcodeSupportedFormats.CODE_128,
   Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.CODABAR,
   Html5QrcodeSupportedFormats.EAN_13,
   Html5QrcodeSupportedFormats.EAN_8,
   Html5QrcodeSupportedFormats.UPC_A,
@@ -92,13 +91,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         const isBarcode = mode === "barcode";
 
-        const scanner = new Html5Qrcode(containerId, {
-          formatsToSupport: isBarcode ? barcodeFormats : qrFormats,
-          verbose: false,
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
-        });
+        const scanner = new Html5Qrcode(containerId);
 
         if (cancelled) {
           scanner.stop().catch(() => {});
@@ -108,27 +101,20 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         scannerRef.current = scanner;
 
         const config: any = {
-          fps: isBarcode ? 15 : 10,
-          disableFlip: isBarcode,
+          fps: 20,
+          qrbox: isBarcode
+            ? { width: 300, height: 150 }
+            : { width: 250, height: 250 },
+          aspectRatio: isBarcode ? 1.777778 : undefined,
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
           },
         };
 
-        if (mode === "qrcode") {
-          config.qrbox = { width: 250, height: 250 };
-        }
-
-        const constraints = isBarcode
-          ? {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            }
-          : { facingMode: "environment" };
+        const cameraConfig = { facingMode: "environment" };
 
         await scanner.start(
-          constraints,
+          cameraConfig,
           config,
           (decodedText) => {
             if (hasScannedRef.current) return;
