@@ -1,44 +1,40 @@
 
 
-# Corrigir icone do app ao instalar no celular (Android/iPhone)
+# Redesign Mobile para estilo InfoPago
 
-## Problema
-O app não possui um arquivo `manifest.json` (Web App Manifest) nem icones em tamanhos adequados para instalação mobile. Sem isso, Android e iOS usam um screenshot ou icone genérico ao adicionar o app na tela inicial.
+## Resumo
+Ajustar a interface mobile do PixFlow para ficar visualmente identica ao app InfoPago, mantendo as funcionalidades existentes. As mudancas sao exclusivamente visuais/de layout no mobile.
 
-## Solução
+## Mudancas
 
-### 1. Criar icones PWA em multiplos tamanhos
-Gerar versoes do icone do PixFlow nos tamanhos necessarios:
-- `icon-192x192.png` (Android)
-- `icon-512x512.png` (Android)
-- `apple-touch-icon.png` (180x180, iOS)
+### 1. Header Mobile (`MobileHeader.tsx`)
+- Adicionar botao "MINHA EMPRESA" centralizado abaixo do logo (pill/badge branco com texto verde)
+- Adicionar barra verde abaixo do header com numero da conta a esquerda e nome da empresa a direita
+- Manter avatar, logo PIXFLOW, icones de olho e sino
 
-Os icones serao criados na pasta `public/` usando o logo atual (cifrão com gradiente) via SVG inline convertido.
+### 2. Dashboard Mobile (`MobileDashboard.tsx`)
+- **Card de saldo**: Aumentar a barra de progresso (de `h-1.5` para `h-2.5`), cor verde solida, remover icone do olho de dentro do card (ja esta no header)
+- **Grid de acoes rapidas**: 
+  - Adicionar titulo "FUNCOES PRINCIPAIS" acima do grid
+  - Aumentar tamanho dos cards (padding maior, icones maiores ~6x6)
+  - Fundo cinza claro com cantos mais arredondados e sombra sutil
+  - Renomear "AGENDADAS" para "TRANSACOES AGENDADAS"
+- **Transacoes recentes**:
+  - Adicionar separador de data (ex: "14 FEVEREIRO 2026") acima das transacoes
+  - Mostrar tipo da transacao em texto menor acima do nome ("PAGAMENTO EFETUADO")
+  - Adicionar seta/chevron a direita de cada item
+  - Valores recebidos em verde, pagos em vermelho
+  - Mostrar sub-valor abaixo do valor principal
 
-### 2. Criar arquivo `public/manifest.json`
-Arquivo com metadados do app:
-- Nome: "PixFlow"
-- Nome curto: "PixFlow"
-- Cor do tema e cor de fundo
-- Icones nos tamanhos corretos
-- display: "standalone" (para parecer um app nativo)
+### 3. Bottom Tab Bar (`BottomTabBar.tsx`)
+- Reduzir para 3 abas: Home (botao flutuante circular), Menu (grid), Transacoes (icone de setas)
+- O botao Home deve ser um circulo elevado centralizado com fundo verde e icone branco
+- Estilo pill/arredondado para a barra em si
 
-### 3. Atualizar `index.html`
-Adicionar as tags necessarias no `<head>`:
-- Link para o `manifest.json`
-- Tag `apple-touch-icon` para iOS
-- Meta tag `theme-color`
-- Atualizar o titulo para "PixFlow"
+### 4. CSS (`index.css`)
+- Nenhuma mudanca de tema necessaria, o gradiente verde do header ja existe
 
-## Detalhes tecnicos
-
-Arquivos criados/modificados:
-- `public/manifest.json` (novo)
-- `public/icon-192x192.svg` (novo - SVG que funciona como icone)
-- `public/icon-512x512.svg` (novo)
-- `public/apple-touch-icon.svg` (novo)
-- `index.html` (modificado - adicionar meta tags e links)
-
-Nota: Como nao temos ferramenta de geracao de imagem PNG, os icones serao criados como SVG (que e suportado em manifests modernos) ou usaremos um icone inline SVG no manifest. Alternativamente, podemos criar um componente que gera o icone e orientar o usuario a exportar como PNG para melhor compatibilidade.
-
-Para maxima compatibilidade (especialmente iOS que nao suporta SVG no apple-touch-icon), a abordagem mais robusta sera criar os icones como data URIs PNG ou solicitar ao usuario que forneca uma imagem PNG do logo.
+## Arquivos modificados
+- `src/components/layout/MobileHeader.tsx` - header com barra de conta/empresa
+- `src/components/dashboard/MobileDashboard.tsx` - layout do dashboard
+- `src/components/layout/BottomTabBar.tsx` - barra inferior com 3 abas
