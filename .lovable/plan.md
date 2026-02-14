@@ -1,35 +1,33 @@
 
 
-# Renomear app para "PIX CONTABIL" e ajustes visuais
+# Corrigir logo, cores e layout conforme referencia InfoPago
 
-## Resumo
-O screenshot mostra que o nome do app deve ser **"PIX CONTABIL"** (nao "PIXFLOW") e o header deve ter uma linha decorativa abaixo do nome. Os demais elementos do layout ja estao implementados corretamente.
+## Problema
+O header esta com gradiente verde em vez de roxo/purple, o logo nao tem o destaque visual correto ("CONTABIL" com fundo roxo), falta o subtitulo, e os icones de acoes rapidas estao com cor rosa em vez de roxo.
 
 ## Mudancas
 
-### 1. Renomear "PIXFLOW" para "PIX CONTABIL" em todos os lugares
-Arquivos afetados:
-- `src/components/layout/MobileHeader.tsx` - header mobile (linha 62)
-- `src/components/layout/MainLayout.tsx` - sidebar desktop (linha 78)
-- `src/pages/Auth.tsx` - tela de login (linhas 57, 86, 98, 131)
-- `index.html` - titulo da pagina e meta tags (linhas 6, 8, 13)
-- `public/manifest.json` - nome do PWA
+### 1. Header: Gradiente roxo/purple (nao verde)
+No `src/index.css`, alterar `--gradient-bank-header` de verde para roxo/purple:
+- De: `linear-gradient(180deg, hsl(145 60% 32%), hsl(145 55% 40%))`
+- Para: `linear-gradient(180deg, hsl(270 91% 50%), hsl(280 80% 42%))`
 
-### 2. Adicionar linha decorativa abaixo do nome no header mobile
-No `MobileHeader.tsx`, adicionar um pequeno traco/underline decorativo abaixo do texto "PIX CONTABIL", como aparece no screenshot (um risco sutil embaixo do nome).
+### 2. Logo no header mobile com destaque em "CONTABIL"
+No `MobileHeader.tsx`, reformular o logo para:
+- "PIX" em branco bold
+- "CONTABIL" com fundo roxo escuro/highlight (badge com background)
+- Adicionar subtitulo "Sistema de Pagamento Contabil" abaixo do logo
+- Remover a linha decorativa atual
 
-### 3. Ajustar backgrounds dos icones de acoes rapidas
-No `MobileDashboard.tsx`, os icones de acoes rapidas no screenshot parecem ter backgrounds em tons de rosa/salmon em vez do roxo atual (`bg-primary/10`). Ajustar para um tom mais quente que combine com o visual do screenshot.
+### 3. Icones de acoes rapidas: roxo com icone branco
+No `MobileDashboard.tsx`, trocar as cores dos circulos:
+- De: `bg-rose-100` + `text-rose-600`
+- Para: `bg-primary` + `text-white` (circulos roxos com icones brancos, conforme screenshot)
 
-## Detalhes tecnicos
+### 4. Barra inferior (sub-bar) permanece verde
+A barra com "Conta: 0001" continua verde como esta - apenas o header principal muda para roxo.
 
-Todas as mudancas sao de texto e estilo CSS (Tailwind classes). Nenhuma logica de negocio sera alterada.
-
-Arquivos modificados:
-- `src/components/layout/MobileHeader.tsx` - nome + underline decorativo
-- `src/components/layout/MainLayout.tsx` - nome na sidebar
-- `src/components/dashboard/MobileDashboard.tsx` - cor dos icones
-- `src/pages/Auth.tsx` - nome na tela de login
-- `index.html` - titulo e meta tags
-- `public/manifest.json` - nome do PWA
-
+## Arquivos modificados
+- `src/index.css` - gradiente do header (1 linha)
+- `src/components/layout/MobileHeader.tsx` - logo com destaque + subtitulo
+- `src/components/dashboard/MobileDashboard.tsx` - cores dos icones de acoes rapidas
