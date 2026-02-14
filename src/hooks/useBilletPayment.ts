@@ -74,10 +74,21 @@ export function useBilletPayment() {
 
       if (error) {
         console.error('[useBilletPayment] Pay error:', error);
+        // Try to extract the actual error message from the response context
+        let errorMessage = "Tente novamente mais tarde.";
+        try {
+          if (error.context && typeof error.context === 'object') {
+            const res = error.context as Response;
+            if (res.json) {
+              const body = await res.json();
+              errorMessage = body?.error || body?.hint || errorMessage;
+            }
+          }
+        } catch { /* ignore parse errors */ }
         toast({
           variant: "destructive",
-          title: "Erro ao iniciar pagamento de boleto",
-          description: error.message || "Tente novamente mais tarde.",
+          title: "Pagamento de boleto indisponível",
+          description: errorMessage,
         });
         return null;
       }
