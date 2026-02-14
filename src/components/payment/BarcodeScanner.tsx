@@ -20,6 +20,9 @@ interface BarcodeScannerProps {
 const barcodeFormats = [
   Html5QrcodeSupportedFormats.ITF,
   Html5QrcodeSupportedFormats.CODE_128,
+  Html5QrcodeSupportedFormats.CODE_39,
+  Html5QrcodeSupportedFormats.CODABAR,
+  Html5QrcodeSupportedFormats.EAN_13,
 ];
 
 const qrFormats = [
@@ -110,14 +113,9 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         if (mode === "qrcode") {
           config.qrbox = { width: 250, height: 250 };
-        } else {
-          // For barcodes: use a centered rectangle that fits within video bounds
-          config.qrbox = (viewfinderWidth: number, viewfinderHeight: number) => {
-            const w = Math.min(Math.floor(viewfinderWidth * 0.8), viewfinderWidth - 20);
-            const h = Math.min(Math.floor(viewfinderHeight * 0.15), viewfinderHeight - 20);
-            return { width: Math.max(w, 200), height: Math.max(h, 80) };
-          };
         }
+        // For barcode mode: NO qrbox = scan entire video frame
+        // This dramatically improves detection for ITF/CODE_128
 
         await scanner.start(
           { facingMode: "environment" },
