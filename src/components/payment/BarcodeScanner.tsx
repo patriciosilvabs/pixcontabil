@@ -63,7 +63,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
 
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : { width: 300, height: 100 } },
+          { fps: 10, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : { width: 350, height: 150 }, aspectRatio: mode === "barcode" ? 2.0 : 1.0 },
           (decodedText) => {
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
@@ -109,7 +109,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
+      <DialogContent className={`p-0 gap-0 overflow-hidden ${mode === "barcode" ? "sm:max-w-lg max-w-[95vw]" : "sm:max-w-md"}`}>
         <DialogHeader className="p-4 pb-2">
           <DialogTitle className="flex items-center gap-2">
             <Camera className="h-5 w-5" />
@@ -130,7 +130,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose }: BarcodeScanner
             <>
               <div
                 id={containerIdRef.current}
-                className="w-full rounded-lg overflow-hidden bg-black min-h-[300px]"
+                className={`w-full rounded-lg overflow-hidden bg-black ${mode === "barcode" ? "min-h-[350px]" : "min-h-[300px]"}`}
               />
               {isStarting && (
                 <p className="text-center text-sm text-muted-foreground mt-3">
