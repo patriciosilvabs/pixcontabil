@@ -88,8 +88,34 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         // Stop any existing scanner
         stopScanner();
 
+        const isBarcode = mode === "barcode";
+
+        // For barcode mode, get rear camera deviceId with HD resolution
+        let cameraId: any = { facingMode: "environment" };
+        if (isBarcode) {
+          try {
+            const hdStream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                facingMode: "environment",
+                width: { min: 1280, ideal: 1920 },
+                height: { min: 720, ideal: 1080 },
+              },
+            });
+            const track = hdStream.getVideoTracks()[0];
+            const settings = track.getSettings();
+            console.log("[BarcodeScanner] Camera resolution:", settings.width, "x", settings.height);
+            if (settings.deviceId) {
+              cameraId = settings.deviceId;
+            }
+            // Stop the temporary stream - html5-qrcode will open its own
+            hdStream.getTracks().forEach((t) => t.stop());
+          } catch (e) {
+            console.warn("[BarcodeScanner] HD camera fallback:", e);
+          }
+        }
+
         const scanner = new Html5Qrcode(containerId, {
-          formatsToSupport: mode === "barcode" ? barcodeFormats : qrFormats,
+          formatsToSupport: isBarcode ? barcodeFormats : qrFormats,
           verbose: false,
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
@@ -103,8 +129,6 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         scannerRef.current = scanner;
 
-        const isBarcode = mode === "barcode";
-
         const config: any = {
           fps: isBarcode ? 15 : 10,
           disableFlip: isBarcode,
@@ -116,19 +140,18 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         if (mode === "qrcode") {
           config.qrbox = { width: 250, height: 250 };
         }
-        // For barcode mode: NO qrbox = scan entire video frame
 
-        // HD video constraints for barcode mode to resolve dense bars
-        if (isBarcode) {
+        // When we have a deviceId, also pass videoConstraints for HD
+        if (isBarcode && typeof cameraId === "string") {
           config.videoConstraints = {
-            facingMode: "environment",
+            deviceId: { exact: cameraId },
             width: { min: 1280, ideal: 1920 },
             height: { min: 720, ideal: 1080 },
           };
         }
 
         await scanner.start(
-          { facingMode: "environment" },
+          cameraId,
           config,
           (decodedText) => {
             if (hasScannedRef.current) return;
