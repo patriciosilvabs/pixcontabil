@@ -313,4 +313,17 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
+  /* Fullscreen barcode scanner overrides */
+  .barcode-fullscreen video {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  .barcode-fullscreen #qr-shaded-region {
+    position: absolute !important;
+    inset: 0 !important;
+    border: none !important;
+  }
 }

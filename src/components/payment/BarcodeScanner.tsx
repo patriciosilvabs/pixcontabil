@@ -17,24 +17,13 @@ interface BarcodeScannerProps {
   onManualInput?: () => void;
 }
 
-const allFormats = [
-  Html5QrcodeSupportedFormats.QR_CODE,
-  Html5QrcodeSupportedFormats.AZTEC,
-  Html5QrcodeSupportedFormats.CODABAR,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.CODE_93,
-  Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.DATA_MATRIX,
-  Html5QrcodeSupportedFormats.MAXICODE,
+const barcodeFormats = [
   Html5QrcodeSupportedFormats.ITF,
-  Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
-  Html5QrcodeSupportedFormats.PDF_417,
-  Html5QrcodeSupportedFormats.RSS_14,
-  Html5QrcodeSupportedFormats.RSS_EXPANDED,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E,
-  Html5QrcodeSupportedFormats.UPC_EAN_EXTENSION,
+  Html5QrcodeSupportedFormats.CODE_128,
+];
+
+const qrFormats = [
+  Html5QrcodeSupportedFormats.QR_CODE,
 ];
 
 export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }: BarcodeScannerProps) {
@@ -97,7 +86,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         stopScanner();
 
         const scanner = new Html5Qrcode(containerId, {
-          formatsToSupport: allFormats,
+          formatsToSupport: mode === "barcode" ? barcodeFormats : qrFormats,
           verbose: false,
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
@@ -112,23 +101,21 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         scannerRef.current = scanner;
 
         const config: any = {
-          fps: 20,
+          fps: 15,
           disableFlip: false,
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
           },
         };
 
-        // Use appropriate qrbox based on container size
         if (mode === "qrcode") {
           config.qrbox = { width: 250, height: 250 };
         } else {
-          // For barcodes - wide and thin rectangle matching barcode shape
-          const w = element.clientWidth;
-          const h = element.clientHeight;
-          config.qrbox = {
-            width: Math.max(280, Math.floor(w * 0.9)),
-            height: Math.max(120, Math.floor(h * 0.25)),
+          config.qrbox = (viewfinderWidth: number, viewfinderHeight: number) => {
+            return {
+              width: Math.floor(viewfinderWidth * 0.85),
+              height: Math.floor(viewfinderHeight * 0.2),
+            };
           };
         }
 
@@ -201,7 +188,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             <>
               <div
                 id={containerIdRef.current}
-                className="w-full h-full"
+                className="w-full h-full barcode-fullscreen"
                 style={{ minHeight: "100vh" }}
               />
 
