@@ -104,20 +104,46 @@ Deno.serve(async (req) => {
         
         if (payloadUrl && payloadUrl.length > 10) {
           try {
-            console.log('[pix-qrc-info] Fetching dynamic QR payload from:', payloadUrl);
+            console.log('[pix-qrc-info] Fetching dynamic QR payload from:', payloadUrl, 'len:', urlLen);
             const fullUrl = payloadUrl.startsWith('http') ? payloadUrl : `https://${payloadUrl}`;
             const payloadResp = await fetch(fullUrl, {
-              headers: { 'Accept': 'application/json' },
+              headers: { 'Accept': 'application/json, application/jose, */*' },
             });
             
+            console.log('[pix-qrc-info] Payload response status:', payloadResp.status, 'content-type:', payloadResp.headers.get('content-type'));
+            
             if (payloadResp.ok) {
-              const contentType = payloadResp.headers.get('content-type') || '';
-              if (contentType.includes('json')) {
-                const payload = await payloadResp.json();
+              const responseText = await payloadResp.text();
+              console.log('[pix-qrc-info] Payload response (first 200):', responseText.substring(0, 200));
+              
+              let payload: any = null;
+              
+              // Try JSON parse first
+              try {
+                payload = JSON.parse(responseText);
+              } catch (_) {
+                // If not JSON, try JWS decode (format: header.payload.signature)
+                const parts = responseText.split('.');
+                if (parts.length === 3) {
+                  try {
+                    // Decode base64url payload (second part)
+                    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                    const decoded = atob(b64);
+                    payload = JSON.parse(decoded);
+                    console.log('[pix-qrc-info] JWS payload decoded successfully');
+                  } catch (e2) {
+                    console.warn('[pix-qrc-info] Failed to decode JWS payload:', e2);
+                  }
+                }
+              }
+              
+              if (payload) {
                 console.log('[pix-qrc-info] Dynamic payload:', JSON.stringify(payload));
                 qrcInfo.type = 'dynamic';
                 if (payload.valor?.original) {
                   qrcInfo.amount = parseFloat(payload.valor.original);
+                } else if (payload.valor?.final) {
+                  qrcInfo.amount = parseFloat(payload.valor.final);
                 } else if (payload.amount) {
                   qrcInfo.amount = parseFloat(payload.amount);
                 } else if (payload.value) {
