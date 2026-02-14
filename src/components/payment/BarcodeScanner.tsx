@@ -82,11 +82,20 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
       setIsStarting(true);
       hasScannedRef.current = false;
 
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for video element to be in DOM
+      await new Promise((r) => setTimeout(r, 500));
       if (cancelled || !mountedRef.current) return;
 
+      const videoEl = videoRef.current;
+      if (!videoEl) {
+        console.error("[BarcodeScanner] Video element not found");
+        setError("Elemento de vídeo não encontrado. Tente novamente.");
+        setIsStarting(false);
+        return;
+      }
+
       try {
-        // Configure ZXing hints for 1D barcodes
+        // Configure ZXing hints for 1D barcodes (Brazilian boletos use ITF)
         const hints = new Map();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.ITF,
@@ -100,8 +109,11 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         ]);
         hints.set(DecodeHintType.TRY_HARDER, true);
 
-        const reader = new BrowserMultiFormatReader(hints, 200);
+        // 500ms interval gives more processing time per frame
+        const reader = new BrowserMultiFormatReader(hints, 500);
         zxingReaderRef.current = reader;
+
+        console.log("[BarcodeScanner] Starting ZXing continuous decode...");
 
         // Use decodeFromConstraints which handles camera + continuous decoding
         await reader.decodeFromConstraints(
@@ -112,20 +124,25 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
               height: { ideal: 1080 },
             },
           },
-          videoRef.current!,
+          videoEl,
           (result, err) => {
             if (cancelled || hasScannedRef.current) return;
             if (result) {
               hasScannedRef.current = true;
               const text = result.getText();
-              console.log("[BarcodeScanner] ZXing scanned:", text);
+              const format = result.getBarcodeFormat();
+              console.log("[BarcodeScanner] ZXing scanned:", text, "format:", format);
               onScan(text);
               setTimeout(() => stopScanner(), 100);
             }
-            // err is normal when no barcode found in frame
+            // Log decode errors only occasionally for debugging
+            if (err && !(err instanceof Error && err.message.includes("No MultiFormat"))) {
+              // This is normal - no barcode found in current frame
+            }
           }
         );
 
+        console.log("[BarcodeScanner] ZXing decode started successfully");
         if (mountedRef.current) setIsStarting(false);
       } catch (err: any) {
         console.error("[BarcodeScanner] Error:", err);
