@@ -151,6 +151,7 @@ Deno.serve(async (req) => {
                 }
                 if (payload.devedor?.nome) qrcInfo.merchant_name = payload.devedor.nome;
                 if (payload.recebedor?.nome) qrcInfo.merchant_name = payload.recebedor.nome;
+                if (payload.chave) qrcInfo.pix_key = payload.chave;
                 if (payload.calendario?.expiracao) qrcInfo.expiration = payload.calendario.expiracao;
                 if (payload.txid) qrcInfo.txid = payload.txid;
               }
