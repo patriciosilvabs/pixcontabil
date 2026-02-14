@@ -136,29 +136,80 @@ export default function ReceiptCapture() {
       isProcessing: true,
     }));
 
-    // Simulate OCR processing
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Convert image to base64 and call OCR
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise<string>((resolve, reject) => {
+        reader.onload = () => {
+          const result = reader.result as string;
+          // Remove data:image/...;base64, prefix
+          resolve(result.split(",")[1]);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(correctedFile);
+      });
 
-    const mockOcrData = {
-      cnpj: "12.345.678/0001-90",
-      date: "2024-01-15",
-      value: "R$ 2.450,00",
-      accessKey: "35240112345678000190550010000001231234567890",
-      suggestedCategory: "Insumos",
-    };
+      const { data: ocrResponse, error: ocrError } = await supabase.functions.invoke("process-ocr", {
+        body: { imageBase64: base64 },
+      });
 
-    setReceiptData((prev) => ({
-      ...prev,
-      ocrData: mockOcrData,
-      classification: "cost" as ClassificationType,
-      isProcessing: false,
-    }));
+      if (ocrError) throw ocrError;
 
-    toast({
-      title: "Comprovante processado!",
-      description: "Os dados foram extraídos automaticamente pela IA.",
-    });
-  }, [toast, normalizeImageOrientation]);
+      if (ocrResponse?.success && ocrResponse.data) {
+        const d = ocrResponse.data;
+        const extractedOcr = {
+          cnpj: d.cnpj || undefined,
+          date: d.data_emissao || undefined,
+          value: d.valor_total != null ? `R$ ${Number(d.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : undefined,
+          accessKey: d.chave_acesso || undefined,
+          suggestedCategory: d.categoria_sugerida || undefined,
+        };
+
+        const aiClassification: ClassificationType | null =
+          d.classificacao_sugerida === "cost" || d.classificacao_sugerida === "expense"
+            ? d.classificacao_sugerida
+            : null;
+
+        setReceiptData((prev) => ({
+          ...prev,
+          ocrData: extractedOcr,
+          classification: aiClassification,
+          isProcessing: false,
+        }));
+
+        // Auto-select suggested category if it matches
+        if (extractedOcr.suggestedCategory && aiClassification) {
+          const match = categories.find(
+            (c) =>
+              c.name.toLowerCase() === extractedOcr.suggestedCategory!.toLowerCase() &&
+              c.classification === aiClassification
+          );
+          if (match) {
+            setReceiptData((prev) => ({ ...prev, subcategory: match.name }));
+          }
+        }
+
+        toast({
+          title: "Comprovante processado!",
+          description: "Os dados foram extraídos automaticamente pela IA.",
+        });
+      } else {
+        throw new Error(ocrResponse?.error || "Falha na extração");
+      }
+    } catch (err: any) {
+      console.error("OCR error:", err);
+      setReceiptData((prev) => ({ ...prev, isProcessing: false }));
+      toast({
+        variant: "destructive",
+        title: "Erro no OCR",
+        description: err?.message?.includes("429")
+          ? "Limite de requisições excedido. Tente novamente em alguns segundos."
+          : err?.message?.includes("402")
+          ? "Créditos de IA esgotados."
+          : "Não foi possível extrair dados do comprovante.",
+      });
+    }
+  }, [toast, normalizeImageOrientation, categories]);
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
