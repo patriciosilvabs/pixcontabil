@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
+import { parseBoleto } from "@/utils/boletoParser";
 
 type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
@@ -356,9 +357,21 @@ export default function NewPayment() {
                       placeholder="00000.00000 00000.000000 00000.000000 0 00000000000000"
                       className="font-mono text-sm"
                       value={pixData.boletoCode || ""}
-                      onChange={(e) =>
-                        setPixData({ ...pixData, boletoCode: e.target.value })
-                      }
+                      onChange={(e) => {
+                        const code = e.target.value;
+                        const clean = code.replace(/[\s.\-]/g, '');
+                        const newData: Partial<PaymentData> = { boletoCode: code };
+                        
+                        // Auto-extract value when code length is valid
+                        if (clean.length === 44 || clean.length === 47 || clean.length === 48) {
+                          const info = parseBoleto(clean);
+                          if (info && info.amount > 0) {
+                            newData.amount = info.amount.toFixed(2).replace(".", ",");
+                          }
+                        }
+                        
+                        setPixData({ ...pixData, ...newData });
+                      }}
                     />
                     <p className="text-xs text-muted-foreground">
                       Digite ou cole a linha digitável do código de barras (47 ou 48 dígitos)
@@ -534,15 +547,42 @@ export default function NewPayment() {
           setScannerOpen(false);
           if (scannerMode === "qrcode") {
             setPixData({ ...pixData, type: "copy_paste", copyPaste: result });
+            toast({
+              title: "QR Code escaneado!",
+              description: "QR Code Pix capturado.",
+            });
           } else {
-            setPixData({ ...pixData, boletoCode: result });
+            // Parse boleto to extract amount
+            const boletoInfo = parseBoleto(result);
+            const extractedAmount = boletoInfo && boletoInfo.amount > 0
+              ? boletoInfo.amount.toFixed(2).replace(".", ",")
+              : "";
+            
+            setPixData({ 
+              ...pixData, 
+              boletoCode: result,
+              amount: extractedAmount || pixData.amount,
+            });
+
+            if (boletoInfo && boletoInfo.amount > 0) {
+              toast({
+                title: "Boleto identificado!",
+                description: `Valor: R$ ${boletoInfo.amount.toFixed(2).replace(".", ",")}${boletoInfo.dueDate ? ` • Venc: ${new Date(boletoInfo.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}`,
+              });
+              // Skip to step 2 since we have the code
+              setStep(2);
+            } else {
+              toast({
+                title: "Código de barras capturado!",
+                description: "Informe o valor do boleto manualmente.",
+              });
+            }
           }
-          toast({
-            title: "Código escaneado!",
-            description: scannerMode === "qrcode" ? "QR Code Pix capturado." : "Código de barras capturado.",
-          });
         }}
         onClose={() => setScannerOpen(false)}
+        onManualInput={() => {
+          setScannerOpen(false);
+        }}
       />
     </MainLayout>
   );
