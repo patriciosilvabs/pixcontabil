@@ -23,6 +23,9 @@ const barcodeFormats = [
   Html5QrcodeSupportedFormats.CODE_39,
   Html5QrcodeSupportedFormats.CODABAR,
   Html5QrcodeSupportedFormats.EAN_13,
+  Html5QrcodeSupportedFormats.EAN_8,
+  Html5QrcodeSupportedFormats.UPC_A,
+  Html5QrcodeSupportedFormats.UPC_E,
 ];
 
 const qrFormats = [
@@ -37,13 +40,12 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
   const hasScannedRef = useRef(false);
   const mountedRef = useRef(true);
 
-  const stopScanner = useCallback(() => {
-    if (scannerRef.current) {
-      const s = scannerRef.current;
-      scannerRef.current = null;
-      s.stop().catch(() => {});
-      try { s.clear(); } catch {}
-    }
+  const stopScanner = useCallback(async () => {
+    const s = scannerRef.current;
+    if (!s) return;
+    scannerRef.current = null;
+    try { await s.stop(); } catch {}
+    try { s.clear(); } catch {}
   }, []);
 
   useEffect(() => {
@@ -117,24 +119,23 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
           config.qrbox = { width: 250, height: 250 };
         }
 
-        // Pass HD video constraints for barcode mode directly
-        if (isBarcode) {
-          config.videoConstraints = {
-            facingMode: "environment",
-            width: { min: 1280, ideal: 1920 },
-            height: { min: 720, ideal: 1080 },
-          };
-        }
+        const constraints = isBarcode
+          ? {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            }
+          : { facingMode: "environment" };
 
         await scanner.start(
-          { facingMode: "environment" },
+          constraints,
           config,
           (decodedText) => {
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
             console.log("[BarcodeScanner] Scanned:", decodedText);
             onScan(decodedText);
-            stopScanner();
+            void stopScanner();
           },
           () => {} // ignore scan failures
         );
