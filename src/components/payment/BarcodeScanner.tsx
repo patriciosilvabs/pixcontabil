@@ -63,7 +63,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 10, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : { width: 350, height: 150 }, aspectRatio: mode === "barcode" ? 2.0 : 1.0 },
+          { fps: 15, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : { width: 300, height: 100 }, disableFlip: false },
           (decodedText) => {
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
@@ -116,7 +116,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     return (
       <div className="fixed inset-0 z-[100] bg-black flex flex-col">
         {/* Scanner area - takes full screen */}
-        <div className="relative flex-1">
+        <div className="relative flex-1 overflow-hidden">
           {error ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 px-6">
               <AlertCircle className="h-16 w-16 text-red-500" />
@@ -132,26 +132,23 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             <>
               <div
                 id={containerIdRef.current}
-                className="w-full h-full [&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&>div]:!w-full [&>div]:!h-full"
-                style={{ minHeight: "100%", width: "100%" }}
+                className="absolute inset-0 [&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&>div]:!w-full [&>div]:!h-full"
               />
 
-              {/* Overlay guide text */}
-              <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none">
-                <p
-                  className="text-white/80 text-sm font-medium whitespace-nowrap"
-                  style={{
-                    writingMode: "vertical-rl",
-                    textOrientation: "mixed",
-                    letterSpacing: "0.1em",
-                  }}
-                >
-                  Posicione o código de barra na linha verde
+              {/* Horizontal scan guide line */}
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+                <div className="w-[80vw] h-[2px] bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+              </div>
+
+              {/* Guide text */}
+              <div className="absolute top-8 left-0 right-0 pointer-events-none z-10">
+                <p className="text-white/90 text-sm font-medium text-center tracking-wider">
+                  Posicione o código de barras na linha verde
                 </p>
               </div>
 
-              {/* Action buttons on the left */}
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-col gap-4 z-10">
+              {/* Action buttons - centered at bottom */}
+              <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4 z-10 px-4">
                 <Button
                   className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-4 text-base rounded-lg shadow-lg"
                   onClick={handleClose}
@@ -169,7 +166,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
               </div>
 
               {isStarting && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/50">
+                <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
                   <p className="text-white text-lg font-medium">Iniciando câmera...</p>
                 </div>
               )}
