@@ -25,91 +25,103 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
   const navigate = useNavigate();
 
   return (
-    <header className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-gradient-bank-header text-white">
-      {/* Top row */}
-      <div className="px-4 pt-3 pb-2 flex items-center justify-between">
-        {/* Avatar with dropdown */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button className="focus:outline-none">
-              <Avatar className="h-10 w-10 border-2 border-white/30">
-                <AvatarImage src={profile?.avatar_url || undefined} />
-                <AvatarFallback className="bg-white/20 text-white text-sm font-bold">
-                  {getInitials(profile?.full_name || "U")}
-                </AvatarFallback>
-              </Avatar>
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-48">
-            <DropdownMenuLabel>{profile?.full_name || "Usuário"}</DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => navigate("/settings")}>
-              <Settings className="h-4 w-4 mr-2" />
-              Configurações
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => signOut()} className="text-destructive focus:text-destructive">
-              <LogOut className="h-4 w-4 mr-2" />
-              Sair da conta
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+    <header className="lg:hidden fixed top-0 left-0 right-0 z-50">
+      {/* Main header */}
+      <div className="bg-gradient-bank-header text-white">
+        {/* Top row */}
+        <div className="px-4 pt-3 pb-2 flex items-center justify-between">
+          {/* Avatar with dropdown */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="focus:outline-none">
+                <Avatar className="h-10 w-10 border-2 border-white/30">
+                  <AvatarImage src={profile?.avatar_url || undefined} />
+                  <AvatarFallback className="bg-white/20 text-white text-sm font-bold">
+                    {getInitials(profile?.full_name || "U")}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuLabel>{profile?.full_name || "Usuário"}</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <Settings className="h-4 w-4 mr-2" />
+                Configurações
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => signOut()} className="text-destructive focus:text-destructive">
+                <LogOut className="h-4 w-4 mr-2" />
+                Sair da conta
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
 
-        {/* Center - Logo */}
-        <div className="flex flex-col items-center">
-          <span className="font-bold text-lg tracking-wider">PIXFLOW</span>
+          {/* Center - Logo */}
+          <div className="flex flex-col items-center">
+            <span className="font-bold text-lg tracking-wider">PIXFLOW</span>
+          </div>
+
+          {/* Right actions */}
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/10 h-9 w-9"
+              onClick={onToggleBalance}
+            >
+              {balanceVisible ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/10 h-9 w-9"
+            >
+              <Bell className="h-5 w-5" />
+            </Button>
+          </div>
         </div>
 
-        {/* Right actions */}
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-white/10 h-9 w-9"
-            onClick={onToggleBalance}
-          >
-            {balanceVisible ? <Eye className="h-5 w-5" /> : <EyeOff className="h-5 w-5" />}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-white hover:bg-white/10 h-9 w-9"
-          >
-            <Bell className="h-5 w-5" />
-          </Button>
+        {/* MINHA EMPRESA pill */}
+        <div className="flex justify-center pb-2">
+          {companies.length > 1 ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="bg-white text-primary font-bold text-xs px-5 py-1.5 rounded-full shadow-sm hover:bg-white/90 transition-colors tracking-wide">
+                  MINHA EMPRESA
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56">
+                <DropdownMenuLabel>Empresas</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {companies.map((company) => (
+                  <DropdownMenuItem
+                    key={company.id}
+                    onClick={() => setCurrentCompany(company)}
+                    className={cn(currentCompany?.id === company.id && "bg-accent")}
+                  >
+                    {company.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <span className="bg-white text-primary font-bold text-xs px-5 py-1.5 rounded-full shadow-sm tracking-wide">
+              MINHA EMPRESA
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Bottom row - Company info */}
-      <div className="px-4 pb-3">
-        {companies.length > 1 ? (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 text-white/80 text-xs hover:text-white transition-colors">
-                <Building2 className="h-3.5 w-3.5" />
-                <span className="truncate max-w-[200px]">{currentCompany?.name || "Selecionar empresa"}</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
-              <DropdownMenuLabel>Empresas</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {companies.map((company) => (
-                <DropdownMenuItem
-                  key={company.id}
-                  onClick={() => setCurrentCompany(company)}
-                  className={cn(currentCompany?.id === company.id && "bg-accent")}
-                >
-                  {company.name}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : (
-          <div className="flex items-center gap-2 text-white/80 text-xs">
-            <Building2 className="h-3.5 w-3.5" />
-            <span>{currentCompany?.name}</span>
-          </div>
-        )}
+      {/* Green sub-bar with account info */}
+      <div className="bg-primary/90 text-white px-4 py-2 flex items-center justify-between text-xs">
+        <div className="flex items-center gap-1.5">
+          <Building2 className="h-3.5 w-3.5" />
+          <span className="font-medium">Conta: 0001</span>
+        </div>
+        <span className="font-semibold truncate max-w-[180px]">
+          {currentCompany?.name || "Empresa"}
+        </span>
       </div>
     </header>
   );
