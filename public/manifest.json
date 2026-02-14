@@ -1,6 +1,6 @@
 {
-  "name": "PixFlow",
-  "short_name": "PixFlow",
+  "name": "Pix Contábil",
+  "short_name": "PixContábil",
   "description": "Sistema de pagamentos Pix e boletos",
   "start_url": "/",
   "display": "standalone",
