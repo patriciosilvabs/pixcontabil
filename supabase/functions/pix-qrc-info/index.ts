@@ -83,10 +83,11 @@ Deno.serve(async (req) => {
       // Simple EMV TLV parsing for Pix Copy-Paste
       qrcInfo = { raw: qr_code, provider: 'woovi', type: 'static', decoded_locally: true };
       // Try to extract basic info from the QR code string
-      const pixKeyMatch = qr_code.match(/0014br\.gov\.bcb\.pix01(\d{2})(.+?)(?:52|53|54)/i);
-      if (pixKeyMatch) {
-        const keyLen = parseInt(pixKeyMatch[1]);
-        qrcInfo.pix_key = pixKeyMatch[2].substring(0, keyLen);
+      const pixTagMatch = qr_code.match(/0014br\.gov\.bcb\.pix01(\d{2})/i);
+      if (pixTagMatch) {
+        const keyLen = parseInt(pixTagMatch[1]);
+        const startIndex = pixTagMatch.index! + pixTagMatch[0].length;
+        qrcInfo.pix_key = qr_code.substring(startIndex, startIndex + keyLen);
       }
       const amountMatch = qr_code.match(/54(\d{2})(\d+\.\d{2})/);
       if (amountMatch) {
