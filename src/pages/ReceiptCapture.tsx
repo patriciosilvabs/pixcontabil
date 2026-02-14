@@ -54,18 +54,36 @@ export default function ReceiptCapture() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
   const [categorySearch, setCategorySearch] = useState("");
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
 
   useEffect(() => {
     if (!currentCompany) return;
-    supabase
-      .from("categories")
-      .select("id, name, classification")
-      .eq("company_id", currentCompany.id)
-      .eq("is_active", true)
-      .order("name")
-      .then(({ data }) => {
-        if (data) setCategories(data as CategoryRecord[]);
-      });
+
+    // Load categories and usage counts in parallel
+    Promise.all([
+      supabase
+        .from("categories")
+        .select("id, name, classification")
+        .eq("company_id", currentCompany.id)
+        .eq("is_active", true)
+        .order("name"),
+      supabase
+        .from("transactions")
+        .select("category_id")
+        .eq("company_id", currentCompany.id)
+        .not("category_id", "is", null),
+    ]).then(([catRes, txRes]) => {
+      if (catRes.data) setCategories(catRes.data as CategoryRecord[]);
+      if (txRes.data) {
+        const counts: Record<string, number> = {};
+        for (const row of txRes.data) {
+          const cid = row.category_id as string;
+          counts[cid] = (counts[cid] || 0) + 1;
+        }
+        setCategoryUsageCounts(counts);
+      }
+    });
   }, [currentCompany]);
 
   const [receiptData, setReceiptData] = useState<ReceiptData>({
@@ -427,14 +445,15 @@ export default function ReceiptCapture() {
                         receiptData.classification === "cost" &&
                           "bg-gradient-primary shadow-primary"
                       )}
-                      onClick={() =>
+                      onClick={() => {
                         setReceiptData((prev) => ({
                           ...prev,
                           classification: "cost",
                           subcategory: null,
-                        }))
-                      }
-                      onClickCapture={() => setCategorySearch("")}
+                        }));
+                        setCategorySearch("");
+                        setShowAllCategories(false);
+                      }}
                     >
                       <DollarSign className="h-6 w-6" />
                       <span className="font-bold">CUSTO</span>
@@ -452,14 +471,15 @@ export default function ReceiptCapture() {
                         receiptData.classification === "expense" &&
                           "bg-destructive hover:bg-destructive/90"
                       )}
-                      onClick={() =>
+                      onClick={() => {
                         setReceiptData((prev) => ({
                           ...prev,
                           classification: "expense",
                           subcategory: null,
-                        }))
-                      }
-                      onClickCapture={() => setCategorySearch("")}
+                        }));
+                        setCategorySearch("");
+                        setShowAllCategories(false);
+                      }}
                     >
                       <TrendingUp className="h-6 w-6" />
                       <span className="font-bold">DESPESA</span>
@@ -480,34 +500,51 @@ export default function ReceiptCapture() {
                         />
                       </div>
                       <div className="flex flex-wrap gap-2">
-                        {categories
-                          .filter((c) => c.classification === receiptData.classification)
-                          .filter((c) => c.name.toLowerCase().includes(categorySearch.toLowerCase()))
-                          .map((cat) => (
-                          <Button
-                            key={cat.id}
-                            variant={
-                              receiptData.subcategory === cat.name
-                                ? "default"
-                                : "outline"
-                            }
-                            size="sm"
-                            onClick={() =>
-                              setReceiptData((prev) => ({
-                                ...prev,
-                                subcategory: cat.name,
-                              }))
-                            }
-                          >
-                            {cat.name}
-                          </Button>
-                        ))}
-                        {categories
-                          .filter((c) => c.classification === receiptData.classification)
-                          .filter((c) => c.name.toLowerCase().includes(categorySearch.toLowerCase()))
-                          .length === 0 && (
-                          <p className="text-sm text-muted-foreground py-2">Nenhuma categoria encontrada</p>
-                        )}
+                        {(() => {
+                          const filtered = categories
+                            .filter((c) => c.classification === receiptData.classification)
+                            .filter((c) => c.name.toLowerCase().includes(categorySearch.toLowerCase()))
+                            .sort((a, b) => {
+                              const countA = categoryUsageCounts[a.id] || 0;
+                              const countB = categoryUsageCounts[b.id] || 0;
+                              if (countB !== countA) return countB - countA;
+                              return a.name.localeCompare(b.name);
+                            });
+
+                          const isSearching = categorySearch.trim().length > 0;
+                          const visible = isSearching || showAllCategories ? filtered : filtered.slice(0, 8);
+                          const hasMore = filtered.length > 8;
+
+                          return (
+                            <>
+                              {visible.map((cat) => (
+                                <Button
+                                  key={cat.id}
+                                  variant={receiptData.subcategory === cat.name ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() =>
+                                    setReceiptData((prev) => ({ ...prev, subcategory: cat.name }))
+                                  }
+                                >
+                                  {cat.name}
+                                </Button>
+                              ))}
+                              {visible.length === 0 && (
+                                <p className="text-sm text-muted-foreground py-2">Nenhuma categoria encontrada</p>
+                              )}
+                              {hasMore && !isSearching && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="text-primary"
+                                  onClick={() => setShowAllCategories((v) => !v)}
+                                >
+                                  {showAllCategories ? "Ver menos" : `Ver todas (${filtered.length})`}
+                                </Button>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
