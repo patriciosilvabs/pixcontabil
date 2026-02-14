@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat } from "@zxing/library";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import {
   Dialog,
@@ -17,22 +18,18 @@ interface BarcodeScannerProps {
   onManualInput?: () => void;
 }
 
-const barcodeFormats = [
-  Html5QrcodeSupportedFormats.ITF,
-  Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E,
-];
-
 const qrFormats = [
   Html5QrcodeSupportedFormats.QR_CODE,
 ];
 
 export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }: BarcodeScannerProps) {
-  const scannerRef = useRef<Html5Qrcode | null>(null);
+  // For QR mode we keep html5-qrcode (works fine)
+  const html5ScannerRef = useRef<Html5Qrcode | null>(null);
+  // For barcode mode we use @zxing/library (much better for 1D barcodes)
+  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const containerIdRef = useRef(`scanner-${Math.random().toString(36).slice(2)}`);
@@ -40,11 +37,27 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
   const mountedRef = useRef(true);
 
   const stopScanner = useCallback(async () => {
-    const s = scannerRef.current;
-    if (!s) return;
-    scannerRef.current = null;
-    try { await s.stop(); } catch {}
-    try { s.clear(); } catch {}
+    // Stop html5-qrcode (QR mode)
+    const s = html5ScannerRef.current;
+    if (s) {
+      html5ScannerRef.current = null;
+      try { await s.stop(); } catch {}
+      try { s.clear(); } catch {}
+    }
+
+    // Stop zxing reader (barcode mode)
+    const reader = zxingReaderRef.current;
+    if (reader) {
+      zxingReaderRef.current = null;
+      try { reader.reset(); } catch {}
+    }
+
+    // Stop media stream
+    const stream = streamRef.current;
+    if (stream) {
+      streamRef.current = null;
+      stream.getTracks().forEach(t => t.stop());
+    }
   }, []);
 
   useEffect(() => {
@@ -52,89 +65,65 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     return () => { mountedRef.current = false; };
   }, []);
 
+  // Barcode mode with @zxing/library
   useEffect(() => {
-    if (!isOpen) {
-      hasScannedRef.current = false;
-      stopScanner();
+    if (!isOpen || mode !== "barcode") {
+      if (mode === "barcode") {
+        hasScannedRef.current = false;
+        stopScanner();
+      }
       return;
     }
 
     let cancelled = false;
 
-    const startScanner = async () => {
+    const startBarcode = async () => {
       setError(null);
       setIsStarting(true);
       hasScannedRef.current = false;
 
-      // Wait for DOM to render
-      await new Promise((r) => setTimeout(r, 500));
-
+      await new Promise((r) => setTimeout(r, 300));
       if (cancelled || !mountedRef.current) return;
 
-      const containerId = containerIdRef.current;
-      const element = document.getElementById(containerId);
-      if (!element) {
-        setError("Elemento do scanner não encontrado.");
-        setIsStarting(false);
-        return;
-      }
-
-      // Ensure container has dimensions
-      if (element.clientWidth === 0 || element.clientHeight === 0) {
-        element.style.width = "100%";
-        element.style.minHeight = "300px";
-      }
-
       try {
-        // Stop any existing scanner
-        stopScanner();
+        // Configure ZXing hints for 1D barcodes
+        const hints = new Map();
+        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+          BarcodeFormat.ITF,
+          BarcodeFormat.CODE_128,
+          BarcodeFormat.CODE_39,
+          BarcodeFormat.EAN_13,
+          BarcodeFormat.EAN_8,
+          BarcodeFormat.UPC_A,
+          BarcodeFormat.UPC_E,
+          BarcodeFormat.CODABAR,
+        ]);
+        hints.set(DecodeHintType.TRY_HARDER, true);
 
-        const isBarcode = mode === "barcode";
+        const reader = new BrowserMultiFormatReader(hints, 200);
+        zxingReaderRef.current = reader;
 
-        const scanner = new Html5Qrcode(containerId, {
-          formatsToSupport: isBarcode ? barcodeFormats : qrFormats,
-          verbose: false,
-        });
-
-        if (cancelled) {
-          scanner.stop().catch(() => {});
-          return;
-        }
-
-        scannerRef.current = scanner;
-
-        const config: any = isBarcode
-          ? {
-              fps: 10,
-              // Sem qrbox = escaneia o frame inteiro, muito mais eficaz para barcode
-              disableFlip: false,
-            }
-          : {
-              fps: 10,
-              qrbox: { width: 250, height: 250 },
-              disableFlip: false,
-            };
-
-        // Para barcode, pedir resolução HD para a câmera conseguir ler barras densas
-        const cameraConstraints = isBarcode
-          ? {
+        // Use decodeFromConstraints which handles camera + continuous decoding
+        await reader.decodeFromConstraints(
+          {
+            video: {
               facingMode: { ideal: "environment" },
               width: { ideal: 1920 },
               height: { ideal: 1080 },
-            }
-          : { facingMode: "environment" };
-
-        await scanner.start(
-          cameraConstraints,
-          config,
-          (decodedText) => {
-            if (hasScannedRef.current) return;
-            hasScannedRef.current = true;
-            console.log("[BarcodeScanner] Scanned:", decodedText);
-            onScan(decodedText);
-            void stopScanner();
+            },
           },
-          () => {} // ignore scan failures
+          videoRef.current!,
+          (result, err) => {
+            if (cancelled || hasScannedRef.current) return;
+            if (result) {
+              hasScannedRef.current = true;
+              const text = result.getText();
+              console.log("[BarcodeScanner] ZXing scanned:", text);
+              onScan(text);
+              setTimeout(() => stopScanner(), 100);
+            }
+            // err is normal when no barcode found in frame
+          }
         );
 
         if (mountedRef.current) setIsStarting(false);
@@ -152,13 +141,97 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
       }
     };
 
-    startScanner();
+    startBarcode();
 
     return () => {
       cancelled = true;
       stopScanner();
     };
-  }, [isOpen, mode]); // removed onScan from deps to prevent re-init loops
+  }, [isOpen, mode]);
+
+  // QR Code mode with html5-qrcode (unchanged, works well)
+  useEffect(() => {
+    if (!isOpen || mode !== "qrcode") {
+      if (mode === "qrcode") {
+        hasScannedRef.current = false;
+        stopScanner();
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    const startQR = async () => {
+      setError(null);
+      setIsStarting(true);
+      hasScannedRef.current = false;
+
+      await new Promise((r) => setTimeout(r, 500));
+      if (cancelled || !mountedRef.current) return;
+
+      const containerId = containerIdRef.current;
+      const element = document.getElementById(containerId);
+      if (!element) {
+        setError("Elemento do scanner não encontrado.");
+        setIsStarting(false);
+        return;
+      }
+
+      if (element.clientWidth === 0 || element.clientHeight === 0) {
+        element.style.width = "100%";
+        element.style.minHeight = "300px";
+      }
+
+      try {
+        stopScanner();
+
+        const scanner = new Html5Qrcode(containerId, {
+          formatsToSupport: qrFormats,
+          verbose: false,
+        });
+
+        if (cancelled) {
+          scanner.stop().catch(() => {});
+          return;
+        }
+
+        html5ScannerRef.current = scanner;
+
+        await scanner.start(
+          { facingMode: "environment" },
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          (decodedText) => {
+            if (hasScannedRef.current) return;
+            hasScannedRef.current = true;
+            console.log("[BarcodeScanner] QR scanned:", decodedText);
+            onScan(decodedText);
+            void stopScanner();
+          },
+          () => {}
+        );
+
+        if (mountedRef.current) setIsStarting(false);
+      } catch (err: any) {
+        console.error("[BarcodeScanner] QR Error:", err);
+        if (!mountedRef.current) return;
+        if (err?.toString?.().includes("NotAllowedError")) {
+          setError("Permissão da câmera negada. Habilite nas configurações do navegador.");
+        } else if (err?.toString?.().includes("NotFoundError")) {
+          setError("Nenhuma câmera encontrada no dispositivo.");
+        } else {
+          setError(`Erro ao acessar a câmera: ${err?.message || err}`);
+        }
+        setIsStarting(false);
+      }
+    };
+
+    startQR();
+
+    return () => {
+      cancelled = true;
+      stopScanner();
+    };
+  }, [isOpen, mode]);
 
   const handleClose = () => {
     stopScanner();
@@ -171,7 +244,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     onManualInput?.();
   };
 
-  // Fullscreen barcode mode
+  // Fullscreen barcode mode - uses native <video> + ZXing
   if (mode === "barcode") {
     if (!isOpen) return null;
 
@@ -180,10 +253,10 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         <div className="relative flex-1 overflow-hidden">
           {error ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 px-6">
-              <AlertCircle className="h-16 w-16 text-red-500" />
+              <AlertCircle className="h-16 w-16 text-destructive" />
               <p className="text-center text-white text-lg">{error}</p>
               <Button
-                className="bg-green-500 hover:bg-green-600 text-white font-bold px-8 py-3 text-lg rounded-lg"
+                className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold px-8 py-3 text-lg rounded-lg"
                 onClick={handleClose}
               >
                 VOLTAR
@@ -191,14 +264,17 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             </div>
           ) : (
             <>
-              <div
-                id={containerIdRef.current}
-                className="w-full h-full barcode-fullscreen"
+              <video
+                ref={videoRef}
+                className="w-full h-full object-cover"
+                playsInline
+                muted
+                autoPlay
               />
 
               {/* Horizontal scan guide line */}
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
-                <div className="w-[80vw] h-[2px] bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+                <div className="w-[80vw] h-[2px] bg-accent shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
               </div>
 
               {/* Guide text */}
@@ -208,17 +284,17 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
                 </p>
               </div>
 
-              {/* Action buttons - centered at bottom */}
+              {/* Action buttons */}
               <div className="absolute bottom-8 left-0 right-0 flex justify-center gap-4 z-10 px-4">
                 <Button
-                  className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-4 text-base rounded-lg shadow-lg"
+                  className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold px-6 py-4 text-base rounded-lg shadow-lg"
                   onClick={handleClose}
                 >
                   <ArrowLeft className="mr-2 h-5 w-5" />
                   VOLTAR
                 </Button>
                 <Button
-                  className="bg-green-500 hover:bg-green-600 text-white font-bold px-6 py-4 text-base rounded-lg shadow-lg"
+                  className="bg-accent hover:bg-accent/90 text-accent-foreground font-bold px-6 py-4 text-base rounded-lg shadow-lg"
                   onClick={handleManualInput}
                 >
                   <Keyboard className="mr-2 h-5 w-5" />
@@ -238,7 +314,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     );
   }
 
-  // QR Code mode - keep dialog
+  // QR Code mode - keep dialog with html5-qrcode
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
