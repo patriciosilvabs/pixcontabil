@@ -77,20 +77,62 @@ Deno.serve(async (req) => {
     let qrcInfo: any;
 
     // ========== WOOVI ==========
-    // Woovi doesn't have a decode endpoint; attempt basic EMV parsing
+    // Woovi doesn't have a decode endpoint; attempt EMV parsing + dynamic payload fetch
     if (provider === 'woovi') {
-      // Simple EMV TLV parsing for Pix Copy-Paste
       qrcInfo = { raw: qr_code, provider: 'woovi', type: 'static', decoded_locally: true };
-      // Try to extract basic info from the QR code string
+
+      // Try to extract pix key from EMV
       const pixTagMatch = qr_code.match(/0014br\.gov\.bcb\.pix01(\d{2})/i);
       if (pixTagMatch) {
         const keyLen = parseInt(pixTagMatch[1]);
         const startIndex = pixTagMatch.index! + pixTagMatch[0].length;
         qrcInfo.pix_key = qr_code.substring(startIndex, startIndex + keyLen);
       }
+
+      // Try to extract amount from EMV tag 54
       const amountMatch = qr_code.match(/54(\d{2})(\d+\.\d{2})/);
       if (amountMatch) {
         qrcInfo.amount = parseFloat(amountMatch[2]);
+      }
+
+      // For dynamic QR codes (cobv/cob), try to fetch the payload URL for amount
+      const urlMatch = qr_code.match(/0014br\.gov\.bcb\.pix25(\d{2})/i);
+      if (urlMatch && !qrcInfo.amount) {
+        const urlLen = parseInt(urlMatch[1]);
+        const urlStart = urlMatch.index! + urlMatch[0].length;
+        const payloadUrl = qr_code.substring(urlStart, urlStart + urlLen);
+        
+        if (payloadUrl && payloadUrl.length > 10) {
+          try {
+            console.log('[pix-qrc-info] Fetching dynamic QR payload from:', payloadUrl);
+            const fullUrl = payloadUrl.startsWith('http') ? payloadUrl : `https://${payloadUrl}`;
+            const payloadResp = await fetch(fullUrl, {
+              headers: { 'Accept': 'application/json' },
+            });
+            
+            if (payloadResp.ok) {
+              const contentType = payloadResp.headers.get('content-type') || '';
+              if (contentType.includes('json')) {
+                const payload = await payloadResp.json();
+                console.log('[pix-qrc-info] Dynamic payload:', JSON.stringify(payload));
+                qrcInfo.type = 'dynamic';
+                if (payload.valor?.original) {
+                  qrcInfo.amount = parseFloat(payload.valor.original);
+                } else if (payload.amount) {
+                  qrcInfo.amount = parseFloat(payload.amount);
+                } else if (payload.value) {
+                  qrcInfo.amount = parseFloat(payload.value);
+                }
+                if (payload.devedor?.nome) qrcInfo.merchant_name = payload.devedor.nome;
+                if (payload.recebedor?.nome) qrcInfo.merchant_name = payload.recebedor.nome;
+                if (payload.calendario?.expiracao) qrcInfo.expiration = payload.calendario.expiracao;
+                if (payload.txid) qrcInfo.txid = payload.txid;
+              }
+            }
+          } catch (e) {
+            console.warn('[pix-qrc-info] Failed to fetch dynamic payload:', e);
+          }
+        }
       }
     }
     // ========== ONZ (via proxy) ==========
