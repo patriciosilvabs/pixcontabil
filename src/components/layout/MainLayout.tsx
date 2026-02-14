@@ -179,7 +179,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main className="lg:pl-64 pt-[88px] lg:pt-0 pb-16 lg:pb-0 min-h-screen">
+      <main className="lg:pl-64 pt-[104px] lg:pt-0 pb-16 lg:pb-0 min-h-screen">
         <div className="page-transition">{children}</div>
       </main>
 

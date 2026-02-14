@@ -36,7 +36,7 @@ const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }
 
 export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading }: MobileDashboardProps) {
   return (
-    <div className="px-4 pb-24 space-y-6">
+    <div className="px-4 pt-4 pb-24 space-y-6">
       {/* Balance Card */}
       <Card className="overflow-hidden shadow-md">
         <CardContent className="p-5">
