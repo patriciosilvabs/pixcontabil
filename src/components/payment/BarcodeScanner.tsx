@@ -103,9 +103,11 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         scannerRef.current = scanner;
 
+        const isBarcode = mode === "barcode";
+
         const config: any = {
-          fps: 10,
-          disableFlip: false,
+          fps: isBarcode ? 15 : 10,
+          disableFlip: isBarcode,
           experimentalFeatures: {
             useBarCodeDetectorIfSupported: true,
           },
@@ -115,10 +117,18 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
           config.qrbox = { width: 250, height: 250 };
         }
         // For barcode mode: NO qrbox = scan entire video frame
-        // This dramatically improves detection for ITF/CODE_128
+
+        const videoConstraints = isBarcode
+          ? {
+              facingMode: "environment",
+              width: { min: 1280, ideal: 1920 },
+              height: { min: 720, ideal: 1080 },
+              aspectRatio: { ideal: 1.7777 },
+            }
+          : { facingMode: "environment" };
 
         await scanner.start(
-          { facingMode: "environment" },
+          videoConstraints,
           config,
           (decodedText) => {
             if (hasScannedRef.current) return;
