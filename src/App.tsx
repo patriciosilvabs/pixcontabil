@@ -31,7 +31,7 @@ const App = () => (
           <Routes>
             <Route path="/auth" element={<Auth />} />
 
-            <Route path="/" element={<AuthGuard requiredPage="dashboard"><Dashboard /></AuthGuard>} />
+            <Route path="/" element={<AuthGuard><Dashboard /></AuthGuard>} />
             <Route path="/pix/new" element={<AuthGuard requiredPage="new_payment"><NewPayment /></AuthGuard>} />
             <Route path="/pix/receipt/:transactionId" element={<AuthGuard><ReceiptCapture /></AuthGuard>} />
             <Route path="/transactions" element={<AuthGuard requiredPage="transactions"><Transactions /></AuthGuard>} />

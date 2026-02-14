@@ -26,11 +26,9 @@ export function AuthGuard({ children, requireAdmin = false, requiredPage }: Auth
   const location = useLocation();
 
   const firstAccessibleRoute = useMemo(() => {
-    for (const route of PAGE_ROUTES) {
-      if (hasPageAccess(route.pageKey)) return route.path;
-    }
-    return "/menu";
-  }, [hasPageAccess]);
+    // Dashboard (/) is always accessible to all users
+    return "/";
+  }, []);
 
   useEffect(() => {
     if (!isLoading && !user) {
