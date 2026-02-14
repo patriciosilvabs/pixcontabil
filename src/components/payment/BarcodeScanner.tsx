@@ -24,6 +24,12 @@ const barcodeFormats = [
   Html5QrcodeSupportedFormats.CODE_39,
   Html5QrcodeSupportedFormats.CODABAR,
   Html5QrcodeSupportedFormats.EAN_13,
+  Html5QrcodeSupportedFormats.EAN_8,
+  Html5QrcodeSupportedFormats.UPC_A,
+  Html5QrcodeSupportedFormats.UPC_E,
+  Html5QrcodeSupportedFormats.CODE_93,
+  Html5QrcodeSupportedFormats.DATA_MATRIX,
+  Html5QrcodeSupportedFormats.PDF_417,
 ];
 
 export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }: BarcodeScannerProps) {
@@ -63,7 +69,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         await scanner.start(
           { facingMode: "environment" },
-          { fps: 15, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : { width: 300, height: 100 }, disableFlip: false },
+          { fps: 15, qrbox: mode === "qrcode" ? { width: 250, height: 250 } : undefined, disableFlip: false },
           (decodedText) => {
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
