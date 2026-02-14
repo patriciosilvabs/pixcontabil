@@ -319,10 +319,8 @@
     display: none !important;
   }
 
-  /* Ensure scanner video fills container without zoom/crop */
-  div[id^="scanner-"] video {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: contain !important;
+  /* Let html5-qrcode manage video sizing naturally */
+  .barcode-fullscreen video {
+    object-fit: cover !important;
   }
 }
