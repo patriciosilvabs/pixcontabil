@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,15 @@ export default function NewPayment() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerMode, setScannerMode] = useState<"qrcode" | "barcode">("qrcode");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    const validTabs: PaymentType[] = ["key", "copy_paste", "qrcode", "boleto"];
+    if (tab && validTabs.includes(tab as PaymentType)) {
+      setPixData((prev) => ({ ...prev, type: tab as PaymentType }));
+    }
+  }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany } = useAuth();
   const { payByKey, payByQRCode, isProcessing: isPixProcessing } = usePixPayment();
