@@ -1,28 +1,52 @@
 
 
-## Corrigir leitura de codigos de barras densos (boletos)
+## Corrigir scanner de codigo de barras - 4 problemas
 
-### Causa raiz
+### 1. Bug principal: constraints HD ignorados
 
-Codigos de barras de boletos brasileiros (ITF-14, 44 digitos) tem barras muito finas e proximas. A camera esta sendo solicitada com resolucao padrao (geralmente 480p), onde cada barra ocupa menos de 1 pixel -- impossivel de decodificar. Codigos com barras mais "espaçadas" (como EAN-13 de produtos) funcionam porque precisam de menos resolucao.
+O codigo atual define `config.videoConstraints` com resolucao HD, mas passa `{ facingMode: "environment" }` como primeiro parametro do `scanner.start()`. A biblioteca usa o primeiro parametro para abrir a camera, ignorando o `videoConstraints` do config. Resultado: camera abre em baixa resolucao e nao consegue ler barras densas.
 
-### Correcao
+**Correcao**: Passar as constraints HD diretamente no primeiro parametro do `scanner.start()`, e remover do `config.videoConstraints`. Usar `ideal` em vez de `min` para evitar falha em dispositivos modestos.
 
-**Arquivo: `src/components/payment/BarcodeScanner.tsx`**
+```
+const constraints = isBarcode
+  ? {
+      facingMode: { ideal: "environment" },
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    }
+  : { facingMode: "environment" };
 
-1. **Solicitar resolucao HD da camera**: Em vez de passar apenas `{ facingMode: "environment" }`, passar constraints avancados que pedem resolucao alta (ideal 1920x1080, minimo 1280x720). Isso garante que barras finas tenham pixels suficientes:
-   ```
-   videoConstraints: {
-     facingMode: "environment",
-     width: { min: 1280, ideal: 1920 },
-     height: { min: 720, ideal: 1080 },
-     aspectRatio: { ideal: 1.7777 }
-   }
-   ```
+await scanner.start(constraints, config, ...);
+```
 
-2. **Aumentar FPS de escaneamento**: Subir de 10 para 15 fps no modo barcode para ter mais tentativas de leitura por segundo, aumentando a chance de capturar um frame nitido.
+### 2. stopScanner sem await
 
-3. **Desabilitar flip de imagem**: Forcar `disableFlip: true` no modo barcode para evitar processamento desnecessario que pode reduzir a qualidade do frame analisado.
+O `stop()` e `clear()` sao chamados sem await, o que pode deixar a lib em estado ruim em reaberturas rapidas.
 
-Nenhuma outra alteracao e necessaria. O problema e exclusivamente de resolucao da camera.
+**Correcao**: Tornar `stopScanner` async com await interno, chamar com `void stopScanner()` onde necessario.
+
+### 3. Formatos incompletos
+
+Faltam `EAN_8`, `UPC_A` e `UPC_E` na lista de formatos suportados para barcode.
+
+**Correcao**: Adicionar esses formatos ao array `barcodeFormats`.
+
+### 4. Remover videoConstraints redundante do config
+
+Remover o bloco que seta `config.videoConstraints` pois as constraints agora vao no primeiro parametro.
+
+---
+
+### Detalhes tecnicos
+
+**Arquivo**: `src/components/payment/BarcodeScanner.tsx`
+
+- Linhas 20-26: Adicionar `EAN_8`, `UPC_A`, `UPC_E` ao array `barcodeFormats`
+- Linhas 40-47: Tornar `stopScanner` async com `await s.stop()` e `await s.clear()`
+- Linhas 120-127: Remover bloco `config.videoConstraints`
+- Linhas 129-140: Passar constraints HD no primeiro parametro de `scanner.start()` para modo barcode
+- Linha 137: Usar `void stopScanner()` no callback de sucesso
+
+**Arquivo**: `src/index.css` - Sem alteracoes necessarias (o CSS do `barcode-fullscreen` ja esta correto)
 
