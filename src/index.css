@@ -315,21 +315,6 @@
   }
 
   /* Fullscreen barcode scanner overrides */
-  .barcode-fullscreen {
-    position: relative;
-  }
-
-  .barcode-fullscreen video {
-    width: 100% !important;
-    height: 100% !important;
-    object-fit: fill !important;
-  }
-
-  .barcode-fullscreen canvas {
-    width: 100% !important;
-    height: 100% !important;
-  }
-
   .barcode-fullscreen #qr-shaded-region {
     display: none !important;
   }
