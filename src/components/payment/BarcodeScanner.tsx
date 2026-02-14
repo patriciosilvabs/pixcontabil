@@ -103,13 +103,17 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
         scannerRef.current = scanner;
 
-        const config: any = {
-          fps: 10,
-          qrbox: isBarcode
-            ? { width: 280, height: 100 }
-            : { width: 250, height: 250 },
-          disableFlip: false,
-        };
+        const config: any = isBarcode
+          ? {
+              fps: 10,
+              // Sem qrbox = escaneia o frame inteiro, muito mais eficaz para barcode
+              disableFlip: false,
+            }
+          : {
+              fps: 10,
+              qrbox: { width: 250, height: 250 },
+              disableFlip: false,
+            };
 
         // Para barcode, pedir resolução HD para a câmera conseguir ler barras densas
         const cameraConstraints = isBarcode
