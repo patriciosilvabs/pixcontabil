@@ -104,13 +104,10 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         scannerRef.current = scanner;
 
         const config: any = {
-          fps: 20,
+          fps: 15,
           qrbox: isBarcode
-            ? { width: 300, height: 150 }
+            ? { width: 280, height: 120 }
             : { width: 250, height: 250 },
-          experimentalFeatures: {
-            useBarCodeDetectorIfSupported: true,
-          },
         };
 
         const cameraConfig = { facingMode: "environment" };
@@ -185,7 +182,6 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
               <div
                 id={containerIdRef.current}
                 className="w-full h-full barcode-fullscreen"
-                style={{ minHeight: "100vh" }}
               />
 
               {/* Horizontal scan guide line */}
