@@ -1,52 +1,51 @@
 
 
-## Corrigir scanner de codigo de barras - 4 problemas
+## Corrigir extração de dados por IA (OCR)
 
-### 1. Bug principal: constraints HD ignorados
+### Problema
+A tela de anexo de comprovante **nunca chama a função de OCR**. Em vez disso, usa dados falsos fixos no codigo (mock):
+- CNPJ: 12.345.678/0001-90
+- Valor: R$ 2.450,00
+- Data: 2024-01-15
 
-O codigo atual define `config.videoConstraints` com resolucao HD, mas passa `{ facingMode: "environment" }` como primeiro parametro do `scanner.start()`. A biblioteca usa o primeiro parametro para abrir a camera, ignorando o `videoConstraints` do config. Resultado: camera abre em baixa resolucao e nao consegue ler barras densas.
+### Solucao
 
-**Correcao**: Passar as constraints HD diretamente no primeiro parametro do `scanner.start()`, e remover do `config.videoConstraints`. Usar `ideal` em vez de `min` para evitar falha em dispositivos modestos.
+Substituir o bloco mock em `src/pages/ReceiptCapture.tsx` por uma chamada real a edge function `process-ocr`, que ja existe e funciona com Lovable AI (Gemini).
 
-```
-const constraints = isBarcode
-  ? {
-      facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-    }
-  : { facingMode: "environment" };
+### Alteracoes
 
-await scanner.start(constraints, config, ...);
-```
+**Arquivo: `src/pages/ReceiptCapture.tsx`**
 
-### 2. stopScanner sem await
-
-O `stop()` e `clear()` sao chamados sem await, o que pode deixar a lib em estado ruim em reaberturas rapidas.
-
-**Correcao**: Tornar `stopScanner` async com await interno, chamar com `void stopScanner()` onde necessario.
-
-### 3. Formatos incompletos
-
-Faltam `EAN_8`, `UPC_A` e `UPC_E` na lista de formatos suportados para barcode.
-
-**Correcao**: Adicionar esses formatos ao array `barcodeFormats`.
-
-### 4. Remover videoConstraints redundante do config
-
-Remover o bloco que seta `config.videoConstraints` pois as constraints agora vao no primeiro parametro.
-
----
+1. Remover o `setTimeout` e o objeto `mockOcrData` (linhas 139-148)
+2. Converter a imagem para base64 e enviar para a edge function `process-ocr` via `supabase.functions.invoke`
+3. Mapear a resposta da IA (`cnpj`, `valor_total`, `data_emissao`, `classificacao_sugerida`, `categoria_sugerida`) para o estado `ocrData`
+4. Usar `classificacao_sugerida` da IA para pre-selecionar Custo/Despesa
+5. Usar `categoria_sugerida` para pre-selecionar a categoria se existir match
+6. Tratar erros (429, 402, falhas) com toast informativo
 
 ### Detalhes tecnicos
 
-**Arquivo**: `src/components/payment/BarcodeScanner.tsx`
+```text
+Fluxo atual (quebrado):
+  Imagem -> setTimeout 2s -> dados mock fixos
 
-- Linhas 20-26: Adicionar `EAN_8`, `UPC_A`, `UPC_E` ao array `barcodeFormats`
-- Linhas 40-47: Tornar `stopScanner` async com `await s.stop()` e `await s.clear()`
-- Linhas 120-127: Remover bloco `config.videoConstraints`
-- Linhas 129-140: Passar constraints HD no primeiro parametro de `scanner.start()` para modo barcode
-- Linha 137: Usar `void stopScanner()` no callback de sucesso
+Fluxo corrigido:
+  Imagem -> base64 -> supabase.functions.invoke("process-ocr") -> dados reais da IA
+```
 
-**Arquivo**: `src/index.css` - Sem alteracoes necessarias (o CSS do `barcode-fullscreen` ja esta correto)
+A funcao `process-ocr` ja retorna:
+- `data.cnpj` - CNPJ real do documento
+- `data.valor_total` - Valor real extraido
+- `data.data_emissao` - Data real
+- `data.classificacao_sugerida` - "cost" ou "expense"
+- `data.categoria_sugerida` - Nome da categoria sugerida
+- `data.chave_acesso` - Chave de acesso NFe
+
+O mapeamento sera:
+- `ocrData.cnpj` = `data.cnpj`
+- `ocrData.value` = formatado de `data.valor_total`
+- `ocrData.date` = `data.data_emissao`
+- `ocrData.accessKey` = `data.chave_acesso`
+- `ocrData.suggestedCategory` = `data.categoria_sugerida`
+- `classification` pre-selecionado = `data.classificacao_sugerida`
 
