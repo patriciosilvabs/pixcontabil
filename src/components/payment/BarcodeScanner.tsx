@@ -104,16 +104,24 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         scannerRef.current = scanner;
 
         const config: any = {
-          fps: 15,
+          fps: 10,
           qrbox: isBarcode
-            ? { width: 280, height: 120 }
+            ? { width: 280, height: 100 }
             : { width: 250, height: 250 },
+          disableFlip: false,
         };
 
-        const cameraConfig = { facingMode: "environment" };
+        // Para barcode, pedir resolução HD para a câmera conseguir ler barras densas
+        const cameraConstraints = isBarcode
+          ? {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            }
+          : { facingMode: "environment" };
 
         await scanner.start(
-          cameraConfig,
+          cameraConstraints,
           config,
           (decodedText) => {
             if (hasScannedRef.current) return;
