@@ -132,8 +132,8 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             <>
               <div
                 id={containerIdRef.current}
-                className="w-full h-full"
-                style={{ minHeight: "100%" }}
+                className="w-full h-full [&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&>div]:!w-full [&>div]:!h-full"
+                style={{ minHeight: "100%", width: "100%" }}
               />
 
               {/* Overlay guide text */}
