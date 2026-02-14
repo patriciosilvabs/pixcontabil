@@ -95,7 +95,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
       }
 
       try {
-        // Configure ZXing hints for 1D barcodes (Brazilian boletos use ITF)
+        // Configure ZXing hints - focus on ITF (boletos) for best results
         const hints = new Map();
         hints.set(DecodeHintType.POSSIBLE_FORMATS, [
           BarcodeFormat.ITF,
@@ -108,36 +108,70 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
           BarcodeFormat.CODABAR,
         ]);
         hints.set(DecodeHintType.TRY_HARDER, true);
+        hints.set(DecodeHintType.ASSUME_GS1, false);
 
-        // 500ms interval gives more processing time per frame
-        const reader = new BrowserMultiFormatReader(hints, 500);
+        // 250ms interval = ~4 scans/sec for faster detection
+        const reader = new BrowserMultiFormatReader(hints, 250);
         zxingReaderRef.current = reader;
 
         console.log("[BarcodeScanner] Starting ZXing continuous decode...");
 
-        // Use decodeFromConstraints which handles camera + continuous decoding
+        // Track partial reads to combine them
+        const partialReads: string[] = [];
+        let lastReadTime = 0;
+
         await reader.decodeFromConstraints(
           {
             video: {
               facingMode: { ideal: "environment" },
               width: { ideal: 1920 },
               height: { ideal: 1080 },
+              aspectRatio: { ideal: 16 / 9 },
             },
           },
           videoEl,
           (result, err) => {
             if (cancelled || hasScannedRef.current) return;
             if (result) {
-              hasScannedRef.current = true;
-              const text = result.getText();
+              const text = result.getText().replace(/\s/g, "");
               const format = result.getBarcodeFormat();
-              console.log("[BarcodeScanner] ZXing scanned:", text, "format:", format);
-              onScan(text);
-              setTimeout(() => stopScanner(), 100);
-            }
-            // Log decode errors only occasionally for debugging
-            if (err && !(err instanceof Error && err.message.includes("No MultiFormat"))) {
-              // This is normal - no barcode found in current frame
+              const now = Date.now();
+              
+              console.log("[BarcodeScanner] ZXing read:", text, "len:", text.length, "format:", format);
+
+              // Brazilian boleto barcodes are exactly 44 digits
+              // Typed line (linha digitável) is 47 digits
+              const isCompleteBoleto = /^\d{44,47}$/.test(text);
+              
+              if (isCompleteBoleto) {
+                // Complete barcode detected - accept immediately
+                hasScannedRef.current = true;
+                console.log("[BarcodeScanner] Complete boleto detected:", text);
+                onScan(text);
+                setTimeout(() => stopScanner(), 100);
+                return;
+              }
+
+              // For non-boleto codes (shorter barcodes like EAN), accept if it looks valid
+              if (text.length >= 8 && text.length < 44) {
+                // Collect multiple reads to verify consistency
+                if (now - lastReadTime < 2000) {
+                  partialReads.push(text);
+                } else {
+                  partialReads.length = 0;
+                  partialReads.push(text);
+                }
+                lastReadTime = now;
+
+                // If we get the same result 3 times, it's reliable
+                const matches = partialReads.filter(r => r === text);
+                if (matches.length >= 3) {
+                  hasScannedRef.current = true;
+                  console.log("[BarcodeScanner] Confirmed barcode (3x match):", text);
+                  onScan(text);
+                  setTimeout(() => stopScanner(), 100);
+                }
+              }
             }
           }
         );
