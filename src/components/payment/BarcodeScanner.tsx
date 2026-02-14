@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import {
   Dialog,
@@ -17,8 +17,8 @@ interface BarcodeScannerProps {
   onManualInput?: () => void;
 }
 
-const qrcodeFormats = [Html5QrcodeSupportedFormats.QR_CODE];
-const barcodeFormats = [
+const allFormats = [
+  Html5QrcodeSupportedFormats.QR_CODE,
   Html5QrcodeSupportedFormats.ITF,
   Html5QrcodeSupportedFormats.CODE_128,
   Html5QrcodeSupportedFormats.CODE_39,
@@ -36,21 +36,42 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const containerIdRef = useRef(`scanner-${Date.now()}`);
+  const containerIdRef = useRef(`scanner-${Math.random().toString(36).slice(2)}`);
   const hasScannedRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const stopScanner = useCallback(() => {
+    if (scannerRef.current) {
+      const s = scannerRef.current;
+      scannerRef.current = null;
+      s.stop().catch(() => {});
+      try { s.clear(); } catch {}
+    }
+  }, []);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!isOpen) {
       hasScannedRef.current = false;
+      stopScanner();
       return;
     }
+
+    let cancelled = false;
 
     const startScanner = async () => {
       setError(null);
       setIsStarting(true);
       hasScannedRef.current = false;
 
-      await new Promise((r) => setTimeout(r, 300));
+      // Wait for DOM to render
+      await new Promise((r) => setTimeout(r, 500));
+
+      if (cancelled || !mountedRef.current) return;
 
       const containerId = containerIdRef.current;
       const element = document.getElementById(containerId);
@@ -60,43 +81,70 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
         return;
       }
 
+      // Ensure container has dimensions
+      if (element.clientWidth === 0 || element.clientHeight === 0) {
+        element.style.width = "100%";
+        element.style.minHeight = "300px";
+      }
+
       try {
+        // Stop any existing scanner
+        stopScanner();
+
         const scanner = new Html5Qrcode(containerId, {
-          formatsToSupport: mode === "qrcode" ? qrcodeFormats : barcodeFormats,
+          formatsToSupport: allFormats,
           verbose: false,
         });
+
+        if (cancelled) {
+          scanner.stop().catch(() => {});
+          return;
+        }
+
         scannerRef.current = scanner;
+
+        const config: any = {
+          fps: 10,
+          disableFlip: false,
+        };
+
+        // Use appropriate qrbox based on container size
+        if (mode === "qrcode") {
+          config.qrbox = { width: 250, height: 250 };
+        } else {
+          // For barcodes, use a wide rectangular area
+          const w = element.clientWidth;
+          const h = element.clientHeight;
+          config.qrbox = {
+            width: Math.max(250, Math.floor(w * 0.85)),
+            height: Math.max(80, Math.floor(h * 0.3)),
+          };
+        }
 
         await scanner.start(
           { facingMode: "environment" },
-          {
-            fps: 15,
-            qrbox: mode === "qrcode"
-              ? { width: 250, height: 250 }
-              : (viewfinderWidth: number, viewfinderHeight: number) => ({
-                  width: Math.floor(viewfinderWidth * 0.9),
-                  height: Math.floor(viewfinderHeight * 0.5),
-                }),
-            disableFlip: false,
-          },
+          config,
           (decodedText) => {
             if (hasScannedRef.current) return;
             hasScannedRef.current = true;
+            console.log("[BarcodeScanner] Scanned:", decodedText);
             onScan(decodedText);
-            scanner.stop().catch(() => {});
+            stopScanner();
           },
-          () => {}
+          () => {} // ignore scan failures
         );
+
+        if (mountedRef.current) setIsStarting(false);
       } catch (err: any) {
         console.error("[BarcodeScanner] Error:", err);
+        if (!mountedRef.current) return;
         if (err?.toString?.().includes("NotAllowedError")) {
           setError("Permissão da câmera negada. Habilite nas configurações do navegador.");
         } else if (err?.toString?.().includes("NotFoundError")) {
           setError("Nenhuma câmera encontrada no dispositivo.");
         } else {
-          setError("Erro ao acessar a câmera. Verifique as permissões.");
+          setError(`Erro ao acessar a câmera: ${err?.message || err}`);
         }
-      } finally {
         setIsStarting(false);
       }
     };
@@ -104,23 +152,19 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     startScanner();
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
+      cancelled = true;
+      stopScanner();
     };
-  }, [isOpen, mode, onScan]);
+  }, [isOpen, mode]); // removed onScan from deps to prevent re-init loops
 
   const handleClose = () => {
-    if (scannerRef.current) {
-      scannerRef.current.stop().catch(() => {});
-      scannerRef.current = null;
-    }
+    stopScanner();
     onClose();
   };
 
   const handleManualInput = () => {
-    handleClose();
+    stopScanner();
+    onClose();
     onManualInput?.();
   };
 
@@ -130,7 +174,6 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
 
     return (
       <div className="fixed inset-0 z-[100] bg-black flex flex-col">
-        {/* Scanner area - takes full screen */}
         <div className="relative flex-1 overflow-hidden">
           {error ? (
             <div className="flex flex-col items-center justify-center h-full gap-4 px-6">
@@ -147,7 +190,8 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             <>
               <div
                 id={containerIdRef.current}
-                className="absolute inset-0 [&_video]:!w-full [&_video]:!h-full [&_video]:!object-cover [&>div]:!w-full [&>div]:!h-full"
+                className="w-full h-full"
+                style={{ minHeight: "100vh" }}
               />
 
               {/* Horizontal scan guide line */}
@@ -216,7 +260,8 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             <>
               <div
                 id={containerIdRef.current}
-                className="w-full rounded-lg overflow-hidden bg-black min-h-[300px]"
+                className="w-full rounded-lg overflow-hidden bg-black"
+                style={{ minHeight: "300px" }}
               />
               {isStarting && (
                 <p className="text-center text-sm text-muted-foreground mt-3">
