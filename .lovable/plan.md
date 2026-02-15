@@ -1,51 +1,58 @@
 
 
-## Corrigir extração de dados por IA (OCR)
+## Corrigir pagamento via QR Code dinamico (erro DS04)
 
 ### Problema
-A tela de anexo de comprovante **nunca chama a função de OCR**. Em vez disso, usa dados falsos fixos no codigo (mock):
-- CNPJ: 12.345.678/0001-90
-- Valor: R$ 2.450,00
-- Data: 2024-01-15
+O `pix-pay-qrc` atualmente extrai a chave Pix do QR Code e chama `pix-pay-dict` (pagamento por chave). Para QR Codes dinamicos (COBV), o PSP destinatario rejeita o pagamento (DS04) porque espera receber o pagamento vinculado ao QR Code original (com txid), nao como pagamento avulso.
+
+### Causa raiz
+A funcao `pix-pay-qrc` nao tem logica propria de pagamento -- ela apenas delega para `pix-pay-dict`. QR Codes dinamicos exigem que o EMV completo (copia-e-cola) seja enviado ao provedor.
 
 ### Solucao
 
-Substituir o bloco mock em `src/pages/ReceiptCapture.tsx` por uma chamada real a edge function `process-ocr`, que ja existe e funciona com Lovable AI (Gemini).
+Implementar pagamento nativo por QR Code no `pix-pay-qrc` para cada provedor, enviando o EMV/copia-e-cola diretamente em vez de extrair a chave e pagar por dict.
 
 ### Alteracoes
 
-**Arquivo: `src/pages/ReceiptCapture.tsx`**
+**Arquivo: `supabase/functions/pix-pay-qrc/index.ts`**
 
-1. Remover o `setTimeout` e o objeto `mockOcrData` (linhas 139-148)
-2. Converter a imagem para base64 e enviar para a edge function `process-ocr` via `supabase.functions.invoke`
-3. Mapear a resposta da IA (`cnpj`, `valor_total`, `data_emissao`, `classificacao_sugerida`, `categoria_sugerida`) para o estado `ocrData`
-4. Usar `classificacao_sugerida` da IA para pre-selecionar Custo/Despesa
-5. Usar `categoria_sugerida` para pre-selecionar a categoria se existir match
-6. Tratar erros (429, 402, falhas) com toast informativo
+1. Manter a decodificacao via `pix-qrc-info` para obter o valor e informacoes do QR
+2. Detectar se e QR dinamico (`type === "dynamic"`) ou estatico
+3. Para QR **dinamico**: usar endpoint nativo do provedor para pagamento por QR Code:
+   - **Woovi**: `POST /api/v1/payment` com `type: "QR_CODE"` e o EMV completo no campo `qrCode`, em vez de `PIX_KEY`
+   - **ONZ**: enviar o campo `qrCode` (EMV completo) via proxy
+   - **Transfeera**: usar o payload EMV no campo adequado
+   - **EFI**: endpoint de pagamento por location/QR
+4. Para QR **estatico**: manter o fluxo atual via `pix-pay-dict` (funciona corretamente)
+5. Criar a transacao diretamente no `pix-pay-qrc` em vez de depender do `pix-pay-dict` para isso
 
 ### Detalhes tecnicos
 
 ```text
-Fluxo atual (quebrado):
-  Imagem -> setTimeout 2s -> dados mock fixos
+Fluxo atual (quebrado para QR dinamico):
+  QR Code -> pix-qrc-info -> extrai chave -> pix-pay-dict -> paga por chave -> DS04 rejeitado
 
 Fluxo corrigido:
-  Imagem -> base64 -> supabase.functions.invoke("process-ocr") -> dados reais da IA
+  QR Code estatico -> pix-qrc-info -> extrai chave -> pix-pay-dict -> OK
+  QR Code dinamico -> pix-qrc-info -> detecta tipo -> pix-pay-qrc paga com EMV completo -> OK
 ```
 
-A funcao `process-ocr` ja retorna:
-- `data.cnpj` - CNPJ real do documento
-- `data.valor_total` - Valor real extraido
-- `data.data_emissao` - Data real
-- `data.classificacao_sugerida` - "cost" ou "expense"
-- `data.categoria_sugerida` - Nome da categoria sugerida
-- `data.chave_acesso` - Chave de acesso NFe
+**Woovi - payload corrigido para QR dinamico:**
+```text
+POST /api/v1/payment
+{
+  "type": "QR_CODE",
+  "qrCode": "<EMV completo do QR Code>",
+  "value": <valor em centavos>,
+  "comment": "Pagamento Pix",
+  "correlationID": "<uuid>"
+}
+```
 
-O mapeamento sera:
-- `ocrData.cnpj` = `data.cnpj`
-- `ocrData.value` = formatado de `data.valor_total`
-- `ocrData.date` = `data.data_emissao`
-- `ocrData.accessKey` = `data.chave_acesso`
-- `ocrData.suggestedCategory` = `data.categoria_sugerida`
-- `classification` pre-selecionado = `data.classificacao_sugerida`
+Isso envia o QR Code completo ao Woovi, que resolve internamente o txid e destinatario, evitando a rejeicao DS04.
+
+### Resultado esperado
+- QR Codes dinamicos (COBV) serao pagos corretamente sem rejeicao DS04
+- QR Codes estaticos continuarao funcionando via dict
+- A transacao sera salva com `pix_type: 'qrcode'` e o EMV completo em `pix_copia_cola`
 
