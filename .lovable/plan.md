@@ -1,58 +1,39 @@
 
 
-## Corrigir pagamento via QR Code dinamico (erro DS04)
+## Limpar historico de transacoes
 
-### Problema
-O `pix-pay-qrc` atualmente extrai a chave Pix do QR Code e chama `pix-pay-dict` (pagamento por chave). Para QR Codes dinamicos (COBV), o PSP destinatario rejeita o pagamento (DS04) porque espera receber o pagamento vinculado ao QR Code original (com txid), nao como pagamento avulso.
+Apagar apenas os dados de teste das transacoes, mantendo toda a estrutura do sistema (empresa, usuarios, categorias, configuracao Pix, permissoes).
 
-### Causa raiz
-A funcao `pix-pay-qrc` nao tem logica propria de pagamento -- ela apenas delega para `pix-pay-dict`. QR Codes dinamicos exigem que o EMV completo (copia-e-cola) seja enviado ao provedor.
+### Dados que serao apagados
 
-### Solucao
+| Tabela | Registros | Descricao |
+|--------|-----------|-----------|
+| receipts | 18 | Comprovantes anexados |
+| audit_logs | 30 | Logs de auditoria das transacoes |
+| pix_tokens | 1 | Token de autenticacao Pix (expirado) |
+| transactions | 30 | Transacoes de teste |
 
-Implementar pagamento nativo por QR Code no `pix-pay-qrc` para cada provedor, enviando o EMV/copia-e-cola diretamente em vez de extrair a chave e pagar por dict.
+### Dados que serao mantidos
 
-### Alteracoes
+| Tabela | Registros |
+|--------|-----------|
+| companies | 1 |
+| profiles | 2 |
+| user_roles | 2 |
+| company_members | 2 |
+| categories | 106 |
+| pix_configs | 1 |
+| user_page_permissions | 16 |
 
-**Arquivo: `supabase/functions/pix-pay-qrc/index.ts`**
+### Ordem de execucao
 
-1. Manter a decodificacao via `pix-qrc-info` para obter o valor e informacoes do QR
-2. Detectar se e QR dinamico (`type === "dynamic"`) ou estatico
-3. Para QR **dinamico**: usar endpoint nativo do provedor para pagamento por QR Code:
-   - **Woovi**: `POST /api/v1/payment` com `type: "QR_CODE"` e o EMV completo no campo `qrCode`, em vez de `PIX_KEY`
-   - **ONZ**: enviar o campo `qrCode` (EMV completo) via proxy
-   - **Transfeera**: usar o payload EMV no campo adequado
-   - **EFI**: endpoint de pagamento por location/QR
-4. Para QR **estatico**: manter o fluxo atual via `pix-pay-dict` (funciona corretamente)
-5. Criar a transacao diretamente no `pix-pay-qrc` em vez de depender do `pix-pay-dict` para isso
+A limpeza precisa respeitar dependencias entre tabelas:
+
+1. Apagar `receipts` (depende de transactions)
+2. Apagar `audit_logs` (referencia transactions)
+3. Apagar `pix_tokens` (tokens expirados, serao regenerados)
+4. Apagar `transactions`
 
 ### Detalhes tecnicos
 
-```text
-Fluxo atual (quebrado para QR dinamico):
-  QR Code -> pix-qrc-info -> extrai chave -> pix-pay-dict -> paga por chave -> DS04 rejeitado
-
-Fluxo corrigido:
-  QR Code estatico -> pix-qrc-info -> extrai chave -> pix-pay-dict -> OK
-  QR Code dinamico -> pix-qrc-info -> detecta tipo -> pix-pay-qrc paga com EMV completo -> OK
-```
-
-**Woovi - payload corrigido para QR dinamico:**
-```text
-POST /api/v1/payment
-{
-  "type": "QR_CODE",
-  "qrCode": "<EMV completo do QR Code>",
-  "value": <valor em centavos>,
-  "comment": "Pagamento Pix",
-  "correlationID": "<uuid>"
-}
-```
-
-Isso envia o QR Code completo ao Woovi, que resolve internamente o txid e destinatario, evitando a rejeicao DS04.
-
-### Resultado esperado
-- QR Codes dinamicos (COBV) serao pagos corretamente sem rejeicao DS04
-- QR Codes estaticos continuarao funcionando via dict
-- A transacao sera salva com `pix_type: 'qrcode'` e o EMV completo em `pix_copia_cola`
-
+Serao executados 4 comandos DELETE usando a ferramenta de insercao de dados, na ordem correta para evitar erros de foreign key. Tambem sera feita a limpeza dos arquivos de comprovantes no storage bucket `receipts`.
