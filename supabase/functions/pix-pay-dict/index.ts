@@ -65,6 +65,14 @@ Deno.serve(async (req) => {
       );
     }
 
+    const MAX_PAYMENT_VALUE = 1_000_000;
+    if (valor <= 0 || valor > MAX_PAYMENT_VALUE) {
+      return new Response(
+        JSON.stringify({ error: `Valor inválido: R$ ${valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. O valor deve estar entre R$ 0,01 e R$ ${MAX_PAYMENT_VALUE.toLocaleString('pt-BR')}.` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get Pix config
     const { data: config, error: configError } = await supabase
       .from('pix_configs')

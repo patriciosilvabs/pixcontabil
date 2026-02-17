@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, FileText, DollarSign, CheckCircle2 } from "lucide-r
 import { toast } from "sonner";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { parseBoleto } from "@/utils/boletoParser";
+import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 
 interface BoletoPaymentDrawerProps {
   open: boolean;
@@ -52,16 +53,17 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   };
 
   const handleStep1 = () => {
-    const value = parseFloat(amount.replace(",", "."));
-    if (!value || value <= 0) {
-      toast.error("Informe um valor válido");
+    const value = parseLocalizedNumber(amount);
+    const validation = isValidPaymentAmount(value);
+    if (!validation.valid) {
+      toast.error(validation.message);
       return;
     }
     setStep(2);
   };
 
   const handleConfirm = async () => {
-    const value = parseFloat(amount.replace(",", "."));
+    const value = parseLocalizedNumber(amount);
     const result = await payBillet({
       digitable_code: barcode,
       description: description || "Pagamento de boleto",
@@ -75,7 +77,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   };
 
   const formattedAmount = () => {
-    const value = parseFloat(amount.replace(",", "."));
+    const value = parseLocalizedNumber(amount);
     if (isNaN(value)) return "R$ 0,00";
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
@@ -149,7 +151,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
 
               <Button
                 onClick={handleStep1}
-                disabled={!amount || parseFloat(amount.replace(",", ".")) <= 0}
+                disabled={!amount || parseLocalizedNumber(amount) <= 0}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar

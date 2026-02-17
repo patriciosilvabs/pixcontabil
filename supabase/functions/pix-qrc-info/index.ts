@@ -89,10 +89,26 @@ Deno.serve(async (req) => {
         qrcInfo.pix_key = qr_code.substring(startIndex, startIndex + keyLen);
       }
 
-      // Try to extract amount from EMV tag 54
-      const amountMatch = qr_code.match(/54(\d{2})(\d+\.\d{2})/);
-      if (amountMatch) {
-        qrcInfo.amount = parseFloat(amountMatch[2]);
+      // Try to extract amount from EMV using proper TLV parser
+      function extractEmvTag(emv: string, targetTag: string): string | null {
+        let pos = 0;
+        while (pos + 4 <= emv.length) {
+          const tag = emv.substring(pos, pos + 2);
+          const len = parseInt(emv.substring(pos + 2, pos + 4), 10);
+          if (isNaN(len) || pos + 4 + len > emv.length) break;
+          const val = emv.substring(pos + 4, pos + 4 + len);
+          if (tag === targetTag) return val;
+          pos += 4 + len;
+        }
+        return null;
+      }
+
+      const tag54Value = extractEmvTag(qr_code, '54');
+      if (tag54Value) {
+        const parsedAmount = parseFloat(tag54Value);
+        if (!isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= 1000000) {
+          qrcInfo.amount = parsedAmount;
+        }
       }
 
       // For dynamic QR codes (cobv/cob), try to fetch the payload URL for amount

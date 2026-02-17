@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 
 interface PixKeyDialogProps {
   open: boolean;
@@ -48,16 +49,17 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   };
 
   const handleStep2 = () => {
-    const value = parseFloat(amount.replace(",", "."));
-    if (!value || value <= 0) {
-      toast.error("Informe um valor válido");
+    const value = parseLocalizedNumber(amount);
+    const validation = isValidPaymentAmount(value);
+    if (!validation.valid) {
+      toast.error(validation.message);
       return;
     }
     setStep(3);
   };
 
   const handleConfirm = async () => {
-    const value = parseFloat(amount.replace(",", "."));
+    const value = parseLocalizedNumber(amount);
     const result = await payByKey({
       pix_key: pixKey.trim(),
       valor: value,
@@ -70,7 +72,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   };
 
   const formattedAmount = () => {
-    const value = parseFloat(amount.replace(",", "."));
+    const value = parseLocalizedNumber(amount);
     if (isNaN(value)) return "R$ 0,00";
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
@@ -171,7 +173,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <Button
                 onClick={handleStep2}
-                disabled={!amount || parseFloat(amount.replace(",", ".")) <= 0}
+                disabled={!amount || parseLocalizedNumber(amount) <= 0}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar
