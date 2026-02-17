@@ -17,6 +17,7 @@ export interface RecentPayment {
   description: string | null;
   beneficiary_name: string | null;
   created_at: string;
+  created_by?: string;
 }
 
 interface RecentPaymentsProps {
@@ -40,6 +41,7 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
   const { currentCompany, isAdmin, user } = useAuth();
   const [payments, setPayments] = useState<RecentPayment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileMap, setProfileMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!currentCompany?.id) {
@@ -51,7 +53,7 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
       setIsLoading(true);
       let query = supabase
         .from("transactions")
-        .select("pix_key, pix_key_type, pix_type, amount, description, beneficiary_name, created_at")
+        .select("pix_key, pix_key_type, pix_type, amount, description, beneficiary_name, created_at, created_by")
         .eq("company_id", currentCompany.id)
         .eq("status", "completed")
         .not("pix_key", "is", null)
@@ -62,16 +64,25 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
         query = query.eq("created_by", user.id);
       }
 
-      const { data, error } = await query;
+      const [txResult, profileRes] = await Promise.all([
+        query,
+        supabase.from("profiles").select("user_id, full_name"),
+      ]);
 
-      if (error) {
-        console.error("[RecentPayments] Error:", error);
+      if (profileRes.data) {
+        const map: Record<string, string> = {};
+        profileRes.data.forEach((p: any) => { map[p.user_id] = p.full_name; });
+        setProfileMap(map);
+      }
+
+      if (txResult.error) {
+        console.error("[RecentPayments] Error:", txResult.error);
         setIsLoading(false);
         return;
       }
 
       // Group by unique pix_key, keep most recent
-      const grouped = (data || []).reduce<Record<string, RecentPayment>>((acc, tx) => {
+      const grouped = (txResult.data || []).reduce<Record<string, RecentPayment>>((acc, tx) => {
         const key = tx.pix_key!;
         if (!acc[key]) {
           acc[key] = tx as RecentPayment;
@@ -134,6 +145,9 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
                   {payment.description ? ` · ${payment.description}` : ""}
                 </span>
                 <span className="text-xs text-muted-foreground whitespace-nowrap">
+                  {payment.created_by && profileMap[payment.created_by]
+                    ? `${profileMap[payment.created_by]} · `
+                    : ""}
                   {formatDate(payment.created_at)}
                 </span>
               </div>

@@ -10,6 +10,7 @@ import { batchSignedUrls } from "@/utils/storageHelpers";
 interface Transaction {
   id: string;
   created_at: string;
+  created_by?: string;
   description?: string | null;
   beneficiary_name?: string | null;
   amount: number;
@@ -27,6 +28,7 @@ interface DayGroup {
 
 interface Props {
   transactions: Transaction[];
+  profileMap?: Record<string, string>;
 }
 
 const formatCurrency = (v: number) =>
@@ -39,7 +41,7 @@ const statusMap: Record<string, { label: string; className: string }> = {
   pending: { label: "Pendente", className: "text-muted-foreground" },
 };
 
-export function DailyTransactionSummary({ transactions }: Props) {
+export function DailyTransactionSummary({ transactions, profileMap = {} }: Props) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -147,6 +149,11 @@ export function DailyTransactionSummary({ transactions }: Props) {
                                 </span>
                               )}
                             </div>
+                            <p className="text-xs text-muted-foreground">
+                              {t.created_by && profileMap[t.created_by] ? `por ${profileMap[t.created_by]}` : ""}
+                              {t.created_by && profileMap[t.created_by] ? " às " : ""}
+                              {format(new Date(t.created_at), "HH:mm")}
+                            </p>
                           </div>
 
                           {/* Amount + Status */}
