@@ -174,16 +174,53 @@ Deno.serve(async (req) => {
     // ========== WOOVI - Dynamic QR ==========
     if (provider === 'woovi') {
       externalId = generateCorrelationID();
+
+      // Step 1: Decode the EMV via Woovi's own decode endpoint
+      const decodeUrl = `${config.base_url}/api/v1/qrcode/decode`;
+      console.log('[pix-pay-qrc] Woovi: decoding EMV via /api/v1/qrcode/decode');
+
+      const decodeResponse = await fetch(decodeUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': access_token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ emv: qr_code }),
+      });
+
+      let wooviDecoded: any = null;
+      if (decodeResponse.ok) {
+        wooviDecoded = await decodeResponse.json();
+        console.log('[pix-pay-qrc] Woovi decode result:', JSON.stringify(wooviDecoded));
+      } else {
+        const decodeErr = await decodeResponse.text();
+        console.warn('[pix-pay-qrc] Woovi decode failed:', decodeErr);
+      }
+
+      // Step 2: Try paying with PIX_KEY using the extracted key
+      // Dynamic QR codes from other PSPs (e.g. Mercado Pago) are not accepted
+      // by Woovi's QR_CODE payment type, so we fall back to PIX_KEY
+      const payKey = wooviDecoded?.pixKey?.pixKey || destKey;
+      const payKeyType = wooviDecoded?.pixKey?.type || 'EMAIL';
+
+      if (!payKey) {
+        return new Response(
+          JSON.stringify({ error: 'Could not extract Pix key for payment' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const payUrl = `${config.base_url}/api/v1/payment`;
       const wooviPayload = {
-        type: 'QR_CODE',
-        qrCode: qr_code, // Full EMV copia-e-cola
-        value: Math.round(paymentAmount * 100), // centavos
+        type: 'PIX_KEY',
+        destinationAlias: payKey,
+        destinationAliasType: payKeyType,
+        value: Math.round(paymentAmount * 100),
         comment: descricao || 'Pagamento via QR Code',
         correlationID: externalId,
       };
 
-      console.log('[pix-pay-qrc] Woovi QR_CODE payload:', JSON.stringify(wooviPayload));
+      console.log('[pix-pay-qrc] Woovi PIX_KEY payload:', JSON.stringify(wooviPayload));
 
       const payResponse = await fetch(payUrl, {
         method: 'POST',
@@ -204,7 +241,7 @@ Deno.serve(async (req) => {
       }
 
       paymentData = await payResponse.json();
-      console.log('[pix-pay-qrc] Woovi QR payment created:', JSON.stringify(paymentData));
+      console.log('[pix-pay-qrc] Woovi payment created:', JSON.stringify(paymentData));
 
       // Auto-approve
       const approveUrl = `${config.base_url}/api/v1/payment/approve`;
@@ -219,7 +256,7 @@ Deno.serve(async (req) => {
 
       if (approveResponse.ok) {
         const approveData = await approveResponse.json();
-        console.log('[pix-pay-qrc] Woovi QR payment approved:', JSON.stringify(approveData));
+        console.log('[pix-pay-qrc] Woovi payment approved:', JSON.stringify(approveData));
         paymentData = { ...paymentData, ...approveData };
       } else {
         const approveErrorText = await approveResponse.text();
