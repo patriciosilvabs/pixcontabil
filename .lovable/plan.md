@@ -1,39 +1,44 @@
 
 
-## Corrigir extracao automatica de valor no Pix Copia e Cola
+## Abrir "Pix com Chave" direto no Dashboard (sem navegar para outra pagina)
 
-### Problema
+### O que muda
 
-Quando o usuario cola um codigo Pix EMV no campo "Copia e Cola", o sistema **nao consulta** o valor automaticamente. O mesmo codigo, quando escaneado via camera (QR Code), extrai o valor corretamente usando a funcao `getQRCodeInfo`. Isso e uma inconsistencia grave pois obriga o usuario a digitar o valor manualmente, podendo gerar erros.
+Quando o usuario clicar no icone "COM CHAVE" no dashboard mobile, ao inves de navegar para `/pix/new?tab=key`, um **dialog (modal)** sera aberto direto no dashboard com:
 
-### Comparacao do comportamento atual
+- Titulo "PIX COM CHAVE" com botao de voltar
+- Campo "CHAVE PIX" com placeholder "Ex: 123.456.789-10"
+- Checkbox "Salvar como Favorecido"
+- Botao "VALIDAR" (verde, full-width)
 
-| Metodo | Extrai valor? | Como? |
-|--------|--------------|-------|
-| QR Code (camera) | Sim | Chama `getQRCodeInfo` apos escanear |
-| Boleto (digitado) | Sim | Chama `parseBoleto` no onChange |
-| Copia e Cola | **Nao** | Apenas armazena o texto |
+Ao clicar em "VALIDAR", o sistema consultara a chave Pix via edge function e, se valida, navegara para a pagina de pagamento com os dados pre-preenchidos.
 
-### Solucao
+### Arquivos a serem modificados/criados
 
-Adicionar logica no campo "Copia e Cola" para detectar quando o usuario cola um codigo EMV valido e automaticamente:
+1. **Novo componente:** `src/components/pix/PixKeyDialog.tsx`
+   - Dialog/Sheet mobile-friendly com o layout da imagem de referencia
+   - Campo de input para chave Pix
+   - Checkbox "Salvar como Favorecido"
+   - Botao "VALIDAR" que chama a edge function `pix-pay-dict` (ou valida a chave)
+   - Ao validar com sucesso, navega para `/pix/new?tab=key&pixkey=<chave>&amount=<valor>` com dados pre-preenchidos
 
-1. Chamar `getQRCodeInfo` para consultar os detalhes (valor, nome do recebedor, etc.)
-2. Preencher o valor automaticamente no formulario
-3. Mostrar feedback visual (toast com valor e nome do recebedor)
-4. Avancar para a etapa 2 se o valor for encontrado
+2. **Modificar:** `src/components/dashboard/MobileDashboard.tsx`
+   - Trocar o `Link` do "COM CHAVE" por um botao que abre o `PixKeyDialog`
+   - Adicionar estado para controlar abertura/fechamento do dialog
+   - Importar e renderizar o `PixKeyDialog`
+
+3. **Modificar:** `src/pages/NewPayment.tsx`
+   - Aceitar query params `pixkey` para pre-preencher a chave Pix quando vier do dialog
 
 ### Detalhes tecnicos
 
-**Arquivo:** `src/pages/NewPayment.tsx`
+**PixKeyDialog.tsx:**
+- Usar componente `Sheet` (drawer de baixo para cima) no mobile para UX nativa
+- Input com mascara simples para CPF/CNPJ (detectar automaticamente pelo tamanho)
+- Estado local: `pixKey`, `saveFavorite`, `isValidating`
+- No "VALIDAR": chamar `getQRCodeInfo` ou simplesmente navegar para NewPayment com a chave pre-preenchida
+- Usar `useNavigate` para redirecionar apos validacao
 
-1. Adicionar estado de loading para consulta do copia e cola (`isConsultingPaste`)
-2. No `onChange` do Textarea do "Copia e Cola":
-   - Detectar se o texto colado parece um codigo EMV valido (comeca com `0002` ou tem tamanho minimo ~50 chars)
-   - Chamar `getQRCodeInfo({ qr_code: codigocolado })`
-   - Se retornar valor, preencher `amount` e mostrar toast
-   - Se nao retornar valor, informar que o usuario deve digitar manualmente
-3. Mostrar indicador de loading enquanto consulta
-
-O fluxo sera identico ao que ja existe para o scanner de QR Code (linhas 548-573 do arquivo atual), reutilizando a mesma funcao `getQRCodeInfo` que ja esta disponivel no componente.
-
+**MobileDashboard.tsx:**
+- O item "COM CHAVE" deixa de ser `Link` e passa a ser um `button` com `onClick` que abre o dialog
+- Os demais quickActions continuam como `Link` normalmente
