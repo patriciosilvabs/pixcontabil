@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
+import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -43,12 +44,21 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
   const [qrPaymentOpen, setQrPaymentOpen] = useState(false);
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
+  const [scannedBarcode, setScannedBarcode] = useState("");
+  const [boletoPaymentOpen, setBoletoPaymentOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleQrScan = (result: string) => {
     setQrScannerOpen(false);
     setScannedQrCode(result);
     setQrPaymentOpen(true);
+  };
+
+  const handleBarcodeScan = (result: string) => {
+    setBarcodeScannerOpen(false);
+    setScannedBarcode(result);
+    setBoletoPaymentOpen(true);
   };
 
   return (
@@ -86,12 +96,17 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
           {quickActions.map((action) => {
             const isPixKey = action.label === "COM CHAVE";
             const isQrCode = action.label === "PAGAR QR CODE";
+            const isBoleto = action.label === "BOLETO";
 
-            if (isPixKey || isQrCode) {
+            if (isPixKey || isQrCode || isBoleto) {
               return (
                 <button
                   key={action.label}
-                  onClick={() => isPixKey ? setPixKeyOpen(true) : setQrScannerOpen(true)}
+                  onClick={() => {
+                    if (isPixKey) setPixKeyOpen(true);
+                    else if (isQrCode) setQrScannerOpen(true);
+                    else if (isBoleto) setBarcodeScannerOpen(true);
+                  }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
                 >
                   <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
@@ -133,6 +148,17 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         open={qrPaymentOpen}
         qrCode={scannedQrCode}
         onOpenChange={setQrPaymentOpen}
+      />
+      <BarcodeScanner
+        mode="barcode"
+        isOpen={barcodeScannerOpen}
+        onScan={handleBarcodeScan}
+        onClose={() => setBarcodeScannerOpen(false)}
+      />
+      <BoletoPaymentDrawer
+        open={boletoPaymentOpen}
+        barcode={scannedBarcode}
+        onOpenChange={setBoletoPaymentOpen}
       />
 
       {/* Recent Transactions */}
