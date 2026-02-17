@@ -1,50 +1,73 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2 } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import { ArrowLeft, Loader2, QrCode, DollarSign, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 
-interface PixKeyDialogProps {
+interface PixQrPaymentDrawerProps {
   open: boolean;
+  qrCode: string;
   onOpenChange: (open: boolean) => void;
 }
 
-export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
+export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentDrawerProps) {
   const navigate = useNavigate();
-  const { payByKey, isProcessing } = usePixPayment();
+  const { getQRCodeInfo, payByQRCode, isProcessing } = usePixPayment();
   const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [pixKey, setPixKey] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [amount, setAmount] = useState("");
-  const [saveFavorite, setSaveFavorite] = useState(false);
+  const [merchantName, setMerchantName] = useState("");
+  const [merchantCity, setMerchantCity] = useState("");
+  const [pixKey, setPixKey] = useState("");
+  const [hasFixedAmount, setHasFixedAmount] = useState(false);
+
+  useEffect(() => {
+    if (!open || !qrCode) return;
+    setStep(1);
+    setIsLoading(true);
+    setAmount("");
+    setMerchantName("");
+    setMerchantCity("");
+    setPixKey("");
+    setHasFixedAmount(false);
+
+    (async () => {
+      const info = await getQRCodeInfo({ qr_code: qrCode });
+      setIsLoading(false);
+      if (info) {
+        setMerchantName(info.merchant_name || "");
+        setMerchantCity(info.merchant_city || "");
+        setPixKey(info.pix_key || "");
+        if (info.amount && info.amount > 0) {
+          setAmount(info.amount.toFixed(2).replace(".", ","));
+          setHasFixedAmount(true);
+          // Skip amount step, go straight to confirmation
+          setStep(3);
+        } else {
+          setStep(2);
+        }
+      } else {
+        toast.error("Não foi possível ler os dados do QR Code");
+        setStep(2);
+      }
+    })();
+  }, [open, qrCode]);
 
   const handleClose = () => {
-    setPixKey("");
-    setAmount("");
-    setSaveFavorite(false);
-    setStep(1);
     onOpenChange(false);
   };
 
   const handleBack = () => {
-    if (step === 1) {
+    if (step <= 2) {
       handleClose();
     } else {
       setStep((s) => (s - 1) as 1 | 2 | 3);
     }
-  };
-
-  const handleStep1 = () => {
-    const trimmed = pixKey.trim();
-    if (!trimmed) {
-      toast.error("Informe a chave Pix");
-      return;
-    }
-    setStep(2);
   };
 
   const handleStep2 = () => {
@@ -58,8 +81,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
   const handleConfirm = async () => {
     const value = parseFloat(amount.replace(",", "."));
-    const result = await payByKey({
-      pix_key: pixKey.trim(),
+    const result = await payByQRCode({
+      qr_code: qrCode,
       valor: value,
     });
 
@@ -75,8 +98,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const stepIcon = step === 1 ? Key : step === 2 ? DollarSign : CheckCircle2;
-  const stepTitle = step === 1 ? "Pix com Chave" : step === 2 ? "Valor do Pagamento" : "Confirmar Pagamento";
+  const stepIcon = step === 1 ? QrCode : step === 2 ? DollarSign : CheckCircle2;
+  const stepTitle = step === 1 ? "Lendo QR Code" : step === 2 ? "Valor do Pagamento" : "Confirmar Pagamento";
   const StepIcon = stepIcon;
 
   return (
@@ -112,53 +135,35 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             ))}
           </div>
 
-          {/* Step 1: Pix Key */}
-          {step === 1 && (
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="pix-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Chave Pix
-                </Label>
-                <Input
-                  id="pix-key"
-                  placeholder="Ex: 123.456.789-10"
-                  value={pixKey}
-                  onChange={(e) => setPixKey(e.target.value)}
-                  className="h-12 text-base"
-                  autoFocus
-                />
+          {/* Step 1: Loading QR info */}
+          {step === 1 && isLoading && (
+            <div className="space-y-4 py-6">
+              <div className="flex flex-col items-center gap-3">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">Consultando dados do QR Code...</p>
               </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="save-favorite"
-                  checked={saveFavorite}
-                  onCheckedChange={(checked) => setSaveFavorite(checked === true)}
-                />
-                <Label htmlFor="save-favorite" className="text-sm font-medium cursor-pointer">
-                  Salvar como Favorecido
-                </Label>
-              </div>
-
-              <Button
-                onClick={handleStep1}
-                disabled={!pixKey.trim()}
-                className="w-full h-12 text-base font-bold uppercase tracking-wider"
-              >
-                Continuar
-              </Button>
+              <Skeleton className="h-12 w-full" />
+              <Skeleton className="h-12 w-full" />
             </div>
           )}
 
           {/* Step 2: Amount */}
           {step === 2 && (
             <div className="space-y-5">
+              {merchantName && (
+                <div className="rounded-xl bg-secondary p-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Recebedor</p>
+                  <p className="text-sm font-medium">{merchantName}</p>
+                  {merchantCity && <p className="text-xs text-muted-foreground">{merchantCity}</p>}
+                </div>
+              )}
+
               <div className="space-y-2">
-                <Label htmlFor="pix-amount" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                <Label htmlFor="qr-amount" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Valor (R$)
                 </Label>
                 <Input
-                  id="pix-amount"
+                  id="qr-amount"
                   type="text"
                   inputMode="decimal"
                   placeholder="0,00"
@@ -183,11 +188,24 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
           {step === 3 && (
             <div className="space-y-5">
               <div className="rounded-xl bg-secondary p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chave Pix</span>
-                  <span className="text-sm font-medium truncate ml-2 max-w-[60%] text-right">{pixKey}</span>
-                </div>
-                <div className="h-px bg-border" />
+                {merchantName && (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Recebedor</span>
+                      <span className="text-sm font-medium truncate ml-2 max-w-[60%] text-right">{merchantName}</span>
+                    </div>
+                    <div className="h-px bg-border" />
+                  </>
+                )}
+                {pixKey && (
+                  <>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chave Pix</span>
+                      <span className="text-sm font-medium truncate ml-2 max-w-[60%] text-right">{pixKey}</span>
+                    </div>
+                    <div className="h-px bg-border" />
+                  </>
+                )}
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</span>
                   <span className="text-lg font-bold text-primary">{formattedAmount()}</span>

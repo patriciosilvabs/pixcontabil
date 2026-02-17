@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
+import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,11 +41,14 @@ const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }
 export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const [scannedQrCode, setScannedQrCode] = useState("");
+  const [qrPaymentOpen, setQrPaymentOpen] = useState(false);
   const navigate = useNavigate();
 
   const handleQrScan = (result: string) => {
     setQrScannerOpen(false);
-    navigate(`/pix/new?tab=copy_paste&qrcode=${encodeURIComponent(result)}`);
+    setScannedQrCode(result);
+    setQrPaymentOpen(true);
   };
 
   return (
@@ -124,6 +128,11 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         isOpen={qrScannerOpen}
         onScan={handleQrScan}
         onClose={() => setQrScannerOpen(false)}
+      />
+      <PixQrPaymentDrawer
+        open={qrPaymentOpen}
+        qrCode={scannedQrCode}
+        onOpenChange={setQrPaymentOpen}
       />
 
       {/* Recent Transactions */}
