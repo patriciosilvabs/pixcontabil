@@ -18,6 +18,14 @@ function generateCorrelationID(): string {
   return crypto.randomUUID();
 }
 
+function detectKeyType(key: string): string {
+  if (/^\d{11}$/.test(key.replace(/\D/g, '')) && key.replace(/\D/g, '').length === 11) return 'CPF';
+  if (/^\d{14}$/.test(key.replace(/\D/g, '')) && key.replace(/\D/g, '').length === 14) return 'CNPJ';
+  if (key.includes('@')) return 'EMAIL';
+  if (/^\+?\d{10,13}$/.test(key.replace(/\D/g, ''))) return 'PHONE';
+  return 'RANDOM';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -175,9 +183,9 @@ Deno.serve(async (req) => {
     if (provider === 'woovi') {
       externalId = generateCorrelationID();
 
-      // Step 1: Decode the EMV via Woovi's own decode endpoint
-      const decodeUrl = `${config.base_url}/api/v1/qrcode/decode`;
-      console.log('[pix-pay-qrc] Woovi: decoding EMV via /api/v1/qrcode/decode');
+      // Step 1: Decode the EMV via Woovi's decode endpoint (correct path: /api/v1/decode/emv)
+      const decodeUrl = `${config.base_url}/api/v1/decode/emv`;
+      console.log('[pix-pay-qrc] Woovi: decoding EMV via /api/v1/decode/emv');
 
       const decodeResponse = await fetch(decodeUrl, {
         method: 'POST',
@@ -197,32 +205,22 @@ Deno.serve(async (req) => {
         console.warn('[pix-pay-qrc] Woovi decode failed:', decodeErr);
       }
 
-      // Step 2: Try paying with PIX_KEY using the extracted key
-      // Dynamic QR codes from other PSPs (e.g. Mercado Pago) are not accepted
-      // by Woovi's QR_CODE payment type, so we fall back to PIX_KEY
-      const payKey = wooviDecoded?.pixKey?.pixKey || destKey;
-      const payKeyType = wooviDecoded?.pixKey?.type || 'EMAIL';
-
-      if (!payKey) {
-        return new Response(
-          JSON.stringify({ error: 'Could not extract Pix key for payment' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
+      // Step 2: Try paying with QR_CODE type first (native cobv settlement)
+      // This ensures the terminal (maquininha) receives confirmation
       const payUrl = `${config.base_url}/api/v1/payment`;
-      const wooviPayload = {
-        type: 'PIX_KEY',
-        destinationAlias: payKey,
-        destinationAliasType: payKeyType,
+      
+      // First attempt: QR_CODE type with EMV (settles the original cobv charge)
+      let wooviPayload: any = {
+        type: 'QR_CODE',
+        qrCode: qr_code,
         value: Math.round(paymentAmount * 100),
         comment: descricao || 'Pagamento via QR Code',
         correlationID: externalId,
       };
 
-      console.log('[pix-pay-qrc] Woovi PIX_KEY payload:', JSON.stringify(wooviPayload));
+      console.log('[pix-pay-qrc] Woovi QR_CODE attempt:', JSON.stringify(wooviPayload));
 
-      const payResponse = await fetch(payUrl, {
+      let payResponse = await fetch(payUrl, {
         method: 'POST',
         headers: {
           'Authorization': access_token,
@@ -231,19 +229,83 @@ Deno.serve(async (req) => {
         body: JSON.stringify(wooviPayload),
       });
 
+      // If QR_CODE fails, try BRCODE type
       if (!payResponse.ok) {
-        const errorText = await payResponse.text();
-        console.error('[pix-pay-qrc] Woovi create payment error:', errorText);
-        return new Response(
-          JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        const qrErr = await payResponse.text();
+        console.warn('[pix-pay-qrc] Woovi QR_CODE failed:', qrErr, '- trying BRCODE type');
+
+        wooviPayload = {
+          type: 'BRCODE',
+          brcode: qr_code,
+          value: Math.round(paymentAmount * 100),
+          comment: descricao || 'Pagamento via QR Code',
+          correlationID: externalId + '-b',
+        };
+
+        payResponse = await fetch(payUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': access_token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(wooviPayload),
+        });
+      }
+
+      // If BRCODE also fails, fall back to PIX_KEY (won't settle cobv but money arrives)
+      if (!payResponse.ok) {
+        const brcodeErr = await payResponse.text();
+        console.warn('[pix-pay-qrc] Woovi BRCODE also failed:', brcodeErr, '- falling back to PIX_KEY');
+
+        const payKey = wooviDecoded?.pixKey?.pixKey || wooviDecoded?.chave || destKey;
+        const payKeyType = wooviDecoded?.pixKey?.type || detectKeyType(payKey || '');
+
+        if (!payKey) {
+          return new Response(
+            JSON.stringify({ 
+              error: 'Não foi possível pagar este QR Code. O provedor Woovi não suporta pagamento de QR Codes dinâmicos de outros PSPs (ex: Mercado Pago). O dinheiro pode ser enviado via chave Pix, mas a maquininha não confirmará o pagamento.',
+              unsupported_cobv: true 
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        externalId = generateCorrelationID();
+        wooviPayload = {
+          type: 'PIX_KEY',
+          destinationAlias: payKey,
+          destinationAliasType: payKeyType,
+          value: Math.round(paymentAmount * 100),
+          comment: descricao || 'Pagamento via QR Code',
+          correlationID: externalId,
+        };
+
+        console.log('[pix-pay-qrc] Woovi PIX_KEY fallback:', JSON.stringify(wooviPayload));
+
+        payResponse = await fetch(payUrl, {
+          method: 'POST',
+          headers: {
+            'Authorization': access_token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(wooviPayload),
+        });
+
+        if (!payResponse.ok) {
+          const errorText = await payResponse.text();
+          console.error('[pix-pay-qrc] Woovi all payment attempts failed:', errorText);
+          return new Response(
+            JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
       }
 
       paymentData = await payResponse.json();
       console.log('[pix-pay-qrc] Woovi payment created:', JSON.stringify(paymentData));
 
       // Auto-approve
+      const finalCorrelationID = paymentData.payment?.correlationID || externalId;
       const approveUrl = `${config.base_url}/api/v1/payment/approve`;
       const approveResponse = await fetch(approveUrl, {
         method: 'POST',
@@ -251,7 +313,7 @@ Deno.serve(async (req) => {
           'Authorization': access_token,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ correlationID: externalId }),
+        body: JSON.stringify({ correlationID: finalCorrelationID }),
       });
 
       if (approveResponse.ok) {
