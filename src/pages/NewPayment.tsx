@@ -70,6 +70,7 @@ export default function NewPayment() {
   const [isLoading, setIsLoading] = useState(false);
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerMode, setScannerMode] = useState<"qrcode" | "barcode">("qrcode");
+  const [isConsultingPaste, setIsConsultingPaste] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -298,10 +299,52 @@ export default function NewPayment() {
                       placeholder="Cole aqui o código Pix..."
                       className="min-h-[100px] font-mono text-sm"
                       value={pixData.copyPaste || ""}
-                      onChange={(e) =>
-                        setPixData({ ...pixData, copyPaste: e.target.value })
-                      }
+                      disabled={isConsultingPaste}
+                      onChange={async (e) => {
+                        const code = e.target.value;
+                        setPixData((prev) => ({ ...prev, copyPaste: code }));
+
+                        // Detect EMV code and auto-extract value
+                        const clean = code.trim();
+                        if (clean.length >= 50 && clean.startsWith("0002")) {
+                          setIsConsultingPaste(true);
+                          toast({
+                            title: "Consultando código Pix...",
+                            description: "Extraindo informações do pagamento.",
+                          });
+                          try {
+                            const info = await getQRCodeInfo({ qr_code: clean });
+                            if (info && info.amount && info.amount > 0) {
+                              setPixData((prev) => ({
+                                ...prev,
+                                copyPaste: clean,
+                                amount: info.amount!.toFixed(2).replace(".", ","),
+                              }));
+                              toast({
+                                title: "Pix identificado!",
+                                description: `Valor: R$ ${info.amount.toFixed(2).replace(".", ",")}${info.merchant_name ? ` • ${info.merchant_name}` : ''}`,
+                              });
+                              setStep(2);
+                            } else {
+                              toast({
+                                title: "Código capturado",
+                                description: "Informe o valor manualmente.",
+                              });
+                            }
+                          } catch (err) {
+                            console.error('[NewPayment] Paste lookup error:', err);
+                          } finally {
+                            setIsConsultingPaste(false);
+                          }
+                        }
+                      }}
                     />
+                    {isConsultingPaste && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Consultando informações...
+                      </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Cole o código Pix Copia e Cola completo
                     </p>
@@ -518,7 +561,7 @@ export default function NewPayment() {
               step === 1 && "w-full"
             )}
             onClick={handleNext}
-            disabled={isLoading || isPixProcessing || isBilletProcessing}
+            disabled={isLoading || isPixProcessing || isBilletProcessing || isConsultingPaste}
           >
             {isLoading ? (
               <>
