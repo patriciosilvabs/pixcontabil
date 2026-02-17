@@ -91,10 +91,15 @@ Deno.serve(async (req) => {
 
     const qrcInfo = await qrcInfoResponse.json();
     const paymentAmount = valor || qrcInfo.amount || 0;
+    const MAX_PAYMENT_VALUE = 1_000_000;
+    if (paymentAmount <= 0 || paymentAmount > MAX_PAYMENT_VALUE) {
+      return new Response(
+        JSON.stringify({ error: `Valor inválido: R$ ${paymentAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}. O valor deve estar entre R$ 0,01 e R$ ${MAX_PAYMENT_VALUE.toLocaleString('pt-BR')}.` }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     const qrType = qrcInfo.type; // "dynamic" or "static"
     const destKey = qrcInfo.pix_key;
-
-    console.log(`[pix-pay-qrc] QR type: ${qrType}, provider: ${provider}, amount: ${paymentAmount}`);
 
     // ===== STATIC QR CODE: delegate to pix-pay-dict (works correctly) =====
     if (qrType !== 'dynamic') {

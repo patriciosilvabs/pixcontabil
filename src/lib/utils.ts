@@ -151,6 +151,45 @@ export function generateId(): string {
   return Math.random().toString(36).substring(2, 15);
 }
 
+// Parse localized number (handles BR format: 1.234,56 and US format: 1,234.56)
+export function parseLocalizedNumber(value: string, useCommaDecimal?: boolean): number {
+  if (!value || value === "") return 0;
+
+  let str = String(value).trim();
+
+  // Remove currency symbols and spaces
+  str = str.replace(/[R$\u20AC£¥\s]/g, "");
+
+  // Auto-detect format if not specified
+  const lastComma = str.lastIndexOf(",");
+  const lastDot = str.lastIndexOf(".");
+
+  const isCommaDecimal = useCommaDecimal ?? (lastComma > lastDot);
+
+  if (isCommaDecimal) {
+    // Comma as decimal: 1.234,56
+    str = str.replace(/\./g, ""); // Remove thousand separators
+    str = str.replace(",", "."); // Convert decimal separator
+  } else {
+    // Dot as decimal: 1,234.56
+    str = str.replace(/,/g, ""); // Remove thousand separators
+  }
+
+  const parsed = parseFloat(str);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+// Max allowed payment value (R$ 1.000.000,00)
+export const MAX_PAYMENT_VALUE = 1_000_000;
+
+// Validate payment amount is within acceptable range
+export function isValidPaymentAmount(value: number): { valid: boolean; message?: string } {
+  if (!value || value <= 0) return { valid: false, message: "Informe um valor válido" };
+  if (value < 0.01) return { valid: false, message: "O valor mínimo é R$ 0,01" };
+  if (value > MAX_PAYMENT_VALUE) return { valid: false, message: `O valor máximo permitido é R$ ${MAX_PAYMENT_VALUE.toLocaleString("pt-BR")}` };
+  return { valid: true };
+}
+
 // Debounce function
 export function debounce<T extends (...args: unknown[]) => unknown>(
   func: T,

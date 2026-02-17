@@ -9,6 +9,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ArrowLeft, Loader2, ClipboardPaste, DollarSign, CheckCircle2, Clipboard } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 
 interface PixCopyPasteDrawerProps {
   open: boolean;
@@ -100,16 +101,17 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   };
 
   const handleAmountContinue = () => {
-    const value = parseFloat(amount.replace(",", "."));
-    if (!value || value <= 0) {
-      toast.error("Informe um valor válido");
+    const value = parseLocalizedNumber(amount);
+    const validation = isValidPaymentAmount(value);
+    if (!validation.valid) {
+      toast.error(validation.message);
       return;
     }
     setStep(4);
   };
 
   const handleConfirm = async () => {
-    const value = parseFloat(amount.replace(",", "."));
+    const value = parseLocalizedNumber(amount);
     const result = await payByQRCode({
       qr_code: emvCode.trim(),
       valor: value,
@@ -122,7 +124,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   };
 
   const formattedAmount = () => {
-    const value = parseFloat(amount.replace(",", "."));
+    const value = parseLocalizedNumber(amount);
     if (isNaN(value)) return "R$ 0,00";
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
@@ -241,7 +243,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
 
               <Button
                 onClick={handleAmountContinue}
-                disabled={!amount || parseFloat(amount.replace(",", ".")) <= 0}
+                disabled={!amount || parseLocalizedNumber(amount) <= 0}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar
