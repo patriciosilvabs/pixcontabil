@@ -1,40 +1,55 @@
 
 
-## Drawer "Copia e Cola" direto no Dashboard
+## Exibir nome do usuario e data/hora em todas as transacoes
 
 ### Objetivo
 
-Ao clicar no icone "COPIA E COLA" no dashboard, abrir um drawer (bottom sheet) com campo de texto para colar o codigo Pix EMV, incluindo um botao "Colar" para facilitar. O pagamento sera concluido sem sair do dashboard, seguindo o mesmo padrao dos fluxos "COM CHAVE", "PAGAR QR CODE" e "BOLETO".
+Incluir o nome do usuario que realizou cada transacao (campo `created_by`) junto com data e hora em todos os locais da aplicacao que exibem transacoes: Relatorios, Historico de Transacoes e Resumo Diario.
 
-### Fluxo do Drawer
+### Como funciona hoje
 
-1. **Etapa 1** - Campo de texto + botao "Colar" (cola automaticamente do clipboard)
-2. **Etapa 2** - Carregamento dos dados do codigo (usa `getQRCodeInfo`)
-3. **Etapa 3** - Valor (se nao veio fixo no codigo)
-4. **Etapa 4** - Confirmacao e pagamento (usa `payByQRCode`)
+- A query de transacoes usa `select("*, categories(...), receipts(...)")` mas **nao faz join com profiles** para buscar o nome do usuario
+- Nenhuma tela exibe quem fez a transacao
 
 ### Alteracoes
 
-#### 1. Novo componente `src/components/pix/PixCopyPasteDrawer.tsx`
+#### 1. `src/pages/Reports.tsx`
 
-- Drawer com 3-4 etapas, seguindo o padrao visual do `PixQrPaymentDrawer`
-- Etapa 1: campo `textarea` para colar o codigo EMV + botao "Colar" que usa `navigator.clipboard.readText()` para preencher automaticamente + botao "Continuar"
-- Ao continuar, chama `getQRCodeInfo` para extrair dados (recebedor, valor, chave)
-- Se o codigo ja tiver valor fixo, pula direto para confirmacao
-- Se nao, exibe etapa de valor
-- Etapa final: resumo com recebedor, chave, valor e botao "Confirmar Pagamento"
-- Usa `payByQRCode` do hook `usePixPayment` para processar
+- Alterar a query para incluir o join com profiles: `profiles!transactions_created_by_fkey(full_name)`
+- Passar os dados de profile junto com as transacoes para o componente `DailyTransactionSummary`
 
-#### 2. Alterar `src/components/dashboard/MobileDashboard.tsx`
+#### 2. `src/components/reports/DailyTransactionSummary.tsx`
 
-- Adicionar estados `copyPasteOpen` e `copyPasteCode`
-- Importar `PixCopyPasteDrawer`
-- No bloco de acoes rapidas, tratar "COPIA E COLA" como botao (igual "COM CHAVE", "PAGAR QR CODE", "BOLETO") em vez de Link
-- Ao clicar, abrir o drawer `PixCopyPasteDrawer`
-- Adicionar o componente `PixCopyPasteDrawer` no JSX junto aos demais drawers
+- Atualizar a interface `Transaction` para incluir `profiles?: { full_name: string } | null`
+- Exibir o nome do usuario e o horario (HH:mm) em cada linha de transacao, abaixo da descricao ou ao lado da categoria
+- Formato: "por Fulano as 14:32"
+
+#### 3. `src/pages/Transactions.tsx`
+
+- Alterar a query para incluir: `profiles!transactions_created_by_fkey(full_name)`
+- Adicionar campo `createdBy` no mapeamento de `TransactionRow`
+- Exibir o nome do usuario na listagem, junto com a data/hora ja existente
+- Formato: "por Fulano - 17/02/2026 14:32"
+
+#### 4. `src/components/payment/RecentPayments.tsx`
+
+- Alterar a query para incluir `profiles!transactions_created_by_fkey(full_name)`
+- Exibir o nome do usuario abaixo de cada pagamento recente
 
 ### Detalhes tecnicos
 
-- O botao "Colar" usara `navigator.clipboard.readText()` com fallback para toast de erro caso a permissao seja negada
-- O componente reutiliza `usePixPayment` (funcoes `getQRCodeInfo` e `payByQRCode`) ja existentes
-- Layout segue o padrao dos outros drawers: header com seta voltar, indicador de etapas, e botoes full-width
+- A tabela `transactions` tem o campo `created_by` (uuid) que referencia `auth.users`
+- A tabela `profiles` tem `user_id` que corresponde ao `created_by`
+- O join sera feito via foreign key hint: `profiles!transactions_created_by_fkey(full_name)` -- se a FK nao existir diretamente, usaremos uma subquery ou criaremos a FK via migracao
+- Nenhuma alteracao de schema e necessaria se usarmos o campo `created_by` com um join manual via `profiles` usando `user_id`
+- Alternativa: buscar profiles separadamente e fazer o match no frontend pelo `created_by` = `profiles.user_id`
+
+### Abordagem escolhida
+
+Como a FK de `transactions.created_by` aponta para `auth.users` (e nao para `profiles`), faremos o match no frontend:
+1. Buscar `profiles` da empresa (admins ja tem acesso via RLS)
+2. Criar um map `userId -> fullName`
+3. Usar esse map para exibir o nome em cada transacao
+
+Isso evita criar migracoes e funciona com as RLS policies existentes.
+
