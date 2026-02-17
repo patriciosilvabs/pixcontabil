@@ -68,3 +68,6 @@ verify_jwt = false
 
 [functions.pix-balance]
 verify_jwt = false
+
+[functions.delete-user]
+verify_jwt = false
