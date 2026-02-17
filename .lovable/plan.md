@@ -1,55 +1,69 @@
 
 
-## Exibir nome do usuario e data/hora em todas as transacoes
+## Corrigir parsing de valores monetarios em todo o sistema
 
-### Objetivo
+### Problema identificado
 
-Incluir o nome do usuario que realizou cada transacao (campo `created_by`) junto com data e hora em todos os locais da aplicacao que exibem transacoes: Relatorios, Historico de Transacoes e Resumo Diario.
-
-### Como funciona hoje
-
-- A query de transacoes usa `select("*, categories(...), receipts(...)")` mas **nao faz join com profiles** para buscar o nome do usuario
-- Nenhuma tela exibe quem fez a transacao
+O valor "5.303.986.540.579,90" apareceu porque o sistema nao trata corretamente numeros formatados no padrao brasileiro (pontos como separador de milhar, virgula como decimal). Isso afeta tanto o backend (extracao de valor do EMV) quanto o frontend (campos de valor e exibicao).
 
 ### Alteracoes
 
-#### 1. `src/pages/Reports.tsx`
+#### 1. Criar funcao `parseLocalizedNumber` em `src/lib/utils.ts`
 
-- Alterar a query para incluir o join com profiles: `profiles!transactions_created_by_fkey(full_name)`
-- Passar os dados de profile junto com as transacoes para o componente `DailyTransactionSummary`
+Adicionar uma funcao robusta de parsing que:
+- Remove separadores de milhar (pontos no formato BR)
+- Converte virgula decimal para ponto
+- Auto-detecta o formato baseado na posicao do ultimo ponto vs ultima virgula
+- Retorna 0 para valores invalidos
 
-#### 2. `src/components/reports/DailyTransactionSummary.tsx`
+#### 2. Corrigir parsing do EMV tag 54 em `supabase/functions/pix-qrc-info/index.ts`
 
-- Atualizar a interface `Transaction` para incluir `profiles?: { full_name: string } | null`
-- Exibir o nome do usuario e o horario (HH:mm) em cada linha de transacao, abaixo da descricao ou ao lado da categoria
-- Formato: "por Fulano as 14:32"
+Substituir a regex gulosa na linha 93:
+```
+const amountMatch = qr_code.match(/54(\d{2})(\d+\.\d{2})/);
+```
 
-#### 3. `src/pages/Transactions.tsx`
+Por um parser TLV correto que:
+- Percorre as tags do EMV sequencialmente (Tag 2 chars + Length 2 chars + Value)
+- Extrai APENAS o valor da tag 54 com o comprimento correto
+- Evita capturar digitos de tags adjacentes (53, 58, etc.)
 
-- Alterar a query para incluir: `profiles!transactions_created_by_fkey(full_name)`
-- Adicionar campo `createdBy` no mapeamento de `TransactionRow`
-- Exibir o nome do usuario na listagem, junto com a data/hora ja existente
-- Formato: "por Fulano - 17/02/2026 14:32"
+#### 3. Aplicar `parseLocalizedNumber` em todos os drawers de pagamento
 
-#### 4. `src/components/payment/RecentPayments.tsx`
+Substituir `parseFloat(amount.replace(",", "."))` por `parseLocalizedNumber(amount)` nos seguintes arquivos:
+- `src/components/pix/PixCopyPasteDrawer.tsx` (linhas 103, 112, 125, 243)
+- `src/components/pix/PixQrPaymentDrawer.tsx` (linhas 74, 83, 96, 179)
+- `src/components/pix/PixKeyDialog.tsx` (linhas 51, 60, 73, 175)
+- `src/components/payment/BoletoPaymentDrawer.tsx` (se aplicavel)
 
-- Alterar a query para incluir `profiles!transactions_created_by_fkey(full_name)`
-- Exibir o nome do usuario abaixo de cada pagamento recente
+#### 4. Adicionar validacao de limite de valor
+
+Nos drawers e nas edge functions, adicionar uma verificacao de sanidade:
+- Frontend: antes de confirmar, validar se o valor esta entre R$ 0,01 e R$ 999.999,99 (ou limite configuravel)
+- Edge functions (`pix-pay-qrc`, `pix-pay-dict`): rejeitar valores acima de um teto razoavel (ex: R$ 1.000.000,00), retornando erro claro
 
 ### Detalhes tecnicos
 
-- A tabela `transactions` tem o campo `created_by` (uuid) que referencia `auth.users`
-- A tabela `profiles` tem `user_id` que corresponde ao `created_by`
-- O join sera feito via foreign key hint: `profiles!transactions_created_by_fkey(full_name)` -- se a FK nao existir diretamente, usaremos uma subquery ou criaremos a FK via migracao
-- Nenhuma alteracao de schema e necessaria se usarmos o campo `created_by` com um join manual via `profiles` usando `user_id`
-- Alternativa: buscar profiles separadamente e fazer o match no frontend pelo `created_by` = `profiles.user_id`
+**Funcao parseLocalizedNumber:**
+```text
+parseLocalizedNumber("5.303.986,90")  -> 5303986.90 (corrige formato BR)
+parseLocalizedNumber("79,90")         -> 79.90
+parseLocalizedNumber("2.00")          -> 2.00 (formato US preservado)
+parseLocalizedNumber("1234.56")       -> 1234.56
+```
 
-### Abordagem escolhida
+**Parser TLV para EMV:**
+```text
+Em vez de regex, percorrer o EMV tag por tag:
+  pos=0: tag="00", len=02, val="01" -> avanca
+  pos=4: tag="01", len=02, val="12" -> avanca
+  ...
+  pos=N: tag="54", len=05, val="79.90" -> EXTRAI AMOUNT
+  ...
+Isso garante que o valor extraido respeita o comprimento da tag.
+```
 
-Como a FK de `transactions.created_by` aponta para `auth.users` (e nao para `profiles`), faremos o match no frontend:
-1. Buscar `profiles` da empresa (admins ja tem acesso via RLS)
-2. Criar um map `userId -> fullName`
-3. Usar esse map para exibir o nome em cada transacao
-
-Isso evita criar migracoes e funciona com as RLS policies existentes.
+**Validacao de teto:**
+- Frontend exibe alerta: "O valor R$ X parece incorreto. Deseja continuar?"
+- Backend rejeita com erro 400: "Valor acima do limite permitido"
 
