@@ -1,5 +1,7 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
+import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -37,6 +39,13 @@ const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }
 
 export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
+  const [qrScannerOpen, setQrScannerOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const handleQrScan = (result: string) => {
+    setQrScannerOpen(false);
+    navigate(`/pix/new?tab=copy_paste&qrcode=${encodeURIComponent(result)}`);
+  };
 
   return (
     <div className="px-4 pt-4 pb-24 space-y-6">
@@ -70,21 +79,28 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
           Funções Principais
         </h2>
         <div className="grid grid-cols-4 gap-3">
-          {quickActions.map((action) =>
-            action.label === "COM CHAVE" ? (
-              <button
-                key={action.label}
-                onClick={() => setPixKeyOpen(true)}
-                className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
-              >
-                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
-                  <action.icon className="h-6 w-6 text-primary-foreground" />
-                </div>
-                <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
-                  {action.label}
-                </span>
-              </button>
-            ) : (
+          {quickActions.map((action) => {
+            const isPixKey = action.label === "COM CHAVE";
+            const isQrCode = action.label === "PAGAR QR CODE";
+
+            if (isPixKey || isQrCode) {
+              return (
+                <button
+                  key={action.label}
+                  onClick={() => isPixKey ? setPixKeyOpen(true) : setQrScannerOpen(true)}
+                  className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
+                >
+                  <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
+                    <action.icon className="h-6 w-6 text-primary-foreground" />
+                  </div>
+                  <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
+                    {action.label}
+                  </span>
+                </button>
+              );
+            }
+
+            return (
               <Link
                 key={action.label}
                 to={action.href}
@@ -97,12 +113,18 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                   {action.label}
                 </span>
               </Link>
-            )
-          )}
+            );
+          })}
         </div>
       </div>
 
       <PixKeyDialog open={pixKeyOpen} onOpenChange={setPixKeyOpen} />
+      <BarcodeScanner
+        mode="qrcode"
+        isOpen={qrScannerOpen}
+        onScan={handleQrScan}
+        onClose={() => setQrScannerOpen(false)}
+      />
 
       {/* Recent Transactions */}
       <div>
