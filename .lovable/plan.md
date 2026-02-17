@@ -1,56 +1,49 @@
 
-## Isolamento de dados por usuario (operador vs admin)
 
-### Problema
+## Botao "Excluir" usuario -- remocao completa do banco
 
-Atualmente, os dados de transacoes no dashboard e nos pagamentos recentes mostram **todas as transacoes da empresa** para qualquer usuario, incluindo operadores. Apenas a pagina de Historico (Transactions) ja filtra corretamente.
+### O que sera feito
 
-A regra de negocio e:
-- **Operador**: ve somente suas proprias transacoes e pagamentos
-- **Admin**: ve todas as transacoes de todos os usuarios da empresa
+Adicionar um botao "Excluir" ao lado de "Editar" e "Desativar" na tabela de usuarios. Ao clicar, um dialogo de confirmacao aparece. Ao confirmar, o usuario sera **completamente removido** do sistema (auth + todas as tabelas relacionadas).
 
-### O que sera corrigido
+### Arquivos a criar/modificar
 
-| Local | Situacao atual | Correcao |
-|-------|---------------|----------|
-| Dashboard (resumo + transacoes recentes) | Mostra tudo da empresa | Filtrar por `created_by = user.id` para operadores |
-| Pagamentos Recentes (RecentPayments) | Mostra todos da empresa | Filtrar por `created_by = user.id` para operadores |
-| Historico de Transacoes | Ja filtra corretamente | Nenhuma alteracao |
-| Relatorios | Acesso restrito a admins | Nenhuma alteracao |
+#### 1. Criar `supabase/functions/delete-user/index.ts` -- Nova Edge Function
 
-### Arquivos a modificar
+Necessaria porque deletar usuarios do auth requer `service_role_key` (Admin API).
 
-#### 1. `src/hooks/useDashboardData.ts`
+A funcao ira:
+- Verificar que o chamador e admin (mesmo padrao do `create-user`)
+- Receber `user_id` no body
+- Impedir que o admin delete a si mesmo
+- Deletar na ordem correta (respeitar dependencias):
+  1. `user_page_permissions` (where user_id)
+  2. `user_roles` (where user_id)
+  3. `company_members` (where user_id)
+  4. `profiles` (where user_id)
+  5. `supabase.auth.admin.deleteUser(user_id)` -- remove do auth (cascata)
+- Retornar sucesso ou erro
 
-- Importar `isAdmin` e `user` do `useAuth()`
-- Na query de transacoes do mes, adicionar `.eq("created_by", user.id)` quando o usuario **nao for admin**
-- Isso garante que o resumo (custos, despesas, totais) e as transacoes recentes do dashboard reflitam apenas os dados do proprio operador
+#### 2. Modificar `src/pages/Users.tsx`
 
-#### 2. `src/components/payment/RecentPayments.tsx`
+- Adicionar estados: `deleteDialog` (boolean), `deletingMember` (MemberRow | null), `isDeleting` (boolean)
+- Adicionar funcao `handleDeleteUser`:
+  - Chama a edge function `delete-user` com o `user_id`
+  - Exibe toast de sucesso/erro
+  - Recarrega a lista
+- Adicionar botao "Excluir" (vermelho/destructive) na coluna de acoes de cada linha
+- Adicionar `AlertDialog` de confirmacao com mensagem "Tem certeza? Esta acao e irreversivel"
+- Impedir exclusao do proprio usuario logado
 
-- Importar `isAdmin` e `user` do `useAuth()`
-- Na query de pagamentos recentes, adicionar `.eq("created_by", user.id)` quando o usuario **nao for admin**
-- Isso garante que a lista "Ultimos Pagamentos" (usada para repetir pagamentos) mostre apenas os pagamentos feitos pelo proprio operador
-
-### Detalhes tecnicos
-
-Em ambos os arquivos, a logica sera:
+### Fluxo
 
 ```text
-const { currentCompany, isAdmin, user } = useAuth();
-
-let query = supabase.from("transactions").select(...)
-  .eq("company_id", currentCompany.id);
-
-if (!isAdmin && user) {
-  query = query.eq("created_by", user.id);
-}
+Admin clica "Excluir" na linha do usuario
+  -> AlertDialog: "Tem certeza que deseja excluir [nome]? Esta acao e irreversivel."
+  -> [Cancelar] [Excluir]
+  -> Chama edge function delete-user
+  -> Remove user_page_permissions, user_roles, company_members, profiles, auth.user
+  -> Toast "Usuario excluido"
+  -> Lista atualizada
 ```
 
-Este e o mesmo padrao ja utilizado em `Transactions.tsx`.
-
-### O que NAO muda
-
-- A pagina de Relatorios continua mostrando dados globais (acesso restrito a admins pelo AuthGuard)
-- As politicas RLS do banco permanecem inalteradas (a filtragem e feita no nivel da aplicacao, como ja esta implementado em Transactions.tsx)
-- A estrutura visual dos componentes nao sera alterada
