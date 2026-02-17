@@ -1,72 +1,27 @@
 
 
-## Checkbox "Acesso ao Saldo" na edicao de usuario
+## Ocultar card de saldo completamente quando sem permissao
 
 ### Problema
 
-Atualmente, o saldo e visivel para todos que tem acesso ao Dashboard (admins veem o valor real, operadores veem "---"). A necessidade e ter um controle granular: alguns usuarios com acesso ao Dashboard devem poder ver o saldo, outros nao.
-
-### Solucao
-
-Adicionar uma coluna `can_view_balance` na tabela `company_members` e um checkbox dedicado "Visualizar Saldo" no dialogo de edicao de usuario. O Dashboard usara essa permissao para decidir se mostra o saldo ou oculta.
+Atualmente, quando `canViewBalance` e `false`, o sistema mostra um card placeholder com "---" e "Saldo oculto". O correto e nao mostrar nenhum card de saldo.
 
 ### Alteracoes
 
-#### 1. Migracao no banco de dados
+#### 1. `src/components/dashboard/AdminDashboard.tsx`
 
-- Adicionar coluna `can_view_balance BOOLEAN DEFAULT false` na tabela `company_members`
-- Admins terao o valor `true` por padrao ao serem criados
+- Linhas 96-130: Remover o bloco `else` (card com "---") e renderizar o card de saldo apenas quando `canViewBalance` e `true`
+- O grid de 4 cards continuara funcionando normalmente com 3 cards quando o saldo estiver oculto
 
-#### 2. `src/types/database.ts` -- Atualizar tipo CompanyMember
+#### 2. `src/components/dashboard/OperatorDashboard.tsx`
 
-- Adicionar `can_view_balance?: boolean` a interface `CompanyMember`
+- Linhas 87-119: Remover o bloco `else` (card com "---" e "Saldo oculto para operadores") e renderizar apenas quando `canViewBalance` e `true`
 
-#### 3. `src/pages/Users.tsx` -- Adicionar checkbox no dialogo de edicao
+#### 3. `src/components/dashboard/MobileDashboard.tsx`
 
-- Novo estado `editCanViewBalance`
-- Carregar valor ao abrir edicao (`openEdit`)
-- Checkbox "Visualizar Saldo" abaixo do limite de pagamento, separado das permissoes de pagina
-- Salvar no `handleSave` via update em `company_members`
+- Linhas 72-92: Envolver o card de saldo inteiro em `{canViewBalance && (...)}` para que ele nao apareca quando a permissao estiver desativada
 
-#### 4. `src/contexts/AuthContext.tsx` -- Expor `canViewBalance`
+### Resultado
 
-- Ler `can_view_balance` do `companyMembership` e expor como `canViewBalance` no contexto
-
-#### 5. `src/components/dashboard/AdminDashboard.tsx` -- Condicionar exibicao do saldo
-
-- Usar `canViewBalance` do contexto
-- Se `false`, mostrar card de saldo oculto (mesmo estilo do OperatorDashboard)
-
-#### 6. `src/components/dashboard/OperatorDashboard.tsx` -- Condicionar exibicao do saldo
-
-- Usar `canViewBalance` do contexto
-- Se `true`, mostrar saldo real em vez de "---"
-
-#### 7. `src/components/dashboard/MobileDashboard.tsx` -- Condicionar exibicao do saldo
-
-- Receber `canViewBalance` como prop
-- Se `false`, ocultar valor do saldo
-
-### Detalhes tecnicos
-
-A logica de visibilidade sera:
-
-```text
-canViewBalance = companyMembership?.can_view_balance ?? isAdmin
-```
-
-Isso garante que admins veem o saldo por padrao (retrocompativel), e operadores so veem se explicitamente autorizado.
-
-No dialogo de edicao, o checkbox aparecera assim:
-
-```text
-Limite de Pagamento (R$)
-[___100___]
-
-[x] Visualizar Saldo da Conta    <-- novo checkbox
-
-Acesso as Paginas
-[x] Dashboard    [x] Novo Pagamento
-...
-```
+Sem permissao de saldo, o card simplesmente nao aparece no dashboard -- nenhum indicativo visual de que existe um saldo.
 
