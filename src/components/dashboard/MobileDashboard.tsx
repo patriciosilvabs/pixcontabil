@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
@@ -53,8 +53,28 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const [copyPasteOpen, setCopyPasteOpen] = useState(false);
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
+  const preAcquiredStreamRef = useRef<MediaStream | null>(null);
 
   const visibleActions = quickActions.filter(a => hasFeatureAccess(a.featureKey));
+
+  const acquireStreamAndOpen = async (setter: (v: boolean) => void) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
+      preAcquiredStreamRef.current = stream;
+      setter(true);
+    } catch (err: any) {
+      console.error("[MobileDashboard] getUserMedia failed:", err);
+      if (err?.name === "NotAllowedError") {
+        alert("Permissão da câmera negada. Habilite nas configurações do navegador.");
+      } else if (err?.name === "NotFoundError") {
+        alert("Nenhuma câmera encontrada no dispositivo.");
+      } else {
+        alert("Erro ao acessar a câmera. Tente novamente.");
+      }
+    }
+  };
 
   const handleQrScan = (result: string) => {
     setQrScannerOpen(false);
@@ -114,8 +134,8 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                   key={action.label}
                   onClick={() => {
                     if (isPixKey) setPixKeyOpen(true);
-                    else if (isQrCode) setQrScannerOpen(true);
-                    else if (isBoleto) setBarcodeScannerOpen(true);
+                    else if (isQrCode) acquireStreamAndOpen(setQrScannerOpen);
+                    else if (isBoleto) acquireStreamAndOpen(setBarcodeScannerOpen);
                     else if (isCopyPaste) setCopyPasteOpen(true);
                   }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
@@ -154,6 +174,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         isOpen={qrScannerOpen}
         onScan={handleQrScan}
         onClose={() => setQrScannerOpen(false)}
+        preAcquiredStream={preAcquiredStreamRef.current}
       />
       <PixQrPaymentDrawer
         open={qrPaymentOpen}
@@ -165,6 +186,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         isOpen={barcodeScannerOpen}
         onScan={handleBarcodeScan}
         onClose={() => setBarcodeScannerOpen(false)}
+        preAcquiredStream={preAcquiredStreamRef.current}
       />
       <BoletoPaymentDrawer
         open={boletoPaymentOpen}
