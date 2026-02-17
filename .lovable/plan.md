@@ -1,49 +1,72 @@
 
 
-## Botao "Excluir" usuario -- remocao completa do banco
+## Checkbox "Acesso ao Saldo" na edicao de usuario
 
-### O que sera feito
+### Problema
 
-Adicionar um botao "Excluir" ao lado de "Editar" e "Desativar" na tabela de usuarios. Ao clicar, um dialogo de confirmacao aparece. Ao confirmar, o usuario sera **completamente removido** do sistema (auth + todas as tabelas relacionadas).
+Atualmente, o saldo e visivel para todos que tem acesso ao Dashboard (admins veem o valor real, operadores veem "---"). A necessidade e ter um controle granular: alguns usuarios com acesso ao Dashboard devem poder ver o saldo, outros nao.
 
-### Arquivos a criar/modificar
+### Solucao
 
-#### 1. Criar `supabase/functions/delete-user/index.ts` -- Nova Edge Function
+Adicionar uma coluna `can_view_balance` na tabela `company_members` e um checkbox dedicado "Visualizar Saldo" no dialogo de edicao de usuario. O Dashboard usara essa permissao para decidir se mostra o saldo ou oculta.
 
-Necessaria porque deletar usuarios do auth requer `service_role_key` (Admin API).
+### Alteracoes
 
-A funcao ira:
-- Verificar que o chamador e admin (mesmo padrao do `create-user`)
-- Receber `user_id` no body
-- Impedir que o admin delete a si mesmo
-- Deletar na ordem correta (respeitar dependencias):
-  1. `user_page_permissions` (where user_id)
-  2. `user_roles` (where user_id)
-  3. `company_members` (where user_id)
-  4. `profiles` (where user_id)
-  5. `supabase.auth.admin.deleteUser(user_id)` -- remove do auth (cascata)
-- Retornar sucesso ou erro
+#### 1. Migracao no banco de dados
 
-#### 2. Modificar `src/pages/Users.tsx`
+- Adicionar coluna `can_view_balance BOOLEAN DEFAULT false` na tabela `company_members`
+- Admins terao o valor `true` por padrao ao serem criados
 
-- Adicionar estados: `deleteDialog` (boolean), `deletingMember` (MemberRow | null), `isDeleting` (boolean)
-- Adicionar funcao `handleDeleteUser`:
-  - Chama a edge function `delete-user` com o `user_id`
-  - Exibe toast de sucesso/erro
-  - Recarrega a lista
-- Adicionar botao "Excluir" (vermelho/destructive) na coluna de acoes de cada linha
-- Adicionar `AlertDialog` de confirmacao com mensagem "Tem certeza? Esta acao e irreversivel"
-- Impedir exclusao do proprio usuario logado
+#### 2. `src/types/database.ts` -- Atualizar tipo CompanyMember
 
-### Fluxo
+- Adicionar `can_view_balance?: boolean` a interface `CompanyMember`
+
+#### 3. `src/pages/Users.tsx` -- Adicionar checkbox no dialogo de edicao
+
+- Novo estado `editCanViewBalance`
+- Carregar valor ao abrir edicao (`openEdit`)
+- Checkbox "Visualizar Saldo" abaixo do limite de pagamento, separado das permissoes de pagina
+- Salvar no `handleSave` via update em `company_members`
+
+#### 4. `src/contexts/AuthContext.tsx` -- Expor `canViewBalance`
+
+- Ler `can_view_balance` do `companyMembership` e expor como `canViewBalance` no contexto
+
+#### 5. `src/components/dashboard/AdminDashboard.tsx` -- Condicionar exibicao do saldo
+
+- Usar `canViewBalance` do contexto
+- Se `false`, mostrar card de saldo oculto (mesmo estilo do OperatorDashboard)
+
+#### 6. `src/components/dashboard/OperatorDashboard.tsx` -- Condicionar exibicao do saldo
+
+- Usar `canViewBalance` do contexto
+- Se `true`, mostrar saldo real em vez de "---"
+
+#### 7. `src/components/dashboard/MobileDashboard.tsx` -- Condicionar exibicao do saldo
+
+- Receber `canViewBalance` como prop
+- Se `false`, ocultar valor do saldo
+
+### Detalhes tecnicos
+
+A logica de visibilidade sera:
 
 ```text
-Admin clica "Excluir" na linha do usuario
-  -> AlertDialog: "Tem certeza que deseja excluir [nome]? Esta acao e irreversivel."
-  -> [Cancelar] [Excluir]
-  -> Chama edge function delete-user
-  -> Remove user_page_permissions, user_roles, company_members, profiles, auth.user
-  -> Toast "Usuario excluido"
-  -> Lista atualizada
+canViewBalance = companyMembership?.can_view_balance ?? isAdmin
+```
+
+Isso garante que admins veem o saldo por padrao (retrocompativel), e operadores so veem se explicitamente autorizado.
+
+No dialogo de edicao, o checkbox aparecera assim:
+
+```text
+Limite de Pagamento (R$)
+[___100___]
+
+[x] Visualizar Saldo da Conta    <-- novo checkbox
+
+Acesso as Paginas
+[x] Dashboard    [x] Novo Pagamento
+...
 ```
 
