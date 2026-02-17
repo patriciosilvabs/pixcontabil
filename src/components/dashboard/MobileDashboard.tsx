@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -35,6 +36,8 @@ const quickActions = [
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
 
 export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading }: MobileDashboardProps) {
+  const [pixKeyOpen, setPixKeyOpen] = useState(false);
+
   return (
     <div className="px-4 pt-4 pb-24 space-y-6">
       {/* Balance Card */}
@@ -67,22 +70,39 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
           Funções Principais
         </h2>
         <div className="grid grid-cols-4 gap-3">
-          {quickActions.map((action) => (
-            <Link
-              key={action.label}
-              to={action.href}
-              className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
-            >
-              <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
-                <action.icon className="h-6 w-6 text-primary-foreground" />
-              </div>
-              <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
-                {action.label}
-              </span>
-            </Link>
-          ))}
+          {quickActions.map((action) =>
+            action.label === "COM CHAVE" ? (
+              <button
+                key={action.label}
+                onClick={() => setPixKeyOpen(true)}
+                className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
+                  <action.icon className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
+                  {action.label}
+                </span>
+              </button>
+            ) : (
+              <Link
+                key={action.label}
+                to={action.href}
+                className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
+              >
+                <div className="w-12 h-12 rounded-full bg-primary flex items-center justify-center">
+                  <action.icon className="h-6 w-6 text-primary-foreground" />
+                </div>
+                <span className="text-[10px] font-semibold text-center leading-tight text-foreground/80">
+                  {action.label}
+                </span>
+              </Link>
+            )
+          )}
         </div>
       </div>
+
+      <PixKeyDialog open={pixKeyOpen} onOpenChange={setPixKeyOpen} />
 
       {/* Recent Transactions */}
       <div>
