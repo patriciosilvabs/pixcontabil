@@ -80,6 +80,31 @@ export default function NewPayment() {
     if (tab && validTabs.includes(tab as PaymentType)) {
       setPixData((prev) => ({ ...prev, type: tab as PaymentType }));
     }
+
+    // Handle QR code from dashboard scanner
+    const qrcode = searchParams.get("qrcode");
+    if (qrcode) {
+      setPixData((prev) => ({ ...prev, type: "copy_paste", copyPaste: qrcode }));
+      (async () => {
+        setIsConsultingPaste(true);
+        try {
+          const info = await getQRCodeInfo({ qr_code: qrcode });
+          if (info && info.amount && info.amount > 0) {
+            setPixData((prev) => ({
+              ...prev,
+              type: "copy_paste",
+              copyPaste: qrcode,
+              amount: info.amount!.toFixed(2).replace(".", ","),
+            }));
+            setStep(2);
+          }
+        } catch (err) {
+          console.error('[NewPayment] QR code lookup error:', err);
+        } finally {
+          setIsConsultingPaste(false);
+        }
+      })();
+    }
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany } = useAuth();
