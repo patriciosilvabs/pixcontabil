@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
+import { PixCopyPasteDrawer } from "@/components/pix/PixCopyPasteDrawer";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import { Link } from "react-router-dom";
@@ -49,6 +50,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
   const [scannedBarcode, setScannedBarcode] = useState("");
   const [boletoPaymentOpen, setBoletoPaymentOpen] = useState(false);
+  const [copyPasteOpen, setCopyPasteOpen] = useState(false);
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
 
@@ -104,8 +106,9 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
             const isPixKey = action.label === "COM CHAVE";
             const isQrCode = action.label === "PAGAR QR CODE";
             const isBoleto = action.label === "BOLETO";
+            const isCopyPaste = action.label === "COPIA E COLA";
 
-            if (isPixKey || isQrCode || isBoleto) {
+            if (isPixKey || isQrCode || isBoleto || isCopyPaste) {
               return (
                 <button
                   key={action.label}
@@ -113,6 +116,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                     if (isPixKey) setPixKeyOpen(true);
                     else if (isQrCode) setQrScannerOpen(true);
                     else if (isBoleto) setBarcodeScannerOpen(true);
+                    else if (isCopyPaste) setCopyPasteOpen(true);
                   }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
                 >
@@ -166,6 +170,10 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         open={boletoPaymentOpen}
         barcode={scannedBarcode}
         onOpenChange={setBoletoPaymentOpen}
+      />
+      <PixCopyPasteDrawer
+        open={copyPasteOpen}
+        onOpenChange={setCopyPasteOpen}
       />
 
       {/* Recent Transactions */}
