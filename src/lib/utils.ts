@@ -152,41 +152,96 @@ export function generateId(): string {
 }
 
 // Parse localized number (handles BR format: 1.234,56 and US format: 1,234.56)
+// Returns NaN for invalid/empty inputs instead of 0
 export function parseLocalizedNumber(value: string, useCommaDecimal?: boolean): number {
-  if (!value || value === "") return 0;
+  if (!value || value.trim() === "") return NaN;
 
   let str = String(value).trim();
 
   // Remove currency symbols and spaces
   str = str.replace(/[R$\u20AC£¥\s]/g, "");
 
-  // Auto-detect format if not specified
+  // Reject if empty after cleanup or has invalid chars
+  if (!str || !/^[\d.,\-]+$/.test(str)) return NaN;
+
+  const dots = (str.match(/\./g) || []).length;
+  const commas = (str.match(/,/g) || []).length;
   const lastComma = str.lastIndexOf(",");
   const lastDot = str.lastIndexOf(".");
 
-  const isCommaDecimal = useCommaDecimal ?? (lastComma > lastDot);
+  let isCommaDecimal: boolean;
+
+  if (useCommaDecimal !== undefined) {
+    isCommaDecimal = useCommaDecimal;
+  } else if (commas === 1 && dots === 0) {
+    // "79,90" → BR decimal
+    isCommaDecimal = true;
+  } else if (dots === 1 && commas === 0) {
+    // "79.90" → US decimal
+    isCommaDecimal = false;
+  } else if (commas >= 1 && dots >= 1) {
+    // Mixed: whoever is last is the decimal separator
+    isCommaDecimal = lastComma > lastDot;
+  } else if (dots > 1 && commas === 0) {
+    // "1.234.567" → dots are thousands (BR integer)
+    isCommaDecimal = true; // treat dots as thousands
+  } else if (commas > 1 && dots === 0) {
+    // "1,234,567" → commas are thousands (US integer)
+    isCommaDecimal = false;
+  } else {
+    // Fallback: no separators, plain number
+    isCommaDecimal = false;
+  }
 
   if (isCommaDecimal) {
-    // Comma as decimal: 1.234,56
-    str = str.replace(/\./g, ""); // Remove thousand separators
-    str = str.replace(",", "."); // Convert decimal separator
+    // Validate thousand separator pattern: dots must group 3 digits
+    if (dots > 0) {
+      const parts = str.split(",")[0].split(".");
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i].length !== 3) return NaN; // malformed thousands
+      }
+    }
+    str = str.replace(/\./g, "");
+    str = str.replace(",", ".");
   } else {
-    // Dot as decimal: 1,234.56
-    str = str.replace(/,/g, ""); // Remove thousand separators
+    if (commas > 0) {
+      const parts = str.split(".")[0].split(",");
+      for (let i = 1; i < parts.length; i++) {
+        if (parts[i].length !== 3) return NaN;
+      }
+    }
+    str = str.replace(/,/g, "");
   }
 
   const parsed = parseFloat(str);
-  return isNaN(parsed) ? 0 : parsed;
+  return isNaN(parsed) ? NaN : parsed;
 }
 
 // Max allowed payment value (R$ 1.000.000,00)
 export const MAX_PAYMENT_VALUE = 1_000_000;
 
 // Validate payment amount is within acceptable range
-export function isValidPaymentAmount(value: number): { valid: boolean; message?: string } {
-  if (!value || value <= 0) return { valid: false, message: "Informe um valor válido" };
+// Optionally pass expectedValue to cross-check against QR/boleto extracted value
+export function isValidPaymentAmount(
+  value: number,
+  options?: { expectedValue?: number; tolerancePercent?: number }
+): { valid: boolean; message?: string } {
+  if (isNaN(value) || value <= 0) return { valid: false, message: "Informe um valor válido" };
   if (value < 0.01) return { valid: false, message: "O valor mínimo é R$ 0,01" };
   if (value > MAX_PAYMENT_VALUE) return { valid: false, message: `O valor máximo permitido é R$ ${MAX_PAYMENT_VALUE.toLocaleString("pt-BR")}` };
+
+  // Cross-check against expected value if provided
+  if (options?.expectedValue && options.expectedValue > 0) {
+    const tolerance = options.tolerancePercent ?? 1; // default 1%
+    const diff = Math.abs(value - options.expectedValue) / options.expectedValue * 100;
+    if (diff > tolerance) {
+      return {
+        valid: false,
+        message: `O valor R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} diverge do esperado R$ ${options.expectedValue.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+      };
+    }
+  }
+
   return { valid: true };
 }
 

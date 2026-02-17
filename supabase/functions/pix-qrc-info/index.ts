@@ -89,13 +89,16 @@ Deno.serve(async (req) => {
         qrcInfo.pix_key = qr_code.substring(startIndex, startIndex + keyLen);
       }
 
-      // Try to extract amount from EMV using proper TLV parser
+      // TLV parser for EMV QR Code - extracts tag value by walking sequentially
       function extractEmvTag(emv: string, targetTag: string): string | null {
         let pos = 0;
         while (pos + 4 <= emv.length) {
           const tag = emv.substring(pos, pos + 2);
-          const len = parseInt(emv.substring(pos + 2, pos + 4), 10);
-          if (isNaN(len) || pos + 4 + len > emv.length) break;
+          const lenStr = emv.substring(pos + 2, pos + 4);
+          // Length must be exactly 2 numeric digits
+          if (!/^\d{2}$/.test(lenStr)) break;
+          const len = parseInt(lenStr, 10);
+          if (pos + 4 + len > emv.length) break;
           const val = emv.substring(pos + 4, pos + 4 + len);
           if (tag === targetTag) return val;
           pos += 4 + len;
@@ -103,12 +106,23 @@ Deno.serve(async (req) => {
         return null;
       }
 
+      // Tag 54 = Transaction Amount (must match pattern: digits with optional single decimal point)
       const tag54Value = extractEmvTag(qr_code, '54');
-      if (tag54Value) {
+      if (tag54Value && /^\d+(\.\d{1,2})?$/.test(tag54Value)) {
         const parsedAmount = parseFloat(tag54Value);
-        if (!isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= 1000000) {
+        if (!isNaN(parsedAmount) && parsedAmount > 0 && parsedAmount <= 1_000_000) {
           qrcInfo.amount = parsedAmount;
+        } else {
+          console.warn(`[pix-qrc-info] Tag 54 value out of range: ${tag54Value}`);
         }
+      } else if (tag54Value) {
+        console.warn(`[pix-qrc-info] Tag 54 invalid format: ${tag54Value}`);
+      }
+
+      // Optional: validate CRC (tag 63) for EMV integrity
+      const tag63Value = extractEmvTag(qr_code, '63');
+      if (!tag63Value) {
+        console.warn('[pix-qrc-info] EMV missing CRC tag 63 - payload may be corrupted');
       }
 
       // For dynamic QR codes (cobv/cob), try to fetch the payload URL for amount
