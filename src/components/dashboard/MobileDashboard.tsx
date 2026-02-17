@@ -24,6 +24,7 @@ interface MobileDashboardProps {
   provider?: string | null;
   recentTransactions?: RecentTransaction[];
   dataLoading?: boolean;
+  canViewBalance?: boolean;
 }
 
 const quickActions = [
@@ -39,7 +40,7 @@ const quickActions = [
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
 
-export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading, canViewBalance = true }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
@@ -69,7 +70,12 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
           <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
             Saldo Disponível
           </span>
-          {balanceLoading ? (
+          {!canViewBalance ? (
+            <>
+              <p className="text-3xl font-bold text-muted-foreground mt-1">---</p>
+              <p className="text-xs text-muted-foreground mt-1">Saldo oculto</p>
+            </>
+          ) : balanceLoading ? (
             <Skeleton className="h-9 w-32 mt-1" />
           ) : (
             <p className="text-3xl font-bold font-mono-numbers tracking-tight mt-1">
@@ -80,7 +86,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                 : "••••••"}
             </p>
           )}
-          {provider && (
+          {canViewBalance && provider && (
             <p className="text-xs text-muted-foreground mt-1">Provedor: {provider}</p>
           )}
           <Progress value={0} className="mt-4 h-2.5 [&>div]:bg-primary" />

@@ -52,6 +52,7 @@ export default function Users() {
   const [editingMember, setEditingMember] = useState<MemberRow | null>(null);
   const [editRole, setEditRole] = useState<"admin" | "operator">("operator");
   const [editLimit, setEditLimit] = useState("");
+  const [editCanViewBalance, setEditCanViewBalance] = useState(false);
   const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
@@ -105,6 +106,7 @@ export default function Users() {
     setEditingMember(m);
     setEditRole((m.role as "admin" | "operator") || "operator");
     setEditLimit(m.payment_limit?.toString() || "");
+    setEditCanViewBalance((m as any).can_view_balance ?? false);
 
     // Load permissions
     const { data: perms } = await supabase
@@ -127,7 +129,10 @@ export default function Users() {
       // Update payment limit
       const { error: memberError } = await supabase
         .from("company_members")
-        .update({ payment_limit: editLimit ? parseFloat(editLimit) : null })
+        .update({ 
+          payment_limit: editLimit ? parseFloat(editLimit) : null,
+          can_view_balance: editCanViewBalance,
+        } as any)
         .eq("id", editingMember.id);
       if (memberError) throw memberError;
 
@@ -382,6 +387,18 @@ export default function Users() {
               <div className="space-y-2">
                 <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite de Pagamento (R$)</Label>
                 <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox
+                    id="can-view-balance"
+                    checked={editCanViewBalance}
+                    onCheckedChange={(checked) => setEditCanViewBalance(!!checked)}
+                  />
+                  <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">
+                    Visualizar Saldo da Conta
+                  </Label>
+                </div>
               </div>
               <div className="space-y-2">
                 <Label className="text-sm font-medium">Acesso às Páginas</Label>

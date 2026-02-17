@@ -12,6 +12,7 @@ interface AuthContextType {
   currentCompany: Company | null;
   companyMembership: CompanyMember | null;
   pagePermissions: string[];
+  canViewBalance: boolean;
   isAdmin: boolean;
   isOperator: boolean;
   isLoading: boolean;
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAdmin = role === "admin";
   const isOperator = role === "operator";
+  const canViewBalance = companyMembership?.can_view_balance ?? isAdmin;
 
   const fetchUserData = useCallback(async (userId: string) => {
     try {
@@ -222,6 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentCompany,
         companyMembership,
         pagePermissions,
+        canViewBalance,
         isAdmin,
         isOperator,
         isLoading,
