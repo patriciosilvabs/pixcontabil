@@ -52,7 +52,7 @@ const CHART_COLORS = [
 ];
 
 export function useDashboardData() {
-  const { currentCompany } = useAuth();
+  const { currentCompany, isAdmin, user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary>({
     totalCosts: 0,
     totalExpenses: 0,
@@ -79,12 +79,18 @@ export function useDashboardData() {
 
       try {
         // Fetch month transactions with category info
-        const { data: monthTxs } = await supabase
+        let query = supabase
           .from("transactions")
           .select("id, amount, status, beneficiary_name, category_id, created_at, categories(name, classification)")
           .eq("company_id", currentCompany.id)
           .gte("created_at", monthStart)
           .order("created_at", { ascending: false });
+
+        if (!isAdmin && user) {
+          query = query.eq("created_by", user.id);
+        }
+
+        const { data: monthTxs } = await query;
 
         const transactions: TransactionWithCategory[] = (monthTxs || []).map((t: any) => ({
           id: t.id,
@@ -157,7 +163,7 @@ export function useDashboardData() {
     };
 
     fetchData();
-  }, [currentCompany?.id]);
+  }, [currentCompany?.id, isAdmin, user?.id]);
 
   return { summary, categoryData, recentTransactions, isLoading };
 }
