@@ -1,27 +1,16 @@
 
-
-## Ocultar card de saldo completamente quando sem permissao
+## Corrigir overflow do preco e botao "Anexar" no card de transacao (mobile)
 
 ### Problema
 
-Atualmente, quando `canViewBalance` e `false`, o sistema mostra um card placeholder com "---" e "Saldo oculto". O correto e nao mostrar nenhum card de saldo.
+No mobile, o layout do card de transacao usa `flex justify-between` horizontal, fazendo com que o preco (R$ 12,00), o badge de status ("Pendente") e o botao "Anexar" transbordem para fora do card.
 
-### Alteracoes
+### Solucao
 
-#### 1. `src/components/dashboard/AdminDashboard.tsx`
+Alterar o layout do card em `src/pages/Transactions.tsx` (linhas 195-250) para empilhar verticalmente no mobile:
 
-- Linhas 96-130: Remover o bloco `else` (card com "---") e renderizar o card de saldo apenas quando `canViewBalance` e `true`
-- O grid de 4 cards continuara funcionando normalmente com 3 cards quando o saldo estiver oculto
+1. **Container principal**: Trocar `flex items-start justify-between gap-4` por `flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3`
+2. **Bloco de info (esquerda)**: Adicionar `min-w-0` para permitir truncamento
+3. **Bloco de valor/status (direita)**: Trocar `text-right` por `flex items-center justify-between sm:flex-col sm:items-end sm:text-right` para ficar em linha no mobile e empilhado no desktop
 
-#### 2. `src/components/dashboard/OperatorDashboard.tsx`
-
-- Linhas 87-119: Remover o bloco `else` (card com "---" e "Saldo oculto para operadores") e renderizar apenas quando `canViewBalance` e `true`
-
-#### 3. `src/components/dashboard/MobileDashboard.tsx`
-
-- Linhas 72-92: Envolver o card de saldo inteiro em `{canViewBalance && (...)}` para que ele nao apareca quando a permissao estiver desativada
-
-### Resultado
-
-Sem permissao de saldo, o card simplesmente nao aparece no dashboard -- nenhum indicativo visual de que existe um saldo.
-
+Isso fara com que no mobile o preco e os botoes aparecam abaixo do nome do beneficiario, dentro do card, sem transbordar.
