@@ -12,6 +12,7 @@ interface AuthContextType {
   currentCompany: Company | null;
   companyMembership: CompanyMember | null;
   pagePermissions: string[];
+  featurePermissions: string[];
   canViewBalance: boolean;
   isAdmin: boolean;
   isOperator: boolean;
@@ -22,6 +23,7 @@ interface AuthContextType {
   setCurrentCompany: (company: Company) => void;
   refreshProfile: () => Promise<void>;
   hasPageAccess: (pageKey: string) => boolean;
+  hasFeatureAccess: (featureKey: string) => boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,6 +37,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentCompany, setCurrentCompanyState] = useState<Company | null>(null);
   const [companyMembership, setCompanyMembership] = useState<CompanyMember | null>(null);
   const [pagePermissions, setPagePermissions] = useState<string[]>([]);
+  const [featurePermissions, setFeaturePermissions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const isAdmin = role === "admin";
@@ -103,6 +106,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (permData) {
           setPagePermissions(permData.map((p: any) => p.page_key));
+        }
+
+        // Fetch feature permissions for current company
+        const { data: featData } = await supabase
+          .from("user_feature_permissions")
+          .select("feature_key")
+          .eq("user_id", userId)
+          .eq("company_id", companyToSet.id)
+          .eq("is_visible", true);
+
+        if (featData) {
+          setFeaturePermissions(featData.map((f: any) => f.feature_key));
+        } else {
+          setFeaturePermissions([]);
         }
       }
     } catch (error) {
@@ -213,6 +230,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return pagePermissions.includes(pageKey);
   }, [isAdmin, pagePermissions]);
 
+  const hasFeatureAccess = useCallback((featureKey: string): boolean => {
+    if (isAdmin) return true;
+    // If no permissions set yet (empty array and not loaded), default to all visible
+    if (featurePermissions.length === 0) return true;
+    return featurePermissions.includes(featureKey);
+  }, [isAdmin, featurePermissions]);
+
   return (
     <AuthContext.Provider
       value={{
@@ -224,6 +248,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentCompany,
         companyMembership,
         pagePermissions,
+        featurePermissions,
         canViewBalance,
         isAdmin,
         isOperator,
@@ -234,6 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setCurrentCompany,
         refreshProfile,
         hasPageAccess,
+        hasFeatureAccess,
       }}
     >
       {children}
