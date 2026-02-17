@@ -661,6 +661,41 @@ export type Database = {
           },
         ]
       }
+      user_feature_permissions: {
+        Row: {
+          company_id: string
+          created_at: string
+          feature_key: string
+          id: string
+          is_visible: boolean
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          feature_key: string
+          id?: string
+          is_visible?: boolean
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          feature_key?: string
+          id?: string
+          is_visible?: boolean
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_feature_permissions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_page_permissions: {
         Row: {
           company_id: string

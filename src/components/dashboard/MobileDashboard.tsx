@@ -14,6 +14,7 @@ import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { RecentTransaction } from "@/hooks/useDashboardData";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface MobileDashboardProps {
   balanceVisible: boolean;
@@ -28,14 +29,14 @@ interface MobileDashboardProps {
 }
 
 const quickActions = [
-  { label: "MENU PIX", icon: Wallet, href: "/pix/new" },
-  { label: "PAGAR QR CODE", icon: QrCode, href: "/pix/new?tab=qrcode" },
-  { label: "COPIA E COLA", icon: ClipboardPaste, href: "/pix/new?tab=copy_paste" },
-  { label: "COM CHAVE", icon: Key, href: "/pix/new?tab=key" },
-  { label: "FAVORECIDOS", icon: Star, href: "/transactions?filter=favorites" },
-  { label: "AGENDADAS", icon: CalendarClock, href: "/transactions?status=pending" },
-  { label: "BOLETO", icon: FileText, href: "/pix/new?tab=boleto" },
-  { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new?tab=key" },
+  { label: "MENU PIX", icon: Wallet, href: "/pix/new", featureKey: "menu_pix" },
+  { label: "PAGAR QR CODE", icon: QrCode, href: "/pix/new?tab=qrcode", featureKey: "pagar_qrcode" },
+  { label: "COPIA E COLA", icon: ClipboardPaste, href: "/pix/new?tab=copy_paste", featureKey: "copia_cola" },
+  { label: "COM CHAVE", icon: Key, href: "/pix/new?tab=key", featureKey: "com_chave" },
+  { label: "FAVORECIDOS", icon: Star, href: "/transactions?filter=favorites", featureKey: "favorecidos" },
+  { label: "AGENDADAS", icon: CalendarClock, href: "/transactions?status=pending", featureKey: "agendadas" },
+  { label: "BOLETO", icon: FileText, href: "/pix/new?tab=boleto", featureKey: "boleto" },
+  { label: "TRANSFERIR", icon: ArrowUpRight, href: "/pix/new?tab=key", featureKey: "transferir" },
 ];
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
@@ -49,6 +50,9 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const [scannedBarcode, setScannedBarcode] = useState("");
   const [boletoPaymentOpen, setBoletoPaymentOpen] = useState(false);
   const navigate = useNavigate();
+  const { hasFeatureAccess } = useAuth();
+
+  const visibleActions = quickActions.filter(a => hasFeatureAccess(a.featureKey));
 
   const handleQrScan = (result: string) => {
     setQrScannerOpen(false);
@@ -96,7 +100,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
           Funções Principais
         </h2>
         <div className="grid grid-cols-4 gap-3">
-          {quickActions.map((action) => {
+          {visibleActions.map((action) => {
             const isPixKey = action.label === "COM CHAVE";
             const isQrCode = action.label === "PAGAR QR CODE";
             const isBoleto = action.label === "BOLETO";

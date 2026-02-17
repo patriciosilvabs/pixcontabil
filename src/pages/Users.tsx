@@ -28,6 +28,17 @@ const PAGE_OPTIONS = [
   { key: "settings", label: "Configurações" },
 ];
 
+const FEATURE_OPTIONS = [
+  { key: "menu_pix", label: "MENU PIX" },
+  { key: "pagar_qrcode", label: "PAGAR QR CODE" },
+  { key: "copia_cola", label: "COPIA E COLA" },
+  { key: "com_chave", label: "COM CHAVE" },
+  { key: "favorecidos", label: "FAVORECIDOS" },
+  { key: "agendadas", label: "AGENDADAS" },
+  { key: "boleto", label: "BOLETO" },
+  { key: "transferir", label: "TRANSFERIR" },
+];
+
 interface MemberRow {
   id: string;
   user_id: string;
@@ -54,6 +65,7 @@ export default function Users() {
   const [editLimit, setEditLimit] = useState("");
   const [editCanViewBalance, setEditCanViewBalance] = useState(false);
   const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
+  const [editFeaturePermissions, setEditFeaturePermissions] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deletingMember, setDeletingMember] = useState<MemberRow | null>(null);
@@ -119,6 +131,18 @@ export default function Users() {
     PAGE_OPTIONS.forEach(p => permMap[p.key] = true); // default all true
     perms?.forEach((p: any) => { permMap[p.page_key] = p.has_access; });
     setEditPermissions(permMap);
+
+    // Load feature permissions
+    const { data: featurePerms } = await supabase
+      .from("user_feature_permissions")
+      .select("feature_key, is_visible")
+      .eq("user_id", m.user_id)
+      .eq("company_id", m.company_id);
+
+    const featureMap: Record<string, boolean> = {};
+    FEATURE_OPTIONS.forEach(f => featureMap[f.key] = true); // default all true
+    featurePerms?.forEach((f: any) => { featureMap[f.feature_key] = f.is_visible; });
+    setEditFeaturePermissions(featureMap);
     setEditDialog(true);
   };
 
@@ -170,6 +194,35 @@ export default function Users() {
         } else {
           await supabase
             .from("user_page_permissions")
+            .insert(row);
+        }
+      }
+
+      // Upsert feature permissions
+      const featureRows = FEATURE_OPTIONS.map(f => ({
+        user_id: editingMember.user_id,
+        company_id: currentCompany.id,
+        feature_key: f.key,
+        is_visible: editFeaturePermissions[f.key] ?? true,
+      }));
+
+      for (const row of featureRows) {
+        const { data: existing } = await supabase
+          .from("user_feature_permissions")
+          .select("id")
+          .eq("user_id", row.user_id)
+          .eq("company_id", row.company_id)
+          .eq("feature_key", row.feature_key)
+          .single();
+
+        if (existing) {
+          await supabase
+            .from("user_feature_permissions")
+            .update({ is_visible: row.is_visible })
+            .eq("id", existing.id);
+        } else {
+          await supabase
+            .from("user_feature_permissions")
             .insert(row);
         }
       }
@@ -414,6 +467,25 @@ export default function Users() {
                       />
                       <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">
                         {page.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Funções Principais Visíveis</Label>
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  {FEATURE_OPTIONS.map(feature => (
+                    <div key={feature.key} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`feat-${feature.key}`}
+                        checked={editFeaturePermissions[feature.key] ?? true}
+                        onCheckedChange={(checked) =>
+                          setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))
+                        }
+                      />
+                      <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">
+                        {feature.label}
                       </Label>
                     </div>
                   ))}
