@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { BrowserMultiFormatReader, DecodeHintType, BarcodeFormat, MultiFormatReader, BinaryBitmap, HybridBinarizer, HTMLCanvasElementLuminanceSource } from "@zxing/library";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+import { DecodeHintType, BarcodeFormat, MultiFormatReader, BinaryBitmap, HybridBinarizer, HTMLCanvasElementLuminanceSource } from "@zxing/library";
 import {
   Dialog,
   DialogContent,
@@ -16,43 +15,26 @@ interface BarcodeScannerProps {
   onScan: (result: string) => void;
   onClose: () => void;
   onManualInput?: () => void;
+  preAcquiredStream?: MediaStream | null;
 }
 
-const qrFormats = [
-  Html5QrcodeSupportedFormats.QR_CODE,
-];
-
-export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }: BarcodeScannerProps) {
-  // For QR mode we keep html5-qrcode (works fine)
-  const html5ScannerRef = useRef<Html5Qrcode | null>(null);
-  // For barcode mode we use @zxing/library (much better for 1D barcodes)
-  const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
+export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, preAcquiredStream }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
-  const containerIdRef = useRef(`scanner-${Math.random().toString(36).slice(2)}`);
   const hasScannedRef = useRef(false);
   const mountedRef = useRef(true);
+  const scanIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const stopScanner = useCallback(async () => {
-    // Stop html5-qrcode (QR mode)
-    const s = html5ScannerRef.current;
-    if (s) {
-      html5ScannerRef.current = null;
-      try { await s.stop(); } catch {}
-      try { s.clear(); } catch {}
+  const stopScanner = useCallback(() => {
+    if (scanIntervalRef.current) {
+      clearInterval(scanIntervalRef.current);
+      scanIntervalRef.current = null;
     }
 
-    // Stop zxing reader (barcode mode)
-    const reader = zxingReaderRef.current;
-    if (reader) {
-      zxingReaderRef.current = null;
-      try { reader.reset(); } catch {}
-    }
 
-    // Stop media stream
     const stream = streamRef.current;
     if (stream) {
       streamRef.current = null;
@@ -65,114 +47,125 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     return () => { mountedRef.current = false; };
   }, []);
 
-  // Barcode mode with @zxing/library
+  // Unified scanner for both modes using ZXing + preAcquiredStream
   useEffect(() => {
-    if (!isOpen || mode !== "barcode") {
-      if (mode === "barcode") {
-        hasScannedRef.current = false;
-        stopScanner();
-      }
+    if (!isOpen) {
+      hasScannedRef.current = false;
+      stopScanner();
       return;
     }
 
     let cancelled = false;
 
-    const startBarcode = async () => {
+    const startScanner = async () => {
       setError(null);
       setIsStarting(true);
       hasScannedRef.current = false;
 
-      // Wait for video element to be in DOM
-      await new Promise((r) => setTimeout(r, 500));
+      // Wait for video element to be in DOM using rAF instead of setTimeout
+      await new Promise<void>((resolve) => {
+        const check = () => {
+          if (videoRef.current) {
+            resolve();
+          } else {
+            requestAnimationFrame(check);
+          }
+        };
+        requestAnimationFrame(check);
+      });
+
       if (cancelled || !mountedRef.current) return;
 
       const videoEl = videoRef.current;
       if (!videoEl) {
-        console.error("[BarcodeScanner] Video element not found");
         setError("Elemento de vídeo não encontrado. Tente novamente.");
         setIsStarting(false);
         return;
       }
 
+      // Ensure playsinline attributes for iOS
+      videoEl.setAttribute("playsinline", "true");
+      videoEl.setAttribute("webkit-playsinline", "true");
+
       try {
-        // Configure ZXing hints - focus on ITF (boletos) for best results
+        let stream: MediaStream;
+
+        if (preAcquiredStream && preAcquiredStream.active) {
+          // Use the pre-acquired stream from the click handler (iOS gesture chain preserved)
+          stream = preAcquiredStream;
+          console.log("[BarcodeScanner] Using pre-acquired stream");
+        } else {
+          // Fallback: request camera directly (works on Android, may fail on iOS)
+          console.log("[BarcodeScanner] Fallback: requesting camera directly");
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: "environment" },
+              width: { ideal: 1920 },
+              height: { ideal: 1080 },
+            },
+          });
+        }
+
+        if (cancelled || !mountedRef.current) {
+          stream.getTracks().forEach(t => t.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        videoEl.srcObject = stream;
+        await videoEl.play();
+
+        // Configure ZXing hints based on mode
         const hints = new Map();
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, [
-          BarcodeFormat.ITF,
-          BarcodeFormat.CODE_128,
-          BarcodeFormat.CODE_39,
-          BarcodeFormat.EAN_13,
-          BarcodeFormat.EAN_8,
-          BarcodeFormat.UPC_A,
-          BarcodeFormat.UPC_E,
-          BarcodeFormat.CODABAR,
-        ]);
+        if (mode === "qrcode") {
+          hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]);
+        } else {
+          hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+            BarcodeFormat.ITF,
+            BarcodeFormat.CODE_128,
+            BarcodeFormat.CODE_39,
+            BarcodeFormat.EAN_13,
+            BarcodeFormat.EAN_8,
+            BarcodeFormat.UPC_A,
+            BarcodeFormat.UPC_E,
+            BarcodeFormat.CODABAR,
+          ]);
+        }
         hints.set(DecodeHintType.TRY_HARDER, true);
-        hints.set(DecodeHintType.ASSUME_GS1, false);
 
-        // Primary reader at 200ms for fast scanning
-        const reader = new BrowserMultiFormatReader(hints, 200);
-        zxingReaderRef.current = reader;
-
-        // Secondary MultiFormatReader for cropped canvas decoding
         const mfReader = new MultiFormatReader();
         mfReader.setHints(hints);
-        
-        console.log("[BarcodeScanner] Starting ZXing continuous decode...");
 
-        // Track partial reads to combine them
+
+
+        // Track partial reads for barcode confirmation
         const partialReads: string[] = [];
         let lastReadTime = 0;
-        
-        // Crop-scan the center strip of the video every 500ms
-        let cropInterval: ReturnType<typeof setInterval> | null = null;
-        
-        const tryCropScan = () => {
-          if (cancelled || hasScannedRef.current || !videoEl.videoWidth) return;
-          try {
-            const vw = videoEl.videoWidth;
-            const vh = videoEl.videoHeight;
-            // Crop a horizontal strip from center (full width, 30% height)
-            const stripH = Math.round(vh * 0.3);
-            const stripY = Math.round((vh - stripH) / 2);
-            
-            const canvas = document.createElement("canvas");
-            canvas.width = vw;
-            canvas.height = stripH;
-            const ctx = canvas.getContext("2d");
-            if (!ctx) return;
-            ctx.drawImage(videoEl, 0, stripY, vw, stripH, 0, 0, vw, stripH);
-            
-            const luminance = new HTMLCanvasElementLuminanceSource(canvas);
-            const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
-            const cropResult = mfReader.decode(bitmap);
-            if (cropResult && !hasScannedRef.current) {
-              const text = cropResult.getText().replace(/\s/g, "");
-              console.log("[BarcodeScanner] Crop scan read:", text, "len:", text.length);
-              handleResult(text, Date.now());
-            }
-          } catch {
-            // No barcode found in crop - normal
-          }
-        };
-        
-        const handleResult = (text: string, now: number) => {
-          if (hasScannedRef.current) return;
-          
-          // Brazilian boleto barcodes are exactly 44 digits
-          // Typed line (linha digitável) is 47-48 digits
-          const isCompleteBoleto = /^\d{44}$/.test(text) || /^\d{47,48}$/.test(text);
-          
-          if (isCompleteBoleto) {
+
+        const handleResult = (text: string) => {
+          if (hasScannedRef.current || cancelled) return;
+          const now = Date.now();
+
+          if (mode === "qrcode") {
+            // QR codes: accept immediately
             hasScannedRef.current = true;
-            console.log("[BarcodeScanner] Complete boleto detected:", text);
-            if (cropInterval) clearInterval(cropInterval);
+            console.log("[BarcodeScanner] QR scanned:", text);
             onScan(text);
             setTimeout(() => stopScanner(), 100);
             return;
           }
 
-          // For non-boleto codes (shorter barcodes like EAN), accept if it looks valid
+          // Barcode mode: boleto validation
+          const isCompleteBoleto = /^\d{44}$/.test(text) || /^\d{47,48}$/.test(text);
+          if (isCompleteBoleto) {
+            hasScannedRef.current = true;
+            console.log("[BarcodeScanner] Complete boleto:", text);
+            onScan(text);
+            setTimeout(() => stopScanner(), 100);
+            return;
+          }
+
+          // Shorter barcodes: require 2x confirmation
           if (text.length >= 8 && text.length < 44) {
             if (now - lastReadTime < 2000) {
               partialReads.push(text);
@@ -182,42 +175,62 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             }
             lastReadTime = now;
 
-            const matches = partialReads.filter(r => r === text);
-            if (matches.length >= 2) {
+            if (partialReads.filter(r => r === text).length >= 2) {
               hasScannedRef.current = true;
-              console.log("[BarcodeScanner] Confirmed barcode (2x match):", text);
-              if (cropInterval) clearInterval(cropInterval);
+              console.log("[BarcodeScanner] Confirmed barcode:", text);
               onScan(text);
               setTimeout(() => stopScanner(), 100);
             }
           }
         };
 
-        await reader.decodeFromConstraints(
-          {
-            video: {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-              aspectRatio: { ideal: 16 / 9 },
-            },
-          },
-          videoEl,
-          (result, err) => {
-            if (cancelled || hasScannedRef.current) return;
+        // Canvas-based scanning loop (works for both modes)
+        const scanInterval = mode === "qrcode" ? 250 : 500;
+        scanIntervalRef.current = setInterval(() => {
+          if (cancelled || hasScannedRef.current || !videoEl.videoWidth) return;
+
+          try {
+            const vw = videoEl.videoWidth;
+            const vh = videoEl.videoHeight;
+
+            let canvasW = vw;
+            let canvasH = vh;
+            let sx = 0;
+            let sy = 0;
+
+            if (mode === "barcode") {
+              // Crop horizontal center strip for barcodes
+              canvasH = Math.round(vh * 0.3);
+              sy = Math.round((vh - canvasH) / 2);
+            } else {
+              // For QR, crop center square
+              const size = Math.min(vw, vh);
+              canvasW = size;
+              canvasH = size;
+              sx = Math.round((vw - size) / 2);
+              sy = Math.round((vh - size) / 2);
+            }
+
+            const canvas = document.createElement("canvas");
+            canvas.width = canvasW;
+            canvas.height = canvasH;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return;
+            ctx.drawImage(videoEl, sx, sy, canvasW, canvasH, 0, 0, canvasW, canvasH);
+
+            const luminance = new HTMLCanvasElementLuminanceSource(canvas);
+            const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
+            const result = mfReader.decode(bitmap);
             if (result) {
               const text = result.getText().replace(/\s/g, "");
-              const now = Date.now();
-              console.log("[BarcodeScanner] ZXing read:", text, "len:", text.length);
-              handleResult(text, now);
+              handleResult(text);
             }
+          } catch {
+            // No code found - normal
           }
-        );
-        
-        // Start crop scanning after video is ready
-        cropInterval = setInterval(tryCropScan, 500);
+        }, scanInterval);
 
-        console.log("[BarcodeScanner] ZXing decode started successfully");
+        console.log(`[BarcodeScanner] ${mode} scanner started successfully`);
         if (mountedRef.current) setIsStarting(false);
       } catch (err: any) {
         console.error("[BarcodeScanner] Error:", err);
@@ -233,91 +246,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
       }
     };
 
-    startBarcode();
-
-    return () => {
-      cancelled = true;
-      stopScanner();
-    };
-  }, [isOpen, mode]);
-
-  // QR Code mode with html5-qrcode (unchanged, works well)
-  useEffect(() => {
-    if (!isOpen || mode !== "qrcode") {
-      if (mode === "qrcode") {
-        hasScannedRef.current = false;
-        stopScanner();
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    const startQR = async () => {
-      setError(null);
-      setIsStarting(true);
-      hasScannedRef.current = false;
-
-      await new Promise((r) => setTimeout(r, 500));
-      if (cancelled || !mountedRef.current) return;
-
-      const containerId = containerIdRef.current;
-      const element = document.getElementById(containerId);
-      if (!element) {
-        setError("Elemento do scanner não encontrado.");
-        setIsStarting(false);
-        return;
-      }
-
-      if (element.clientWidth === 0 || element.clientHeight === 0) {
-        element.style.width = "100%";
-        element.style.minHeight = "300px";
-      }
-
-      try {
-        stopScanner();
-
-        const scanner = new Html5Qrcode(containerId, {
-          formatsToSupport: qrFormats,
-          verbose: false,
-        });
-
-        if (cancelled) {
-          scanner.stop().catch(() => {});
-          return;
-        }
-
-        html5ScannerRef.current = scanner;
-
-        await scanner.start(
-          { facingMode: "environment" },
-          { fps: 10, qrbox: { width: 250, height: 250 } },
-          (decodedText) => {
-            if (hasScannedRef.current) return;
-            hasScannedRef.current = true;
-            console.log("[BarcodeScanner] QR scanned:", decodedText);
-            onScan(decodedText);
-            void stopScanner();
-          },
-          () => {}
-        );
-
-        if (mountedRef.current) setIsStarting(false);
-      } catch (err: any) {
-        console.error("[BarcodeScanner] QR Error:", err);
-        if (!mountedRef.current) return;
-        if (err?.toString?.().includes("NotAllowedError")) {
-          setError("Permissão da câmera negada. Habilite nas configurações do navegador.");
-        } else if (err?.toString?.().includes("NotFoundError")) {
-          setError("Nenhuma câmera encontrada no dispositivo.");
-        } else {
-          setError(`Erro ao acessar a câmera: ${err?.message || err}`);
-        }
-        setIsStarting(false);
-      }
-    };
-
-    startQR();
+    startScanner();
 
     return () => {
       cancelled = true;
@@ -336,7 +265,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     onManualInput?.();
   };
 
-  // Fullscreen barcode mode - uses native <video> + ZXing
+  // Fullscreen barcode mode
   if (mode === "barcode") {
     if (!isOpen) return null;
 
@@ -406,7 +335,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
     );
   }
 
-  // QR Code mode - keep dialog with html5-qrcode
+  // QR Code mode - dialog with video + ZXing canvas scanning
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <DialogContent className="sm:max-w-md p-0 gap-0 overflow-hidden">
@@ -428,11 +357,20 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput }:
             </div>
           ) : (
             <>
-              <div
-                id={containerIdRef.current}
-                className="w-full rounded-lg overflow-hidden bg-black"
-                style={{ minHeight: "300px" }}
-              />
+              <div className="w-full rounded-lg overflow-hidden bg-black relative" style={{ minHeight: "300px" }}>
+                <video
+                  ref={videoRef}
+                  className="w-full h-full object-cover"
+                  playsInline
+                  muted
+                  autoPlay
+                  style={{ minHeight: "300px" }}
+                />
+                {/* QR scan area guide */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="w-[250px] h-[250px] border-2 border-white/50 rounded-lg" />
+                </div>
+              </div>
               {isStarting && (
                 <p className="text-center text-sm text-muted-foreground mt-3">
                   Iniciando câmera...
