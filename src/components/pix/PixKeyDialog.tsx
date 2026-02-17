@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -28,7 +28,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     setIsValidating(true);
     try {
-      // Navigate to NewPayment with the key pre-filled
       onOpenChange(false);
       navigate(`/pix/new?tab=key&pixkey=${encodeURIComponent(trimmed)}`);
     } catch {
@@ -45,67 +44,69 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   };
 
   return (
-    <Sheet open={open} onOpenChange={handleClose}>
-      <SheetContent side="bottom" className="rounded-t-2xl px-5 pb-8 pt-2">
-        <SheetHeader className="flex-row items-center gap-3 space-y-0 pb-4">
-          <button onClick={handleClose} className="p-1 -ml-1">
-            <ArrowLeft className="h-5 w-5" />
-          </button>
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
-              <Key className="h-4 w-4 text-primary-foreground" />
+    <Drawer open={open} onOpenChange={handleClose}>
+      <DrawerContent>
+        <div className="px-5 pb-8">
+          <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
+            <button onClick={handleClose} className="p-1 -ml-1">
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="flex items-center gap-2">
+              <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                <Key className="h-4 w-4 text-primary-foreground" />
+              </div>
+              <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+                Pix com Chave
+              </DrawerTitle>
             </div>
-            <SheetTitle className="text-base font-bold uppercase tracking-wide">
-              Pix com Chave
-            </SheetTitle>
-          </div>
-        </SheetHeader>
-        <SheetDescription className="sr-only">
-          Informe a chave Pix para realizar o pagamento
-        </SheetDescription>
+          </DrawerHeader>
+          <DrawerDescription className="sr-only">
+            Informe a chave Pix para realizar o pagamento
+          </DrawerDescription>
 
-        <div className="space-y-5 mt-2">
-          <div className="space-y-2">
-            <Label htmlFor="pix-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-              Chave Pix
-            </Label>
-            <Input
-              id="pix-key"
-              placeholder="Ex: 123.456.789-10"
-              value={pixKey}
-              onChange={(e) => setPixKey(e.target.value)}
-              className="h-12 text-base"
-              autoFocus
-            />
-          </div>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="pix-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Chave Pix
+              </Label>
+              <Input
+                id="pix-key"
+                placeholder="Ex: 123.456.789-10"
+                value={pixKey}
+                onChange={(e) => setPixKey(e.target.value)}
+                className="h-12 text-base"
+                autoFocus
+              />
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Checkbox
-              id="save-favorite"
-              checked={saveFavorite}
-              onCheckedChange={(checked) => setSaveFavorite(checked === true)}
-            />
-            <Label htmlFor="save-favorite" className="text-sm font-medium cursor-pointer">
-              Salvar como Favorecido
-            </Label>
-          </div>
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="save-favorite"
+                checked={saveFavorite}
+                onCheckedChange={(checked) => setSaveFavorite(checked === true)}
+              />
+              <Label htmlFor="save-favorite" className="text-sm font-medium cursor-pointer">
+                Salvar como Favorecido
+              </Label>
+            </div>
 
-          <Button
-            onClick={handleValidate}
-            disabled={isValidating || !pixKey.trim()}
-            className="w-full h-12 text-base font-bold uppercase tracking-wider"
-          >
-            {isValidating ? (
-              <>
-                <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                Validando...
-              </>
-            ) : (
-              "Validar"
-            )}
-          </Button>
+            <Button
+              onClick={handleValidate}
+              disabled={isValidating || !pixKey.trim()}
+              className="w-full h-12 text-base font-bold uppercase tracking-wider"
+            >
+              {isValidating ? (
+                <>
+                  <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                  Validando...
+                </>
+              ) : (
+                "Validar"
+              )}
+            </Button>
+          </div>
         </div>
-      </SheetContent>
-    </Sheet>
+      </DrawerContent>
+    </Drawer>
   );
 }
