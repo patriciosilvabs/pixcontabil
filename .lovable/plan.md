@@ -1,99 +1,56 @@
 
+## Isolamento de dados por usuario (operador vs admin)
 
-## Fluxo de pagamento completo direto no Dashboard (sem passar pela pagina Novo Pagamento)
+### Problema
 
-### Problema atual
+Atualmente, os dados de transacoes no dashboard e nos pagamentos recentes mostram **todas as transacoes da empresa** para qualquer usuario, incluindo operadores. Apenas a pagina de Historico (Transactions) ja filtra corretamente.
 
-Quando o usuario clica em "COM CHAVE" ou "PAGAR QR CODE" no dashboard:
-1. Abre um modal/scanner para coletar os dados iniciais (chave ou QR code)
-2. Depois redireciona para a pagina `/pix/new` para completar o pagamento (valor, confirmacao)
+A regra de negocio e:
+- **Operador**: ve somente suas proprias transacoes e pagamentos
+- **Admin**: ve todas as transacoes de todos os usuarios da empresa
 
-O usuario quer que **todo o fluxo** aconteca dentro do proprio drawer/modal, sem sair do dashboard.
+### O que sera corrigido
 
-### Solucao
-
-Transformar o `PixKeyDialog` em um fluxo completo de pagamento com 3 etapas internas, e criar logica similar para o QR Code. Os drawers passam a conter:
-
-- **Etapa 1**: Coleta de dados (chave Pix ou resultado do QR code)
-- **Etapa 2**: Valor do pagamento (com campo R$)
-- **Etapa 3**: Confirmacao e execucao do pagamento
-
-Ao confirmar, o pagamento e executado diretamente via `usePixPayment` (payByKey ou payByQRCode) e o usuario e redirecionado para a tela de comprovante.
+| Local | Situacao atual | Correcao |
+|-------|---------------|----------|
+| Dashboard (resumo + transacoes recentes) | Mostra tudo da empresa | Filtrar por `created_by = user.id` para operadores |
+| Pagamentos Recentes (RecentPayments) | Mostra todos da empresa | Filtrar por `created_by = user.id` para operadores |
+| Historico de Transacoes | Ja filtra corretamente | Nenhuma alteracao |
+| Relatorios | Acesso restrito a admins | Nenhuma alteracao |
 
 ### Arquivos a modificar
 
-#### 1. `src/components/pix/PixKeyDialog.tsx` -- Refatorar completamente
+#### 1. `src/hooks/useDashboardData.ts`
 
-Transformar de um simples formulario de chave em um fluxo de 3 etapas:
+- Importar `isAdmin` e `user` do `useAuth()`
+- Na query de transacoes do mes, adicionar `.eq("created_by", user.id)` quando o usuario **nao for admin**
+- Isso garante que o resumo (custos, despesas, totais) e as transacoes recentes do dashboard reflitam apenas os dados do proprio operador
 
-- **Estado interno**: `step` (1, 2, 3), `pixKey`, `amount`, `saveFavorite`, `isValidating`, `isProcessing`
-- **Usar `usePixPayment`** para chamar `payByKey` diretamente
-- **Etapa 1**: Campo de chave Pix + checkbox favorecido (layout atual)
-- **Etapa 2**: Campo de valor (R$) com input numerico
-- **Etapa 3**: Resumo (chave + valor) com botao "Confirmar Pagamento"
-- Ao confirmar, chama `payByKey({ pix_key, valor })` e navega para `/pix/receipt/{transaction_id}`
-- Botao de voltar navega entre etapas (etapa 1 fecha o drawer)
+#### 2. `src/components/payment/RecentPayments.tsx`
 
-#### 2. Criar `src/components/pix/PixQrPaymentDrawer.tsx` -- Novo componente
-
-Drawer para o fluxo de pagamento via QR Code escaneado:
-
-- Recebe o `qrCode` (string escaneada) como prop
-- Ao abrir, automaticamente chama `getQRCodeInfo` para extrair valor e dados
-- **Etapa 1**: Mostra loading enquanto consulta, depois mostra dados extraidos (recebedor, valor)
-- **Etapa 2**: Campo de valor (pre-preenchido se encontrado, editavel se nao)
-- **Etapa 3**: Confirmacao com botao "Confirmar Pagamento"
-- Ao confirmar, chama `payByQRCode({ qr_code, valor })` e navega para `/pix/receipt/{transaction_id}`
-
-#### 3. `src/components/dashboard/MobileDashboard.tsx` -- Ajustar integracao
-
-- O scanner QR continua abrindo normalmente
-- Ao escanear, em vez de navegar para `/pix/new`, abre o `PixQrPaymentDrawer` com o codigo escaneado
-- Novo estado: `scannedQrCode` para armazenar o resultado do scan e controlar abertura do drawer
+- Importar `isAdmin` e `user` do `useAuth()`
+- Na query de pagamentos recentes, adicionar `.eq("created_by", user.id)` quando o usuario **nao for admin**
+- Isso garante que a lista "Ultimos Pagamentos" (usada para repetir pagamentos) mostre apenas os pagamentos feitos pelo proprio operador
 
 ### Detalhes tecnicos
 
-**PixKeyDialog.tsx (fluxo completo):**
-```
-Etapa 1: [Chave Pix] + [Salvar Favorecido] -> [Continuar]
-Etapa 2: [R$ ____] -> [Continuar]  
-Etapa 3: [Resumo: Chave + Valor] -> [Confirmar Pagamento]
-         -> payByKey() -> navigate(/pix/receipt/{id})
-```
-
-**PixQrPaymentDrawer.tsx (fluxo QR):**
-```
-Scanner detecta QR -> Abre drawer
-  -> getQRCodeInfo() automatico
-  -> Se tem valor: mostra resumo -> [Confirmar Pagamento]
-  -> Se nao tem valor: pede valor -> resumo -> [Confirmar]
-  -> payByQRCode() -> navigate(/pix/receipt/{id})
-```
-
-**MobileDashboard.tsx:**
-- `handleQrScan`: em vez de `navigate(...)`, seta `scannedQrCode` e abre o drawer
-- `PixQrPaymentDrawer` renderizado condicionalmente quando `scannedQrCode` tem valor
-
-### Fluxo do usuario
+Em ambos os arquivos, a logica sera:
 
 ```text
-COM CHAVE:
-  Dashboard -> Clica "COM CHAVE"
-           -> Abre drawer com campo de chave (etapa 1)
-           -> Digita chave -> Clica "Continuar"
-           -> Mostra campo de valor (etapa 2)
-           -> Digita valor -> Clica "Continuar"
-           -> Mostra resumo (etapa 3)
-           -> Clica "Confirmar Pagamento"
-           -> Pagamento executado -> Tela de comprovante
+const { currentCompany, isAdmin, user } = useAuth();
 
-PAGAR QR CODE:
-  Dashboard -> Clica "PAGAR QR CODE"
-           -> Abre camera fullscreen
-           -> Escaneia QR Code
-           -> Abre drawer com dados extraidos
-           -> Se valor encontrado: mostra resumo -> Confirmar
-           -> Se sem valor: pede valor -> Confirmar
-           -> Pagamento executado -> Tela de comprovante
+let query = supabase.from("transactions").select(...)
+  .eq("company_id", currentCompany.id);
+
+if (!isAdmin && user) {
+  query = query.eq("created_by", user.id);
+}
 ```
 
+Este e o mesmo padrao ja utilizado em `Transactions.tsx`.
+
+### O que NAO muda
+
+- A pagina de Relatorios continua mostrando dados globais (acesso restrito a admins pelo AuthGuard)
+- As politicas RLS do banco permanecem inalteradas (a filtragem e feita no nivel da aplicacao, como ja esta implementado em Transactions.tsx)
+- A estrutura visual dos componentes nao sera alterada
