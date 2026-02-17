@@ -1,65 +1,40 @@
 
 
-## Controle de visibilidade dos icones de Funcoes Principais por usuario
+## Drawer "Copia e Cola" direto no Dashboard
 
 ### Objetivo
 
-Permitir que o administrador escolha, ao editar um usuario, quais dos 8 icones de "Funcoes Principais" do dashboard mobile ficam visiveis para aquele usuario. Por padrao, todos ficam visiveis.
+Ao clicar no icone "COPIA E COLA" no dashboard, abrir um drawer (bottom sheet) com campo de texto para colar o codigo Pix EMV, incluindo um botao "Colar" para facilitar. O pagamento sera concluido sem sair do dashboard, seguindo o mesmo padrao dos fluxos "COM CHAVE", "PAGAR QR CODE" e "BOLETO".
 
-### Icones controlaveis
+### Fluxo do Drawer
 
-| Chave | Label |
-|-------|-------|
-| menu_pix | MENU PIX |
-| pagar_qrcode | PAGAR QR CODE |
-| copia_cola | COPIA E COLA |
-| com_chave | COM CHAVE |
-| favorecidos | FAVORECIDOS |
-| agendadas | AGENDADAS |
-| boleto | BOLETO |
-| transferir | TRANSFERIR |
+1. **Etapa 1** - Campo de texto + botao "Colar" (cola automaticamente do clipboard)
+2. **Etapa 2** - Carregamento dos dados do codigo (usa `getQRCodeInfo`)
+3. **Etapa 3** - Valor (se nao veio fixo no codigo)
+4. **Etapa 4** - Confirmacao e pagamento (usa `payByQRCode`)
 
 ### Alteracoes
 
-#### 1. Banco de dados -- nova tabela `user_feature_permissions`
+#### 1. Novo componente `src/components/pix/PixCopyPasteDrawer.tsx`
 
-Criar tabela para armazenar quais icones cada usuario pode ver:
+- Drawer com 3-4 etapas, seguindo o padrao visual do `PixQrPaymentDrawer`
+- Etapa 1: campo `textarea` para colar o codigo EMV + botao "Colar" que usa `navigator.clipboard.readText()` para preencher automaticamente + botao "Continuar"
+- Ao continuar, chama `getQRCodeInfo` para extrair dados (recebedor, valor, chave)
+- Se o codigo ja tiver valor fixo, pula direto para confirmacao
+- Se nao, exibe etapa de valor
+- Etapa final: resumo com recebedor, chave, valor e botao "Confirmar Pagamento"
+- Usa `payByQRCode` do hook `usePixPayment` para processar
 
-```text
-user_feature_permissions
-- id (uuid, PK)
-- user_id (uuid, NOT NULL)
-- company_id (uuid, NOT NULL)
-- feature_key (text, NOT NULL) -- ex: "menu_pix", "boleto"
-- is_visible (boolean, default true)
-- created_at (timestamptz)
-UNIQUE(user_id, company_id, feature_key)
-```
+#### 2. Alterar `src/components/dashboard/MobileDashboard.tsx`
 
-Politicas RLS:
-- Admins: ALL
-- Usuarios: SELECT nas proprias permissoes
+- Adicionar estados `copyPasteOpen` e `copyPasteCode`
+- Importar `PixCopyPasteDrawer`
+- No bloco de acoes rapidas, tratar "COPIA E COLA" como botao (igual "COM CHAVE", "PAGAR QR CODE", "BOLETO") em vez de Link
+- Ao clicar, abrir o drawer `PixCopyPasteDrawer`
+- Adicionar o componente `PixCopyPasteDrawer` no JSX junto aos demais drawers
 
-#### 2. `src/pages/Users.tsx` -- adicionar secao de checkboxes no dialog de edicao
+### Detalhes tecnicos
 
-- Criar constante `FEATURE_OPTIONS` com as 8 opcoes
-- Adicionar estado `editFeaturePermissions` (Record de feature_key para boolean)
-- No `openEdit`, carregar permissoes de features do banco (default: todos true)
-- No dialog, adicionar nova secao "Funcoes Principais Visiveis" com grid de checkboxes, abaixo da secao "Acesso as Paginas"
-- No `handleSave`, salvar/atualizar as permissoes de features via upsert
-
-#### 3. `src/contexts/AuthContext.tsx` -- expor permissoes de features
-
-- Adicionar estado `featurePermissions` (string[] com as keys visiveis)
-- Buscar da tabela `user_feature_permissions` no `fetchUserData`
-- Expor funcao `hasFeatureAccess(featureKey: string): boolean` no contexto (admin = true para todos)
-
-#### 4. `src/components/dashboard/MobileDashboard.tsx` -- filtrar icones
-
-- Receber `hasFeatureAccess` como prop ou usar do contexto
-- Adicionar campo `featureKey` a cada item do array `quickActions`
-- Filtrar o array antes de renderizar: `quickActions.filter(a => hasFeatureAccess(a.featureKey))`
-
-### Resultado
-
-O admin vera checkboxes para cada icone de funcao principal ao editar um usuario. Icones desmarcados nao aparecerao no dashboard mobile daquele usuario.
+- O botao "Colar" usara `navigator.clipboard.readText()` com fallback para toast de erro caso a permissao seja negada
+- O componente reutiliza `usePixPayment` (funcoes `getQRCodeInfo` e `payByQRCode`) ja existentes
+- Layout segue o padrao dos outros drawers: header com seta voltar, indicador de etapas, e botoes full-width
