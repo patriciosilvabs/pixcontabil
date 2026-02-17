@@ -65,33 +65,30 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   return (
     <div className="px-4 pt-4 pb-24 space-y-6">
       {/* Balance Card */}
-      <Card className="overflow-hidden shadow-md">
-        <CardContent className="p-5">
-          <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-            Saldo Disponível
-          </span>
-          {!canViewBalance ? (
-            <>
-              <p className="text-3xl font-bold text-muted-foreground mt-1">---</p>
-              <p className="text-xs text-muted-foreground mt-1">Saldo oculto</p>
-            </>
-          ) : balanceLoading ? (
-            <Skeleton className="h-9 w-32 mt-1" />
-          ) : (
-            <p className="text-3xl font-bold font-mono-numbers tracking-tight mt-1">
-              {balanceVisible
-                ? balanceAvailable
-                  ? formatCurrency(balance ?? 0)
-                  : "Indisponível"
-                : "••••••"}
-            </p>
-          )}
-          {canViewBalance && provider && (
-            <p className="text-xs text-muted-foreground mt-1">Provedor: {provider}</p>
-          )}
-          <Progress value={0} className="mt-4 h-2.5 [&>div]:bg-primary" />
-        </CardContent>
-      </Card>
+      {canViewBalance && (
+        <Card className="overflow-hidden shadow-md">
+          <CardContent className="p-5">
+            <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+              Saldo Disponível
+            </span>
+            {balanceLoading ? (
+              <Skeleton className="h-9 w-32 mt-1" />
+            ) : (
+              <p className="text-3xl font-bold font-mono-numbers tracking-tight mt-1">
+                {balanceVisible
+                  ? balanceAvailable
+                    ? formatCurrency(balance ?? 0)
+                    : "Indisponível"
+                  : "••••••"}
+              </p>
+            )}
+            {provider && (
+              <p className="text-xs text-muted-foreground mt-1">Provedor: {provider}</p>
+            )}
+            <Progress value={0} className="mt-4 h-2.5 [&>div]:bg-primary" />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Quick Actions Grid */}
       <div>

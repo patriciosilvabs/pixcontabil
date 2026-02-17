@@ -85,7 +85,7 @@ export function OperatorDashboard() {
       </div>
 
       {/* Balance hidden card */}
-      {canViewBalance ? (
+      {canViewBalance && (
         <Card className="balance-card text-white overflow-hidden">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-4">
@@ -106,14 +106,6 @@ export function OperatorDashboard() {
             <p className="text-white/70 text-sm mt-1">
               {provider ? `Provedor: ${provider}` : 'Atualizado em tempo real'}
             </p>
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="bg-muted/50">
-          <CardContent className="p-6 text-center">
-            <p className="text-sm text-muted-foreground mb-2">Saldo da conta</p>
-            <p className="text-4xl font-bold text-muted-foreground">---</p>
-            <p className="text-xs text-muted-foreground mt-2">Saldo oculto para operadores</p>
           </CardContent>
         </Card>
       )}
