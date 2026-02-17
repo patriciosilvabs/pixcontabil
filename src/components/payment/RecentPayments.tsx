@@ -37,7 +37,7 @@ function maskKey(key: string): string {
 }
 
 export function RecentPayments({ onSelect }: RecentPaymentsProps) {
-  const { currentCompany } = useAuth();
+  const { currentCompany, isAdmin, user } = useAuth();
   const [payments, setPayments] = useState<RecentPayment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -49,7 +49,7 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
 
     const fetchRecent = async () => {
       setIsLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from("transactions")
         .select("pix_key, pix_key_type, pix_type, amount, description, beneficiary_name, created_at")
         .eq("company_id", currentCompany.id)
@@ -57,6 +57,12 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
         .not("pix_key", "is", null)
         .order("created_at", { ascending: false })
         .limit(30);
+
+      if (!isAdmin && user) {
+        query = query.eq("created_by", user.id);
+      }
+
+      const { data, error } = await query;
 
       if (error) {
         console.error("[RecentPayments] Error:", error);
@@ -78,7 +84,7 @@ export function RecentPayments({ onSelect }: RecentPaymentsProps) {
     };
 
     fetchRecent();
-  }, [currentCompany?.id]);
+  }, [currentCompany?.id, isAdmin, user?.id]);
 
   if (isLoading) {
     return (
