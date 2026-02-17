@@ -41,6 +41,7 @@ export interface CompanyMember {
   company_id: string;
   user_id: string;
   payment_limit?: number;
+  can_view_balance: boolean;
   is_active: boolean;
   created_at: string;
   updated_at: string;

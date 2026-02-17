@@ -19,10 +19,11 @@ import {
   CheckCircle2,
   AlertCircle,
   Inbox,
+  Wallet,
 } from "lucide-react";
 
 export function OperatorDashboard() {
-  const { profile, currentCompany } = useAuth();
+  const { profile, currentCompany, canViewBalance } = useAuth();
   const isMobile = useIsMobile();
   const [balanceVisible, setBalanceVisible] = React.useState(true);
   const { summary, recentTransactions, isLoading: dataLoading } = useDashboardData();
@@ -39,6 +40,7 @@ export function OperatorDashboard() {
         provider={provider}
         recentTransactions={recentTransactions}
         dataLoading={dataLoading}
+        canViewBalance={canViewBalance}
       />
     );
   }
@@ -83,15 +85,38 @@ export function OperatorDashboard() {
       </div>
 
       {/* Balance hidden card */}
-      <Card className="bg-muted/50">
-        <CardContent className="p-6 text-center">
-          <p className="text-sm text-muted-foreground mb-2">Saldo da conta</p>
-          <p className="text-4xl font-bold text-muted-foreground">---</p>
-          <p className="text-xs text-muted-foreground mt-2">
-            Saldo oculto para operadores
-          </p>
-        </CardContent>
-      </Card>
+      {canViewBalance ? (
+        <Card className="balance-card text-white overflow-hidden">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="h-10 w-10 rounded-lg bg-white/20 flex items-center justify-center">
+                <Wallet className="h-5 w-5" />
+              </div>
+              <span className="text-xs bg-white/20 px-2 py-1 rounded-full">Saldo atual</span>
+            </div>
+            {balanceLoading ? (
+              <Skeleton className="h-9 w-40 bg-white/20" />
+            ) : balanceAvailable ? (
+              <p className="text-3xl font-bold font-mono-numbers">
+                {formatCurrency(balance ?? 0)}
+              </p>
+            ) : (
+              <p className="text-xl font-bold">Indisponível</p>
+            )}
+            <p className="text-white/70 text-sm mt-1">
+              {provider ? `Provedor: ${provider}` : 'Atualizado em tempo real'}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-muted/50">
+          <CardContent className="p-6 text-center">
+            <p className="text-sm text-muted-foreground mb-2">Saldo da conta</p>
+            <p className="text-4xl font-bold text-muted-foreground">---</p>
+            <p className="text-xs text-muted-foreground mt-2">Saldo oculto para operadores</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Alert for pending receipts */}
       {summary.pendingReceipts > 0 && (
