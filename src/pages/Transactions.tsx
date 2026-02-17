@@ -192,8 +192,8 @@ export default function Transactions() {
               return (
                 <Card key={transaction.id} className="hover:shadow-md transition-shadow cursor-pointer">
                   <CardContent className="p-4">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                      <div className="flex items-start gap-4 min-w-0">
                         <div
                           className={`h-12 w-12 rounded-xl flex items-center justify-center ${
                             transaction.classification === "cost" ? "bg-primary/10" : "bg-destructive/10"
@@ -228,7 +228,7 @@ export default function Transactions() {
                           </p>
                         </div>
                       </div>
-                      <div className="text-right space-y-2">
+                      <div className="flex items-center justify-between sm:flex-col sm:items-end sm:text-right gap-2">
                         <p className="text-lg font-bold font-mono-numbers">{formatCurrency(transaction.amount)}</p>
                         <div className="flex items-center justify-end gap-2">
                           <Badge className={status.className}>
