@@ -14,7 +14,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
-import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2 } from "lucide-react";
 
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
@@ -38,7 +39,7 @@ interface MemberRow {
 }
 
 export default function Users() {
-  const { currentCompany } = useAuth();
+  const { currentCompany, user } = useAuth();
   const { toast } = useToast();
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -53,6 +54,9 @@ export default function Users() {
   const [editLimit, setEditLimit] = useState("");
   const [editPermissions, setEditPermissions] = useState<Record<string, boolean>>({});
   const [isSaving, setIsSaving] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState(false);
+  const [deletingMember, setDeletingMember] = useState<MemberRow | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchMembers = async () => {
     if (!currentCompany) return;
@@ -186,6 +190,42 @@ export default function Users() {
       fetchMembers();
     }
   };
+  const handleDeleteUser = async () => {
+    if (!deletingMember) return;
+    setIsDeleting(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/delete-user`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ user_id: deletingMember.user_id }),
+        }
+      );
+
+      const result = await res.json();
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Erro", description: result.error });
+        return;
+      }
+
+      toast({ title: "Usuário excluído permanentemente!" });
+      setDeleteDialog(false);
+      setDeletingMember(null);
+      fetchMembers();
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro", description: error.message });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleAddUser = async () => {
     if (!currentCompany || !addEmail.trim() || !addName.trim() || !addPassword.trim()) return;
@@ -304,6 +344,16 @@ export default function Users() {
                         <Button variant="ghost" size="sm" onClick={() => toggleActive(m)}>
                           {m.is_active ? "Desativar" : "Ativar"}
                         </Button>
+                        {user && m.user_id !== user.id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -403,6 +453,28 @@ export default function Users() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <AlertDialog open={deleteDialog} onOpenChange={setDeleteDialog}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Excluir usuário permanentemente?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja excluir <strong>{deletingMember?.profile?.full_name || "este usuário"}</strong>? 
+                Esta ação é irreversível e removerá todos os dados do usuário do sistema.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleDeleteUser}
+                disabled={isDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isDeleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Excluir
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </MainLayout>
   );
