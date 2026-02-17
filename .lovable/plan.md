@@ -1,16 +1,65 @@
 
-## Corrigir overflow do preco e botao "Anexar" no card de transacao (mobile)
 
-### Problema
+## Controle de visibilidade dos icones de Funcoes Principais por usuario
 
-No mobile, o layout do card de transacao usa `flex justify-between` horizontal, fazendo com que o preco (R$ 12,00), o badge de status ("Pendente") e o botao "Anexar" transbordem para fora do card.
+### Objetivo
 
-### Solucao
+Permitir que o administrador escolha, ao editar um usuario, quais dos 8 icones de "Funcoes Principais" do dashboard mobile ficam visiveis para aquele usuario. Por padrao, todos ficam visiveis.
 
-Alterar o layout do card em `src/pages/Transactions.tsx` (linhas 195-250) para empilhar verticalmente no mobile:
+### Icones controlaveis
 
-1. **Container principal**: Trocar `flex items-start justify-between gap-4` por `flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3`
-2. **Bloco de info (esquerda)**: Adicionar `min-w-0` para permitir truncamento
-3. **Bloco de valor/status (direita)**: Trocar `text-right` por `flex items-center justify-between sm:flex-col sm:items-end sm:text-right` para ficar em linha no mobile e empilhado no desktop
+| Chave | Label |
+|-------|-------|
+| menu_pix | MENU PIX |
+| pagar_qrcode | PAGAR QR CODE |
+| copia_cola | COPIA E COLA |
+| com_chave | COM CHAVE |
+| favorecidos | FAVORECIDOS |
+| agendadas | AGENDADAS |
+| boleto | BOLETO |
+| transferir | TRANSFERIR |
 
-Isso fara com que no mobile o preco e os botoes aparecam abaixo do nome do beneficiario, dentro do card, sem transbordar.
+### Alteracoes
+
+#### 1. Banco de dados -- nova tabela `user_feature_permissions`
+
+Criar tabela para armazenar quais icones cada usuario pode ver:
+
+```text
+user_feature_permissions
+- id (uuid, PK)
+- user_id (uuid, NOT NULL)
+- company_id (uuid, NOT NULL)
+- feature_key (text, NOT NULL) -- ex: "menu_pix", "boleto"
+- is_visible (boolean, default true)
+- created_at (timestamptz)
+UNIQUE(user_id, company_id, feature_key)
+```
+
+Politicas RLS:
+- Admins: ALL
+- Usuarios: SELECT nas proprias permissoes
+
+#### 2. `src/pages/Users.tsx` -- adicionar secao de checkboxes no dialog de edicao
+
+- Criar constante `FEATURE_OPTIONS` com as 8 opcoes
+- Adicionar estado `editFeaturePermissions` (Record de feature_key para boolean)
+- No `openEdit`, carregar permissoes de features do banco (default: todos true)
+- No dialog, adicionar nova secao "Funcoes Principais Visiveis" com grid de checkboxes, abaixo da secao "Acesso as Paginas"
+- No `handleSave`, salvar/atualizar as permissoes de features via upsert
+
+#### 3. `src/contexts/AuthContext.tsx` -- expor permissoes de features
+
+- Adicionar estado `featurePermissions` (string[] com as keys visiveis)
+- Buscar da tabela `user_feature_permissions` no `fetchUserData`
+- Expor funcao `hasFeatureAccess(featureKey: string): boolean` no contexto (admin = true para todos)
+
+#### 4. `src/components/dashboard/MobileDashboard.tsx` -- filtrar icones
+
+- Receber `hasFeatureAccess` como prop ou usar do contexto
+- Adicionar campo `featureKey` a cada item do array `quickActions`
+- Filtrar o array antes de renderizar: `quickActions.filter(a => hasFeatureAccess(a.featureKey))`
+
+### Resultado
+
+O admin vera checkboxes para cada icone de funcao principal ao editar um usuario. Icones desmarcados nao aparecerao no dashboard mobile daquele usuario.
