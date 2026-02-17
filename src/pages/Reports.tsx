@@ -37,11 +37,13 @@ export default function Reports() {
     }
   }, [period]);
 
+  const [profileMap, setProfileMap] = useState<Record<string, string>>({});
+
   useEffect(() => {
     if (!currentCompany) return;
     const fetchData = async () => {
       setIsLoading(true);
-      const [txRes, catRes] = await Promise.all([
+      const [txRes, catRes, profileRes] = await Promise.all([
         supabase
           .from("transactions")
           .select("*, categories(name, classification), receipts(file_url, file_name)")
@@ -50,9 +52,15 @@ export default function Reports() {
           .lte("created_at", dateRange.end.toISOString())
           .order("created_at", { ascending: false }),
         supabase.from("categories").select("*").eq("company_id", currentCompany.id),
+        supabase.from("profiles").select("user_id, full_name"),
       ]);
       if (txRes.data) setTransactions(txRes.data);
       if (catRes.data) setCategories(catRes.data);
+      if (profileRes.data) {
+        const map: Record<string, string> = {};
+        profileRes.data.forEach((p: any) => { map[p.user_id] = p.full_name; });
+        setProfileMap(map);
+      }
       setIsLoading(false);
     };
     fetchData();
@@ -231,7 +239,7 @@ export default function Reports() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <DailyTransactionSummary transactions={filteredTransactions} />
+            <DailyTransactionSummary transactions={filteredTransactions} profileMap={profileMap} />
           </>
         )}
       </div>

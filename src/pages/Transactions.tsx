@@ -38,6 +38,7 @@ interface TransactionRow {
   status: string;
   hasReceipt: boolean;
   createdAt: string;
+  createdBy?: string;
 }
 
 const statusConfig = {
@@ -72,6 +73,7 @@ export default function Transactions() {
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [profileMap, setProfileMap] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!currentCompany) return;
@@ -88,15 +90,22 @@ export default function Transactions() {
         query = query.eq("created_by", user.id);
       }
 
-      const { data, error } = await query
-        .order("created_at", { ascending: false })
-        .limit(100);
+      const [txResult, profileRes] = await Promise.all([
+        query.order("created_at", { ascending: false }).limit(100),
+        supabase.from("profiles").select("user_id, full_name"),
+      ]);
 
-      if (error) {
-        console.error("Error fetching transactions:", error);
+      if (profileRes.data) {
+        const map: Record<string, string> = {};
+        profileRes.data.forEach((p: any) => { map[p.user_id] = p.full_name; });
+        setProfileMap(map);
+      }
+
+      if (txResult.error) {
+        console.error("Error fetching transactions:", txResult.error);
         setTransactions([]);
       } else {
-        const mapped: TransactionRow[] = (data || []).map((t: any) => ({
+        const mapped: TransactionRow[] = (txResult.data || []).map((t: any) => ({
           id: t.id,
           beneficiary: t.beneficiary_name || t.description || "Sem nome",
           amount: Number(t.amount),
@@ -105,6 +114,7 @@ export default function Transactions() {
           status: t.status,
           hasReceipt: Array.isArray(t.receipts) && t.receipts.length > 0,
           createdAt: t.created_at,
+          createdBy: t.created_by,
         }));
         setTransactions(mapped);
       }
@@ -221,9 +231,17 @@ export default function Transactions() {
                             <span>•</span>
                             <span>{transaction.category}</span>
                             <span className="hidden sm:inline">•</span>
-                            <span className="hidden sm:inline">{formatDateTime(transaction.createdAt)}</span>
+                            <span className="hidden sm:inline">
+                              {transaction.createdBy && profileMap[transaction.createdBy]
+                                ? `por ${profileMap[transaction.createdBy]} - `
+                                : ""}
+                              {formatDateTime(transaction.createdAt)}
+                            </span>
                           </div>
                           <p className="text-xs text-muted-foreground sm:hidden">
+                            {transaction.createdBy && profileMap[transaction.createdBy]
+                              ? `por ${profileMap[transaction.createdBy]} - `
+                              : ""}
                             {formatDateTime(transaction.createdAt)}
                           </p>
                         </div>
