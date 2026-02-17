@@ -1,39 +1,39 @@
 
 
-## Limpar historico de transacoes
+## Corrigir extracao automatica de valor no Pix Copia e Cola
 
-Apagar apenas os dados de teste das transacoes, mantendo toda a estrutura do sistema (empresa, usuarios, categorias, configuracao Pix, permissoes).
+### Problema
 
-### Dados que serao apagados
+Quando o usuario cola um codigo Pix EMV no campo "Copia e Cola", o sistema **nao consulta** o valor automaticamente. O mesmo codigo, quando escaneado via camera (QR Code), extrai o valor corretamente usando a funcao `getQRCodeInfo`. Isso e uma inconsistencia grave pois obriga o usuario a digitar o valor manualmente, podendo gerar erros.
 
-| Tabela | Registros | Descricao |
-|--------|-----------|-----------|
-| receipts | 18 | Comprovantes anexados |
-| audit_logs | 30 | Logs de auditoria das transacoes |
-| pix_tokens | 1 | Token de autenticacao Pix (expirado) |
-| transactions | 30 | Transacoes de teste |
+### Comparacao do comportamento atual
 
-### Dados que serao mantidos
+| Metodo | Extrai valor? | Como? |
+|--------|--------------|-------|
+| QR Code (camera) | Sim | Chama `getQRCodeInfo` apos escanear |
+| Boleto (digitado) | Sim | Chama `parseBoleto` no onChange |
+| Copia e Cola | **Nao** | Apenas armazena o texto |
 
-| Tabela | Registros |
-|--------|-----------|
-| companies | 1 |
-| profiles | 2 |
-| user_roles | 2 |
-| company_members | 2 |
-| categories | 106 |
-| pix_configs | 1 |
-| user_page_permissions | 16 |
+### Solucao
 
-### Ordem de execucao
+Adicionar logica no campo "Copia e Cola" para detectar quando o usuario cola um codigo EMV valido e automaticamente:
 
-A limpeza precisa respeitar dependencias entre tabelas:
-
-1. Apagar `receipts` (depende de transactions)
-2. Apagar `audit_logs` (referencia transactions)
-3. Apagar `pix_tokens` (tokens expirados, serao regenerados)
-4. Apagar `transactions`
+1. Chamar `getQRCodeInfo` para consultar os detalhes (valor, nome do recebedor, etc.)
+2. Preencher o valor automaticamente no formulario
+3. Mostrar feedback visual (toast com valor e nome do recebedor)
+4. Avancar para a etapa 2 se o valor for encontrado
 
 ### Detalhes tecnicos
 
-Serao executados 4 comandos DELETE usando a ferramenta de insercao de dados, na ordem correta para evitar erros de foreign key. Tambem sera feita a limpeza dos arquivos de comprovantes no storage bucket `receipts`.
+**Arquivo:** `src/pages/NewPayment.tsx`
+
+1. Adicionar estado de loading para consulta do copia e cola (`isConsultingPaste`)
+2. No `onChange` do Textarea do "Copia e Cola":
+   - Detectar se o texto colado parece um codigo EMV valido (comeca com `0002` ou tem tamanho minimo ~50 chars)
+   - Chamar `getQRCodeInfo({ qr_code: codigocolado })`
+   - Se retornar valor, preencher `amount` e mostrar toast
+   - Se nao retornar valor, informar que o usuario deve digitar manualmente
+3. Mostrar indicador de loading enquanto consulta
+
+O fluxo sera identico ao que ja existe para o scanner de QR Code (linhas 548-573 do arquivo atual), reutilizando a mesma funcao `getQRCodeInfo` que ja esta disponivel no componente.
+
