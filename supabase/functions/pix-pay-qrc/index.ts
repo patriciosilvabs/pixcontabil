@@ -318,11 +318,18 @@ Deno.serve(async (req) => {
       const bodyStr = JSON.stringify(pagguePayload);
       console.log('[pix-pay-qrc] Paggue Brcode payload (type=2)');
 
-      // Generate HMAC-SHA256 signature using client_secret
+      // Generate HMAC-SHA256 signature using webhook_secret (Paggue's private signing token)
+      const signingSecret = config.webhook_secret;
+      if (!signingSecret) {
+        return new Response(
+          JSON.stringify({ error: 'Token de assinatura Paggue não configurado. Configure o webhook_secret nas configurações Pix.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       const encoder = new TextEncoder();
       const sigKey = await crypto.subtle.importKey(
         'raw',
-        encoder.encode(config.client_secret_encrypted),
+        encoder.encode(signingSecret),
         { name: 'HMAC', hash: 'SHA-256' },
         false,
         ['sign']
