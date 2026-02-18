@@ -183,16 +183,12 @@ Deno.serve(async (req) => {
     if (provider === 'woovi') {
       externalId = generateCorrelationID();
 
-      // Step 1: Decode the EMV via Woovi's decode endpoint (correct path: /api/v1/decode/emv)
       const decodeUrl = `${config.base_url}/api/v1/decode/emv`;
       console.log('[pix-pay-qrc] Woovi: decoding EMV via /api/v1/decode/emv');
 
       const decodeResponse = await fetch(decodeUrl, {
         method: 'POST',
-        headers: {
-          'Authorization': access_token,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ emv: qr_code }),
       });
 
@@ -205,11 +201,8 @@ Deno.serve(async (req) => {
         console.warn('[pix-pay-qrc] Woovi decode failed:', decodeErr);
       }
 
-      // Step 2: Try paying with QR_CODE type first (native cobv settlement)
-      // This ensures the terminal (maquininha) receives confirmation
       const payUrl = `${config.base_url}/api/v1/payment`;
       
-      // First attempt: QR_CODE type with EMV (settles the original cobv charge)
       let wooviPayload: any = {
         type: 'QR_CODE',
         qrCode: qr_code,
@@ -218,82 +211,58 @@ Deno.serve(async (req) => {
         correlationID: externalId,
       };
 
-      console.log('[pix-pay-qrc] Woovi QR_CODE attempt:', JSON.stringify(wooviPayload));
-
       let payResponse = await fetch(payUrl, {
         method: 'POST',
-        headers: {
-          'Authorization': access_token,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
         body: JSON.stringify(wooviPayload),
       });
 
-      // If QR_CODE fails, try BRCODE type
       if (!payResponse.ok) {
         const qrErr = await payResponse.text();
-        console.warn('[pix-pay-qrc] Woovi QR_CODE failed:', qrErr, '- trying BRCODE type');
+        console.warn('[pix-pay-qrc] Woovi QR_CODE failed:', qrErr, '- trying BRCODE');
 
         wooviPayload = {
-          type: 'BRCODE',
-          brcode: qr_code,
+          type: 'BRCODE', brcode: qr_code,
           value: Math.round(paymentAmount * 100),
           comment: descricao || 'Pagamento via QR Code',
           correlationID: externalId + '-b',
         };
-
         payResponse = await fetch(payUrl, {
           method: 'POST',
-          headers: {
-            'Authorization': access_token,
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
           body: JSON.stringify(wooviPayload),
         });
       }
 
-      // If BRCODE also fails, fall back to PIX_KEY (won't settle cobv but money arrives)
       if (!payResponse.ok) {
         const brcodeErr = await payResponse.text();
-        console.warn('[pix-pay-qrc] Woovi BRCODE also failed:', brcodeErr, '- falling back to PIX_KEY');
+        console.warn('[pix-pay-qrc] Woovi BRCODE failed:', brcodeErr, '- falling back to PIX_KEY');
 
         const payKey = wooviDecoded?.pixKey?.pixKey || wooviDecoded?.chave || destKey;
         const payKeyType = wooviDecoded?.pixKey?.type || detectKeyType(payKey || '');
 
         if (!payKey) {
           return new Response(
-            JSON.stringify({ 
-              error: 'Não foi possível pagar este QR Code. O provedor Woovi não suporta pagamento de QR Codes dinâmicos de outros PSPs (ex: Mercado Pago). O dinheiro pode ser enviado via chave Pix, mas a maquininha não confirmará o pagamento.',
-              unsupported_cobv: true 
-            }),
+            JSON.stringify({ error: 'Não foi possível pagar este QR Code dinâmico via Woovi.', unsupported_cobv: true }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
         externalId = generateCorrelationID();
         wooviPayload = {
-          type: 'PIX_KEY',
-          destinationAlias: payKey,
-          destinationAliasType: payKeyType,
+          type: 'PIX_KEY', destinationAlias: payKey, destinationAliasType: payKeyType,
           value: Math.round(paymentAmount * 100),
           comment: descricao || 'Pagamento via QR Code',
           correlationID: externalId,
         };
-
-        console.log('[pix-pay-qrc] Woovi PIX_KEY fallback:', JSON.stringify(wooviPayload));
-
         payResponse = await fetch(payUrl, {
           method: 'POST',
-          headers: {
-            'Authorization': access_token,
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
           body: JSON.stringify(wooviPayload),
         });
 
         if (!payResponse.ok) {
           const errorText = await payResponse.text();
-          console.error('[pix-pay-qrc] Woovi all payment attempts failed:', errorText);
           return new Response(
             JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -302,28 +271,73 @@ Deno.serve(async (req) => {
       }
 
       paymentData = await payResponse.json();
-      console.log('[pix-pay-qrc] Woovi payment created:', JSON.stringify(paymentData));
 
-      // Auto-approve
       const finalCorrelationID = paymentData.payment?.correlationID || externalId;
-      const approveUrl = `${config.base_url}/api/v1/payment/approve`;
-      const approveResponse = await fetch(approveUrl, {
+      const approveResponse = await fetch(`${config.base_url}/api/v1/payment/approve`, {
         method: 'POST',
-        headers: {
-          'Authorization': access_token,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ correlationID: finalCorrelationID }),
       });
 
       if (approveResponse.ok) {
         const approveData = await approveResponse.json();
-        console.log('[pix-pay-qrc] Woovi payment approved:', JSON.stringify(approveData));
         paymentData = { ...paymentData, ...approveData };
-      } else {
-        const approveErrorText = await approveResponse.text();
-        console.error('[pix-pay-qrc] Woovi approve error:', approveErrorText);
       }
+    }
+    // ========== PAGGUE - Dynamic QR (Brcode cash-out type=2) ==========
+    else if (provider === 'paggue') {
+      externalId = generateCorrelationID();
+
+      // Get Paggue company ID
+      const authJson = await (await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id }),
+      })).json();
+      
+      const paggueCompanyId = authJson.provider_company_id || config.provider_company_id;
+      
+      if (!paggueCompanyId) {
+        return new Response(
+          JSON.stringify({ error: 'Paggue Company ID não configurado.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Paggue cash-out type=2 (Brcode) - sends EMV in pix_key field
+      // This SETTLES the original COBV charge, so the terminal will confirm payment
+      const payUrl = 'https://ms.paggue.io/cashout/api/cash-out';
+      const pagguePayload = {
+        amount: Math.round(paymentAmount * 100), // centavos
+        type: 2, // Brcode
+        pix_key: qr_code, // EMV string goes here
+        description: descricao || 'Pagamento via QR Code',
+        external_id: externalId,
+      };
+
+      console.log('[pix-pay-qrc] Paggue Brcode payload (type=2)');
+
+      const payResponse = await fetch(payUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'X-Company-ID': paggueCompanyId,
+        },
+        body: JSON.stringify(pagguePayload),
+      });
+
+      if (!payResponse.ok) {
+        const errorText = await payResponse.text();
+        console.error('[pix-pay-qrc] Paggue Brcode error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao pagar QR Code via Paggue', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = await payResponse.json();
+      console.log('[pix-pay-qrc] Paggue payment created:', JSON.stringify(paymentData));
     }
     // ========== ONZ - Dynamic QR (via proxy) ==========
     else if (provider === 'onz') {
@@ -351,8 +365,7 @@ Deno.serve(async (req) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
         body: JSON.stringify({
-          url: payUrl,
-          method: 'POST',
+          url: payUrl, method: 'POST',
           headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
           body: onzPayload,
         }),
@@ -360,7 +373,6 @@ Deno.serve(async (req) => {
 
       if (!proxyResponse.ok) {
         const errorText = await proxyResponse.text();
-        console.error('[pix-pay-qrc] ONZ proxy error:', errorText);
         return new Response(
           JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -381,26 +393,16 @@ Deno.serve(async (req) => {
     else if (provider === 'transfeera') {
       externalId = generateIdEnvio();
       const payUrl = `${config.base_url}/pix/qrcode/pay`;
-      const transfeeraPayload = {
-        emv: qr_code,
-        value: paymentAmount,
-        description: descricao || 'Pagamento via QR Code',
-      };
-
-      console.log('[pix-pay-qrc] Transfeera QR payload:', JSON.stringify(transfeeraPayload));
+      const transfeeraPayload = { emv: qr_code, value: paymentAmount, description: descricao || 'Pagamento via QR Code' };
 
       const payResponse = await fetch(payUrl, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(transfeeraPayload),
       });
 
       if (!payResponse.ok) {
         const errorText = await payResponse.text();
-        console.error('[pix-pay-qrc] Transfeera QR error:', errorText);
         return new Response(
           JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -422,26 +424,17 @@ Deno.serve(async (req) => {
         } catch (_) { /* ignore */ }
       }
 
-      // EFI uses the /v2/gn/pix/qrcode/pay endpoint for QR code payments
       const payUrl = `${config.base_url}/v2/gn/pix/${externalId}`;
       const efiPayload = {
         valor: paymentAmount.toFixed(2),
-        pagador: {
-          chave: config.pix_key,
-          infoPagador: descricao ? descricao.substring(0, 140) : 'Pagamento via QR Code',
-        },
-        favorecido: {
-          chave: destKey || qrcInfo.pix_key,
-        },
+        pagador: { chave: config.pix_key, infoPagador: descricao ? descricao.substring(0, 140) : 'Pagamento via QR Code' },
+        favorecido: { chave: destKey || qrcInfo.pix_key },
         qrCode: qr_code,
       };
 
       const fetchOptions: any = {
         method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(efiPayload),
       };
       if (httpClient) fetchOptions.client = httpClient;
@@ -451,7 +444,6 @@ Deno.serve(async (req) => {
 
       if (!payResponse.ok) {
         const errorText = await payResponse.text();
-        console.error('[pix-pay-qrc] EFI QR error:', errorText);
         return new Response(
           JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -100,7 +100,6 @@ Deno.serve(async (req) => {
 
     // ========== WOOVI ==========
     if (provider === 'woovi') {
-      // Try charge first, then payment
       const chargeUrl = `${config.base_url}/api/v1/charge/${end_to_end_id}`;
       const resp = await fetch(chargeUrl, {
         headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
@@ -115,6 +114,21 @@ Deno.serve(async (req) => {
         });
         statusData = await resp2.json();
       }
+    }
+    // ========== PAGGUE ==========
+    else if (provider === 'paggue') {
+      const paggueCompanyId = config.provider_company_id;
+      const statusUrl = `https://ms.paggue.io/cashout/api/cash-out/${end_to_end_id}`;
+      console.log(`[pix-check-status] Paggue: GET ${statusUrl}`);
+      const resp = await fetch(statusUrl, {
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          ...(paggueCompanyId ? { 'X-Company-ID': paggueCompanyId } : {}),
+        },
+      });
+      statusData = await resp.json();
+      console.log('[pix-check-status] Paggue raw status:', JSON.stringify(statusData));
     }
     // ========== ONZ ==========
     else if (provider === 'onz') {
@@ -169,8 +183,11 @@ Deno.serve(async (req) => {
       'EM_PROCESSAMENTO': 'pending', 'PROCESSING': 'pending', 'ACTIVE': 'pending',
       'NAO_REALIZADO': 'failed', 'FAILED': 'failed', 'ERROR': 'failed',
       'DEVOLVIDO': 'refunded', 'REFUNDED': 'refunded',
+      // Paggue statuses (numeric as string)
+      '0': 'pending', '1': 'completed', '2': 'failed', '3': 'pending', '5': 'cancelled',
     };
-    const internalStatus = statusMap[rawStatus.toUpperCase()] || 'pending';
+    const rawStatusStr = String(statusData.status || '');
+    const internalStatus = statusMap[rawStatusStr.toUpperCase()] || statusMap[rawStatusStr] || 'pending';
     const isCompleted = internalStatus === 'completed';
 
     if (transaction_id) {

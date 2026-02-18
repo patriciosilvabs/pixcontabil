@@ -15,6 +15,7 @@ interface PixConfig {
   is_sandbox: boolean;
   certificate_encrypted?: string;
   certificate_key_encrypted?: string;
+  provider_company_id?: string;
 }
 
 Deno.serve(async (req) => {
@@ -38,9 +39,9 @@ Deno.serve(async (req) => {
     );
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: claims, error: authError } = await supabase.auth.getClaims(token);
+    const { data: userData, error: authError } = await supabase.auth.getUser(token);
     
-    if (authError || !claims?.claims) {
+    if (authError || !userData?.user) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -80,12 +81,11 @@ Deno.serve(async (req) => {
     console.log(`[pix-auth] Provider: ${provider}`);
 
     // ========== WOOVI (OpenPix) ==========
-    // No OAuth needed - uses AppID directly
     if (provider === 'woovi') {
       console.log('[pix-auth] Woovi: returning AppID as access_token');
       return new Response(
         JSON.stringify({
-          access_token: pixConfig.client_id, // AppID
+          access_token: pixConfig.client_id,
           token_type: 'AppID',
           provider: 'woovi',
           cached: true,
@@ -94,7 +94,97 @@ Deno.serve(async (req) => {
       );
     }
 
-    // For OAuth-based providers, check cached token first
+    // ========== PAGGUE ==========
+    if (provider === 'paggue') {
+      // Check cached token first
+      const { data: cachedToken } = await supabase
+        .from('pix_tokens')
+        .select('*')
+        .eq('company_id', company_id)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (cachedToken) {
+        console.log('[pix-auth] Paggue: using cached token');
+        return new Response(
+          JSON.stringify({
+            access_token: cachedToken.access_token,
+            token_type: cachedToken.token_type,
+            provider: 'paggue',
+            provider_company_id: pixConfig.provider_company_id,
+            cached: true,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      console.log('[pix-auth] Paggue: requesting new token');
+      const tokenResponse = await fetch('https://ms.paggue.io/auth/v1/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client_key: pixConfig.client_id,
+          client_secret: pixConfig.client_secret_encrypted,
+        }),
+      });
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        console.error('[pix-auth] Paggue token request failed:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao autenticar com a Paggue', details: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
+      
+      // Extract company_id from response if not configured
+      let paggueCompanyId = pixConfig.provider_company_id;
+      if (!paggueCompanyId && tokenData.user?.companies?.[0]?.id) {
+        paggueCompanyId = String(tokenData.user.companies[0].id);
+        // Save it for future use
+        const supabaseAdmin = createClient(
+          Deno.env.get('SUPABASE_URL')!,
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+        );
+        await supabaseAdmin.from('pix_configs').update({ provider_company_id: paggueCompanyId }).eq('id', pixConfig.id);
+      }
+
+      // Token valid for 2 months, cache with 1 month margin
+      const expiresAt = tokenData.expires_at 
+        ? new Date(tokenData.expires_at)
+        : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days default
+
+      const supabaseAdmin = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+      );
+
+      await supabaseAdmin.from('pix_tokens').delete().eq('company_id', company_id);
+      await supabaseAdmin.from('pix_tokens').insert({
+        company_id,
+        access_token: accessToken,
+        token_type: 'Bearer',
+        expires_at: expiresAt.toISOString(),
+      });
+
+      return new Response(
+        JSON.stringify({
+          access_token: accessToken,
+          token_type: 'Bearer',
+          provider: 'paggue',
+          provider_company_id: paggueCompanyId,
+          cached: false,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // For other OAuth-based providers, check cached token first
     const { data: cachedToken } = await supabase
       .from('pix_tokens')
       .select('*')
@@ -126,7 +216,6 @@ Deno.serve(async (req) => {
       console.log('[pix-auth] ONZ: requesting token via proxy');
       const baseUrl = pixConfig.base_url.replace(/\/+$/, '');
       const tokenUrl = `${baseUrl}/oauth/token`;
-      console.log(`[pix-auth] ONZ token URL: ${tokenUrl}`);
 
       const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
       const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
@@ -170,7 +259,6 @@ Deno.serve(async (req) => {
 
         const proxyResult = await proxyResponse.json();
         const tokenData = proxyResult.data;
-        console.log('[pix-auth] ONZ proxy response status:', proxyResult.status);
 
         if (proxyResult.status !== 200) {
           return new Response(
@@ -195,7 +283,6 @@ Deno.serve(async (req) => {
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
-      console.log('[pix-auth] Transfeera: requesting token via OAuth2 client_credentials');
       const authUrl = pixConfig.is_sandbox
         ? 'https://login-api-sandbox.transfeera.com/authorization'
         : 'https://login-api.transfeera.com/authorization';
@@ -225,10 +312,9 @@ Deno.serve(async (req) => {
     }
     // ========== EFI Pay ==========
     else if (provider === 'efi') {
-      // Validate mTLS certificates
       if (!pixConfig.certificate_encrypted) {
         return new Response(
-          JSON.stringify({ error: 'Certificado mTLS é obrigatório para a EFI Pay. Configure o certificado PEM em Base64 nas configurações.' }),
+          JSON.stringify({ error: 'Certificado mTLS é obrigatório para a EFI Pay.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -242,7 +328,7 @@ Deno.serve(async (req) => {
           : certPem;
       } catch (e) {
         return new Response(
-          JSON.stringify({ error: 'Certificado mTLS inválido. Verifique se está corretamente codificado em Base64.' }),
+          JSON.stringify({ error: 'Certificado mTLS inválido.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
