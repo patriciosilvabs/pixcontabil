@@ -201,7 +201,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      const payUrl = 'https://ms.paggue.io/cashout/api/cash-out';
+      const payUrl = 'https://ms.paggue.io/cashout/api/integration/cash-out';
       const pagguePayload = {
         amount: Math.round(valor * 100), // centavos
         type: 1, // Pix key
