@@ -175,13 +175,64 @@ Deno.serve(async (req) => {
       if (!approveResponse.ok) {
         const approveErrorText = await approveResponse.text();
         console.error('[pix-pay-dict] Woovi approve error:', approveErrorText);
-        // Payment was created but not approved - still save it
       } else {
         const approveData = await approveResponse.json();
         console.log('[pix-pay-dict] Woovi payment approved:', JSON.stringify(approveData));
-        // Merge approve data into paymentData
         paymentData = { ...paymentData, ...approveData };
       }
+    }
+    // ========== PAGGUE ==========
+    else if (provider === 'paggue') {
+      externalId = generateCorrelationID();
+
+      // Get Paggue company ID from auth response or config
+      const authJson = await (await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company_id }),
+      })).json();
+      
+      const paggueCompanyId = authJson.provider_company_id || config.provider_company_id;
+      
+      if (!paggueCompanyId) {
+        return new Response(
+          JSON.stringify({ error: 'Paggue Company ID não configurado. Configure o X-Company-ID nas configurações Pix.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const payUrl = 'https://ms.paggue.io/cashout/api/cash-out';
+      const pagguePayload = {
+        amount: Math.round(valor * 100), // centavos
+        type: 1, // Pix key
+        pix_key: pix_key,
+        description: descricao || 'Pagamento Pix',
+        external_id: externalId,
+      };
+
+      console.log('[pix-pay-dict] Paggue payload:', JSON.stringify(pagguePayload));
+
+      const payResponse = await fetch(payUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'X-Company-ID': paggueCompanyId,
+        },
+        body: JSON.stringify(pagguePayload),
+      });
+
+      if (!payResponse.ok) {
+        const errorText = await payResponse.text();
+        console.error('[pix-pay-dict] Paggue error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao iniciar pagamento Pix via Paggue', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = await payResponse.json();
+      console.log('[pix-pay-dict] Paggue payment created:', JSON.stringify(paymentData));
     }
     // ========== ONZ (via proxy) ==========
     else if (provider === 'onz') {
@@ -238,21 +289,17 @@ Deno.serve(async (req) => {
     else if (provider === 'transfeera') {
       externalId = generateIdEnvio();
 
-      // Auto-detect pix_key_type for Transfeera (CPF, CNPJ, EMAIL, PHONE, EVP)
       function detectPixKeyType(key: string): string {
         const cleaned = key.replace(/[.\-\/\s\(\)]/g, '');
         if (/^[0-9]{11}$/.test(cleaned)) return 'CPF';
         if (/^[0-9]{14}$/.test(cleaned)) return 'CNPJ';
         if (/^.+@.+\..+$/.test(key)) return 'EMAIL';
         if (/^\+?[0-9]{10,13}$/.test(cleaned)) return 'PHONE';
-        // UUID format = EVP (random key)
         if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key)) return 'CHAVE_ALEATORIA';
         return 'CHAVE_ALEATORIA';
       }
 
       const detectedKeyType = detectPixKeyType(pix_key);
-      console.log(`[pix-pay-dict] Transfeera detected key type: ${detectedKeyType} for key: ${pix_key}`);
-
       const payUrl = `${config.base_url}/batch`;
       const transfeeraPayload = {
         name: `Pix ${new Date().toISOString()}`,
@@ -270,8 +317,6 @@ Deno.serve(async (req) => {
           },
         ],
       };
-
-      console.log('[pix-pay-dict] Transfeera payload:', JSON.stringify(transfeeraPayload));
 
       const payResponse = await fetch(payUrl, {
         method: 'POST',

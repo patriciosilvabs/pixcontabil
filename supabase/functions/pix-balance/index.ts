@@ -119,6 +119,59 @@ Deno.serve(async (req) => {
       balance = (defaultAccount?.balance?.available ?? defaultAccount?.balance?.total ?? 0) / 100;
     }
 
+    // ========== PAGGUE ==========
+    else if (provider === 'paggue') {
+      // Paggue doesn't have a dedicated balance endpoint in the public API.
+      // Balance info is available in cash-out responses within person.balance.available (in cents).
+      // We'll try the settings endpoint which may return balance info.
+      const paggueCompanyId = config.provider_company_id;
+      if (!paggueCompanyId) {
+        return new Response(
+          JSON.stringify({ success: true, balance: null, available: false, provider, message: 'Paggue Company ID não configurado' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      try {
+        const settingsRes = await fetch('https://ms.paggue.io/cashout/api/settings', {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'X-Company-ID': paggueCompanyId,
+          },
+        });
+
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          console.log('[pix-balance] Paggue settings response:', JSON.stringify(settingsData));
+          // Balance may be in person.balance.available (cents)
+          const availableCents = settingsData?.person?.balance?.available 
+            ?? settingsData?.balance?.available 
+            ?? settingsData?.available;
+          if (availableCents !== undefined && availableCents !== null) {
+            balance = Number(availableCents) / 100;
+          } else {
+            return new Response(
+              JSON.stringify({ success: true, balance: null, available: false, provider, message: 'Saldo não disponível via API Paggue' }),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+        } else {
+          const errText = await settingsRes.text();
+          console.warn('[pix-balance] Paggue settings error:', errText);
+          return new Response(
+            JSON.stringify({ success: true, balance: null, available: false, provider, message: 'Consulta de saldo não disponível' }),
+            { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      } catch (e) {
+        console.error('[pix-balance] Paggue balance error:', e);
+        return new Response(
+          JSON.stringify({ success: true, balance: null, available: false, provider, message: 'Erro ao consultar saldo' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // ========== ONZ Infopago (via proxy) ==========
     else if (provider === 'onz') {
       const balanceUrl = `${config.base_url}/accounts/balances/`;
@@ -188,7 +241,6 @@ Deno.serve(async (req) => {
 
       const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
       const balanceUrl = `${config.base_url}/v2/gn/saldo`;
-      console.log(`[pix-balance] EFI: GET ${balanceUrl}`);
 
       try {
         const res = await fetch(balanceUrl, {
@@ -200,7 +252,6 @@ Deno.serve(async (req) => {
         if (!res.ok) {
           const errText = await res.text();
           httpClient.close();
-          console.error('[pix-balance] EFI balance error:', errText);
           return new Response(
             JSON.stringify({ error: 'Falha ao consultar saldo na EFI', details: errText }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

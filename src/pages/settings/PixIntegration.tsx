@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
+  { value: "paggue", label: "Paggue" },
   { value: "woovi", label: "Woovi (OpenPix)" },
   { value: "onz", label: "ONZ Infopago" },
   { value: "transfeera", label: "Transfeera" },
@@ -48,16 +49,34 @@ const PROVIDER_CONFIG: Record<string, {
   clientSecretLabel?: string;
   clientSecretHelp?: string;
   showCertificate: boolean;
+  showCompanyId: boolean;
   credentialsTitle: string;
   credentialsDescription: string;
   urls: { production: string; sandbox: string };
 }> = {
+  paggue: {
+    clientIdLabel: 'Client Key',
+    clientIdPlaceholder: '50284687438...',
+    clientIdHelp: 'Obtido no painel Paggue > Integrações > client_key.',
+    showClientSecret: true,
+    clientSecretLabel: 'Client Secret',
+    clientSecretHelp: 'Obtido no painel Paggue > Integrações > client_secret.',
+    showCertificate: false,
+    showCompanyId: true,
+    credentialsTitle: 'Credenciais Paggue',
+    credentialsDescription: 'Client Key + Client Secret + Company ID (X-Company-ID)',
+    urls: {
+      production: 'https://ms.paggue.io',
+      sandbox: 'https://ms.paggue.io',
+    },
+  },
   woovi: {
     clientIdLabel: 'AppID',
     clientIdPlaceholder: 'Q2xpZW50X0lkXzEyMzQ1Njc4OTB...',
     clientIdHelp: 'Obtido no painel Woovi/OpenPix > API > AppID.',
     showClientSecret: false,
     showCertificate: false,
+    showCompanyId: false,
     credentialsTitle: 'Credenciais Woovi (OpenPix)',
     credentialsDescription: 'Apenas o AppID é necessário para autenticação',
     urls: {
@@ -73,6 +92,7 @@ const PROVIDER_CONFIG: Record<string, {
     clientSecretLabel: 'Client Secret',
     clientSecretHelp: 'Obtido no painel ONZ Infopago > Integrações.',
     showCertificate: false,
+    showCompanyId: false,
     credentialsTitle: 'Credenciais ONZ Infopago',
     credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
     urls: {
@@ -88,6 +108,7 @@ const PROVIDER_CONFIG: Record<string, {
     clientSecretLabel: 'Client Secret',
     clientSecretHelp: 'Obtido no painel Transfeera > Configurações > API.',
     showCertificate: false,
+    showCompanyId: false,
     credentialsTitle: 'Credenciais Transfeera',
     credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
     urls: {
@@ -103,6 +124,7 @@ const PROVIDER_CONFIG: Record<string, {
     clientSecretLabel: 'Client Secret',
     clientSecretHelp: 'Obtido no painel EFI Pay > API > Aplicações.',
     showCertificate: true,
+    showCompanyId: false,
     credentialsTitle: 'Credenciais EFI Pay',
     credentialsDescription: 'Credenciais OAuth2 + Certificado mTLS obrigatório',
     urls: {
@@ -122,11 +144,13 @@ interface PixConfig {
   pix_key_type: "cpf" | "cnpj" | "email" | "phone" | "random";
   certificate_encrypted?: string;
   certificate_key_encrypted?: string;
+  provider_company_id?: string;
   webhook_url?: string;
   webhook_secret?: string;
   is_sandbox: boolean;
   is_active: boolean;
 }
+
 
 export default function PixIntegration() {
   const { currentCompany, isAdmin } = useAuth();
@@ -184,6 +208,7 @@ export default function PixIntegration() {
             pix_key_type: data.pix_key_type,
             certificate_encrypted: data.certificate_encrypted || undefined,
             certificate_key_encrypted: data.certificate_key_encrypted || undefined,
+            provider_company_id: (data as any).provider_company_id || undefined,
             webhook_url: data.webhook_url || undefined,
             webhook_secret: data.webhook_secret || undefined,
             is_sandbox: data.is_sandbox,
@@ -316,8 +341,12 @@ export default function PixIntegration() {
         is_active: config.is_active,
       };
 
+      // Include provider_company_id for providers that need it (e.g. Paggue)
+      if (providerConfig?.showCompanyId) {
+        configData.provider_company_id = config.provider_company_id || null;
+      }
+
       // Only include certificate fields if the UI manages them (e.g. EFI provider)
-      // Other providers (like ONZ) have certificates set directly in the database
       if (providerConfig?.showCertificate) {
         configData.certificate_encrypted = config.certificate_encrypted || null;
         configData.certificate_key_encrypted = config.certificate_key_encrypted || null;
@@ -516,6 +545,20 @@ export default function PixIntegration() {
                     </div>
                   )}
                 </div>
+                {/* Provider Company ID - Only for Paggue */}
+                {providerConfig.showCompanyId && (
+                  <div className="space-y-2">
+                    <Label>Company ID (X-Company-ID)</Label>
+                    <Input
+                      value={config.provider_company_id || ""}
+                      onChange={(e) => setConfig({ ...config, provider_company_id: e.target.value })}
+                      placeholder="Ex: 12345"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Encontrado no painel Paggue ao gerar as credenciais (user → companies → id). Se deixar em branco, será extraído automaticamente no primeiro login.
+                    </p>
+                  </div>
+                )}
 
                 {/* mTLS Certificate - Only for EFI */}
                 {providerConfig.showCertificate && (

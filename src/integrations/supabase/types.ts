@@ -263,6 +263,7 @@ export type Database = {
           pix_key: string
           pix_key_type: Database["public"]["Enums"]["pix_key_type"]
           provider: string
+          provider_company_id: string | null
           updated_at: string
           webhook_secret: string | null
           webhook_url: string | null
@@ -281,6 +282,7 @@ export type Database = {
           pix_key: string
           pix_key_type: Database["public"]["Enums"]["pix_key_type"]
           provider: string
+          provider_company_id?: string | null
           updated_at?: string
           webhook_secret?: string | null
           webhook_url?: string | null
@@ -299,6 +301,7 @@ export type Database = {
           pix_key?: string
           pix_key_type?: Database["public"]["Enums"]["pix_key_type"]
           provider?: string
+          provider_company_id?: string | null
           updated_at?: string
           webhook_secret?: string | null
           webhook_url?: string | null
