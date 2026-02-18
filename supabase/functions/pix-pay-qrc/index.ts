@@ -306,7 +306,7 @@ Deno.serve(async (req) => {
 
       // Paggue cash-out type=2 (Brcode) - sends EMV in pix_key field
       // This SETTLES the original COBV charge, so the terminal will confirm payment
-      const payUrl = 'https://ms.paggue.io/cashout/api/cash-out';
+      const payUrl = 'https://ms.paggue.io/cashout/api/integration/cash-out';
       const pagguePayload = {
         amount: Math.round(paymentAmount * 100), // centavos
         type: 2, // Brcode
