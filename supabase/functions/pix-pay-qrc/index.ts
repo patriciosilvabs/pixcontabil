@@ -315,7 +315,20 @@ Deno.serve(async (req) => {
         external_id: externalId,
       };
 
+      const bodyStr = JSON.stringify(pagguePayload);
       console.log('[pix-pay-qrc] Paggue Brcode payload (type=2)');
+
+      // Generate HMAC-SHA256 signature using client_secret
+      const encoder = new TextEncoder();
+      const sigKey = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(config.client_secret_encrypted),
+        { name: 'HMAC', hash: 'SHA-256' },
+        false,
+        ['sign']
+      );
+      const sigBuf = await crypto.subtle.sign('HMAC', sigKey, encoder.encode(bodyStr));
+      const signature = Array.from(new Uint8Array(sigBuf)).map(b => b.toString(16).padStart(2, '0')).join('');
 
       const payResponse = await fetch(payUrl, {
         method: 'POST',
@@ -323,8 +336,9 @@ Deno.serve(async (req) => {
           'Authorization': `Bearer ${access_token}`,
           'Content-Type': 'application/json',
           'X-Company-ID': paggueCompanyId,
+          'Signature': signature,
         },
-        body: JSON.stringify(pagguePayload),
+        body: bodyStr,
       });
 
       if (!payResponse.ok) {
