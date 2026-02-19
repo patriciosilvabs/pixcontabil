@@ -403,6 +403,13 @@ Deno.serve(async (req) => {
         }
       }
 
+      if (!config.pix_key) {
+        return new Response(
+          JSON.stringify({ error: 'Chave Pix do pagador não configurada. Configure a chave Pix nas configurações do provedor EFI.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const paymentPayload = {
         valor: valor.toFixed(2),
         pagador: {
