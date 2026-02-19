@@ -330,7 +330,7 @@ Deno.serve(async (req) => {
       const balanceUrl = `${config.base_url}/banking/v2/saldo`;
       const fetchHeaders: any = { 'Authorization': `Bearer ${accessToken}` };
       if (config.provider_company_id) {
-        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
+        fetchHeaders['x-conta-corrente'] = config.provider_company_id.replace(/[^0-9]/g, '');
       }
 
       try {
