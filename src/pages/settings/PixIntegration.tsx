@@ -193,6 +193,7 @@ function ProviderConfigForm({
   purposeIcon,
   currentCompany,
   webhookUrl,
+  onSaved,
 }: {
   config: PixConfig;
   setConfig: (c: PixConfig) => void;
@@ -200,6 +201,7 @@ function ProviderConfigForm({
   purposeIcon: React.ReactNode;
   currentCompany: any;
   webhookUrl: string;
+  onSaved?: () => void;
 }) {
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
@@ -274,6 +276,7 @@ function ProviderConfigForm({
       if (showNotification) {
         toast({ title: "Configurações salvas!", description: `${purposeLabel} atualizado.` });
       }
+      onSaved?.();
     } catch (error: any) {
       console.error("Error saving config:", error);
       toast({ variant: "destructive", title: "Erro ao salvar", description: error.message || "Tente novamente." });
@@ -497,10 +500,15 @@ export default function PixIntegration() {
   const [cashOutConfig, setCashOutConfig] = useState<PixConfig>({ ...EMPTY_CONFIG, purpose: "cash_out" });
   
   const [hasSeparateConfigs, setHasSeparateConfigs] = useState(false);
+  const [configVersion, setConfigVersion] = useState(0);
 
   useEffect(() => {
     if (!isAdmin) navigate("/");
   }, [isAdmin, navigate]);
+
+  const reloadConfigs = useCallback(() => {
+    setConfigVersion((v) => v + 1);
+  }, []);
 
   // Load existing configs
   useEffect(() => {
@@ -550,7 +558,7 @@ export default function PixIntegration() {
       }
     }
     loadConfigs();
-  }, [currentCompany]);
+  }, [currentCompany, configVersion]);
 
   const handleToggleSeparateConfigs = (separate: boolean) => {
     setHasSeparateConfigs(separate);
@@ -633,6 +641,7 @@ export default function PixIntegration() {
                 purposeIcon={<ArrowDownToLine className="h-5 w-5 text-primary" />}
                 currentCompany={currentCompany}
                 webhookUrl={webhookUrl}
+                onSaved={reloadConfigs}
               />
             </TabsContent>
             <TabsContent value="cash_out">
@@ -643,6 +652,7 @@ export default function PixIntegration() {
                 purposeIcon={<ArrowUpFromLine className="h-5 w-5 text-primary" />}
                 currentCompany={currentCompany}
                 webhookUrl={webhookUrl}
+                onSaved={reloadConfigs}
               />
             </TabsContent>
           </Tabs>
@@ -654,6 +664,7 @@ export default function PixIntegration() {
             purposeIcon={<Key className="h-5 w-5 text-primary" />}
             currentCompany={currentCompany}
             webhookUrl={webhookUrl}
+            onSaved={reloadConfigs}
           />
         )}
       </div>
