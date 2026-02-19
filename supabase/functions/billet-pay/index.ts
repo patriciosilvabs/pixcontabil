@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
       const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
         method: 'POST',
         headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+        body: JSON.stringify({ company_id, purpose: 'cash_out', scopes: 'pagamento-boleto.write pagamento-boleto.read' }),
       });
 
       if (!authResponse.ok) {
