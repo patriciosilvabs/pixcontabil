@@ -10,6 +10,12 @@ function normalizePem(pem: string): string {
   return result.join('\n') + '\n';
 }
 
+function decodeCert(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
+  return normalizePem(atob(trimmed));
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -113,8 +119,8 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = normalizePem(atob(config.certificate_encrypted));
-        keyPem = config.certificate_key_encrypted ? normalizePem(atob(config.certificate_key_encrypted)) : certPem;
+        certPem = decodeCert(config.certificate_encrypted);
+        keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
       } catch {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS inválido' }),

@@ -4,15 +4,16 @@ function normalizePem(pem: string): string {
   const lines = pem.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const result: string[] = [];
   for (const line of lines) {
-    if (line.startsWith('-----')) {
-      result.push(line);
-    } else {
-      for (let i = 0; i < line.length; i += 64) {
-        result.push(line.substring(i, i + 64));
-      }
-    }
+    if (line.startsWith('-----')) { result.push(line); }
+    else { for (let i = 0; i < line.length; i += 64) result.push(line.substring(i, i + 64)); }
   }
   return result.join('\n') + '\n';
+}
+
+function decodeCert(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
+  return normalizePem(atob(trimmed));
 }
 
 const corsHeaders = {
@@ -259,8 +260,8 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = normalizePem(atob(config.certificate_encrypted));
-        keyPem = config.certificate_key_encrypted ? normalizePem(atob(config.certificate_key_encrypted)) : certPem;
+        certPem = decodeCert(config.certificate_encrypted);
+        keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
       } catch {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS inválido' }),
@@ -311,8 +312,8 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = normalizePem(atob(config.certificate_encrypted));
-        keyPem = config.certificate_key_encrypted ? normalizePem(atob(config.certificate_key_encrypted)) : certPem;
+        certPem = decodeCert(config.certificate_encrypted);
+        keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
       } catch {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS inválido' }),

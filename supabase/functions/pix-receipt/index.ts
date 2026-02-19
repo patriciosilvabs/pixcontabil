@@ -9,6 +9,11 @@ function normalizePem(pem: string): string {
   }
   return result.join('\n') + '\n';
 }
+function decodeCert(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
+  return normalizePem(atob(trimmed));
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -182,8 +187,8 @@ Deno.serve(async (req) => {
       let httpClient: Deno.HttpClient | undefined;
       if (config.certificate_encrypted) {
         try {
-          const certPem = normalizePem(atob(config.certificate_encrypted));
-          const keyPem = config.certificate_key_encrypted ? normalizePem(atob(config.certificate_key_encrypted)) : certPem;
+          const certPem = decodeCert(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
           httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
         } catch (_) { /* ignore */ }
       }
