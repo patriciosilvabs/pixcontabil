@@ -1,5 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+function normalizePem(pem: string): string {
+  const lines = pem.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const result: string[] = [];
+  for (const line of lines) {
+    if (line.startsWith('-----')) { result.push(line); }
+    else { for (let i = 0; i < line.length; i += 64) result.push(line.substring(i, i + 64)); }
+  }
+  return result.join('\n') + '\n';
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -172,8 +182,8 @@ Deno.serve(async (req) => {
       let httpClient: Deno.HttpClient | undefined;
       if (config.certificate_encrypted) {
         try {
-          const certPem = atob(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          const certPem = normalizePem(atob(config.certificate_encrypted));
+          const keyPem = config.certificate_key_encrypted ? normalizePem(atob(config.certificate_key_encrypted)) : certPem;
           httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
         } catch (_) { /* ignore */ }
       }
