@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { company_id, purpose } = await req.json();
+    const { company_id, purpose, scopes: requestedScopes } = await req.json();
 
     if (!company_id) {
       return new Response(
@@ -453,7 +453,8 @@ Deno.serve(async (req) => {
 
       const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
       const tokenUrl = `${pixConfig.base_url}/oauth/v2/token`;
-      const scopes = 'cob.write cob.read cobv.write cobv.read pix.write pix.read pagamento-pix.write pagamento-pix.read pagamento-boleto.write pagamento-boleto.read extrato.read webhook-banking.write webhook-banking.read';
+      const defaultScopes = 'cob.write cob.read cobv.write cobv.read pix.write pix.read pagamento-pix.write pagamento-pix.read pagamento-boleto.write pagamento-boleto.read extrato.read';
+      const scopes = requestedScopes || defaultScopes;
 
       const bodyParams = new URLSearchParams({
         client_id: pixConfig.client_id,

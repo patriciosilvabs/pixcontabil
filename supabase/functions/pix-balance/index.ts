@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
         'Authorization': authHeader,
       },
-      body: JSON.stringify({ company_id, purpose: 'cash_in' }),
+      body: JSON.stringify({ company_id, purpose: 'cash_in', scopes: 'extrato.read' }),
     });
 
     if (!authResponse.ok) {
