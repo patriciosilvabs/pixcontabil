@@ -39,6 +39,8 @@ interface TransactionRow {
   hasReceipt: boolean;
   createdAt: string;
   createdBy?: string;
+  description?: string;
+  providerError?: string;
 }
 
 const statusConfig = {
@@ -107,7 +109,7 @@ export default function Transactions() {
       } else {
         const mapped: TransactionRow[] = (txResult.data || []).map((t: any) => ({
           id: t.id,
-          beneficiary: t.beneficiary_name || t.description || "Sem nome",
+          beneficiary: t.beneficiary_name || (t.status === 'failed' ? 'Pagamento falhou' : t.description) || "Sem nome",
           amount: Number(t.amount),
           classification: t.categories?.classification || "expense",
           category: t.categories?.name || "Sem categoria",
@@ -115,6 +117,8 @@ export default function Transactions() {
           hasReceipt: Array.isArray(t.receipts) && t.receipts.length > 0,
           createdAt: t.created_at,
           createdBy: t.created_by,
+          description: t.description,
+          providerError: t.status === 'failed' ? (t.pix_provider_response?.gnExtras?.erro?.motivo || t.description) : undefined,
         }));
         setTransactions(mapped);
       }
@@ -217,6 +221,11 @@ export default function Transactions() {
                         </div>
                         <div className="space-y-1">
                           <p className="font-semibold">{transaction.beneficiary}</p>
+                          {transaction.providerError && (
+                            <p className="text-xs text-destructive line-clamp-2">
+                              {transaction.providerError}
+                            </p>
+                          )}
                           <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
                             <Badge
                               variant="outline"
