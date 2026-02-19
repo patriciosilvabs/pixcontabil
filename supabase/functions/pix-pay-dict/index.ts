@@ -411,7 +411,7 @@ Deno.serve(async (req) => {
       }
 
       // Auto-register webhook if not already done
-      const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-webhook`;
+      const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-webhook#`;
       const registerWebhookUrl = `${config.base_url}/v2/webhook/${encodeURIComponent(config.pix_key)}`;
       const webhookFetchOptions: any = {
         method: 'PUT',
