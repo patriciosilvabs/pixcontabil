@@ -73,15 +73,28 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get Pix config
-    const { data: config, error: configError } = await supabase
+    // Get Pix config for cash-out
+    let config: any = null;
+    const { data: cashOutConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
+      .eq('purpose', 'cash_out')
       .single();
+    config = cashOutConfig;
+    if (!config) {
+      const { data: bothConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', 'both')
+        .single();
+      config = bothConfig;
+    }
 
-    if (configError || !config) {
+    if (!config) {
       return new Response(
         JSON.stringify({ error: 'Pix configuration not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -95,7 +108,7 @@ Deno.serve(async (req) => {
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id }),
+      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
     });
 
     if (!authResponse.ok) {

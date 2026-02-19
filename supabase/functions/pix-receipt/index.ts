@@ -65,12 +65,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: config } = await supabase
-      .from('pix_configs')
-      .select('*')
-      .eq('company_id', company_id)
-      .eq('is_active', true)
-      .single();
+    // For receipts, try cash_out first then both then cash_in
+    let config: any = null;
+    for (const p of ['cash_out', 'both', 'cash_in']) {
+      const { data: c } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', p)
+        .single();
+      if (c) { config = c; break; }
+    }
 
     if (!config) {
       return new Response(

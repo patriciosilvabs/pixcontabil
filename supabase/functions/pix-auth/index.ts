@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { company_id } = await req.json();
+    const { company_id, purpose } = await req.json();
 
     if (!company_id) {
       return new Response(
@@ -57,18 +57,46 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-auth] Getting token for company: ${company_id}`);
+    console.log(`[pix-auth] Getting token for company: ${company_id}, purpose: ${purpose || 'any'}`);
 
-    // Get Pix config
-    const { data: config, error: configError } = await supabase
-      .from('pix_configs')
-      .select('*')
-      .eq('company_id', company_id)
-      .eq('is_active', true)
-      .single();
+    // Get Pix config with purpose-aware lookup
+    let config: any = null;
+    if (purpose) {
+      // Try specific purpose first
+      const { data: specificConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', purpose)
+        .single();
+      config = specificConfig;
+    }
+    if (!config) {
+      // Fallback to 'both'
+      const { data: bothConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', 'both')
+        .single();
+      config = bothConfig;
+    }
+    if (!config) {
+      // Final fallback: any active config
+      const { data: anyConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .limit(1)
+        .single();
+      config = anyConfig;
+    }
 
-    if (configError || !config) {
-      console.error('[pix-auth] Config not found:', configError);
+    if (!config) {
+      console.error('[pix-auth] Config not found for company:', company_id);
       return new Response(
         JSON.stringify({ error: 'Pix configuration not found for this company' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -96,15 +124,18 @@ Deno.serve(async (req) => {
 
     // ========== PAGGUE ==========
     if (provider === 'paggue') {
-      // Check cached token first
-      const { data: cachedToken } = await supabase
+    // Check cached token first (by pix_config_id if available)
+      let cachedTokenQuery = supabase
         .from('pix_tokens')
         .select('*')
         .eq('company_id', company_id)
         .gt('expires_at', new Date().toISOString())
         .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
+        .limit(1);
+      if (config.id) {
+        cachedTokenQuery = cachedTokenQuery.eq('pix_config_id', config.id);
+      }
+      const { data: cachedToken } = await cachedTokenQuery.single();
 
       if (cachedToken) {
         console.log('[pix-auth] Paggue: using cached token');
@@ -164,9 +195,15 @@ Deno.serve(async (req) => {
         Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
       );
 
-      await supabaseAdmin.from('pix_tokens').delete().eq('company_id', company_id);
+      // Delete old tokens for this specific config
+      if (config.id) {
+        await supabaseAdmin.from('pix_tokens').delete().eq('pix_config_id', config.id);
+      } else {
+        await supabaseAdmin.from('pix_tokens').delete().eq('company_id', company_id);
+      }
       await supabaseAdmin.from('pix_tokens').insert({
         company_id,
+        pix_config_id: config.id,
         access_token: accessToken,
         token_type: 'Bearer',
         expires_at: expiresAt.toISOString(),
@@ -184,15 +221,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    // For other OAuth-based providers, check cached token first
-    const { data: cachedToken } = await supabase
+    // For other OAuth-based providers, check cached token first (by pix_config_id)
+    let otherCachedQuery = supabase
       .from('pix_tokens')
       .select('*')
       .eq('company_id', company_id)
       .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
-      .limit(1)
-      .single();
+      .limit(1);
+    if (config.id) {
+      otherCachedQuery = otherCachedQuery.eq('pix_config_id', config.id);
+    }
+    const { data: cachedToken } = await otherCachedQuery.single();
 
     if (cachedToken) {
       console.log('[pix-auth] Using cached token');
@@ -387,10 +427,16 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    await supabaseAdmin.from('pix_tokens').delete().eq('company_id', company_id);
+    // Delete old tokens for this specific config
+    if (config.id) {
+      await supabaseAdmin.from('pix_tokens').delete().eq('pix_config_id', config.id);
+    } else {
+      await supabaseAdmin.from('pix_tokens').delete().eq('company_id', company_id);
+    }
 
     await supabaseAdmin.from('pix_tokens').insert({
       company_id,
+      pix_config_id: config.id,
       access_token: accessToken!,
       token_type: tokenType,
       expires_at: expiresAt.toISOString(),

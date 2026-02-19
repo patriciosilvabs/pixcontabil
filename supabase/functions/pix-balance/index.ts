@@ -36,14 +36,28 @@ Deno.serve(async (req) => {
 
     console.log(`[pix-balance] Fetching balance for company: ${company_id}`);
 
-    const { data: config, error: configError } = await supabase
+    // Get Pix config for cash-in (balance check)
+    let config: any = null;
+    const { data: cashInConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
+      .eq('purpose', 'cash_in')
       .single();
+    config = cashInConfig;
+    if (!config) {
+      const { data: bothConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', 'both')
+        .single();
+      config = bothConfig;
+    }
 
-    if (configError || !config) {
+    if (!config) {
       console.log('[pix-balance] No active pix config found');
       return new Response(
         JSON.stringify({ success: true, balance: null, available: false, provider: null, message: 'Nenhuma configuração Pix ativa encontrada' }),
@@ -61,7 +75,7 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/json',
         'Authorization': authHeader,
       },
-      body: JSON.stringify({ company_id }),
+      body: JSON.stringify({ company_id, purpose: 'cash_in' }),
     });
 
     if (!authResponse.ok) {

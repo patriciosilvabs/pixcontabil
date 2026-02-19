@@ -65,12 +65,37 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: config } = await supabase
+    // For check-status, try to detect purpose from transaction type, fallback to any
+    let config: any = null;
+    // Try cash_out first (payments are more common for status checks)
+    const { data: cashOutConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
+      .eq('purpose', 'cash_out')
       .single();
+    config = cashOutConfig;
+    if (!config) {
+      const { data: bothConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', 'both')
+        .single();
+      config = bothConfig;
+    }
+    if (!config) {
+      const { data: cashInConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', 'cash_in')
+        .single();
+      config = cashInConfig;
+    }
 
     if (!config) {
       return new Response(
