@@ -411,6 +411,72 @@ Deno.serve(async (req) => {
       accessToken = tokenData.access_token;
       expiresInSeconds = tokenData.expires_in || 3600;
     }
+    // ========== BANCO INTER ==========
+    else if (provider === 'inter') {
+      if (!pixConfig.certificate_encrypted) {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS é obrigatório para o Banco Inter.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      let certPem: string;
+      let keyPem: string;
+      try {
+        certPem = atob(pixConfig.certificate_encrypted);
+        keyPem = pixConfig.certificate_key_encrypted
+          ? atob(pixConfig.certificate_key_encrypted)
+          : certPem;
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS inválido.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+      const tokenUrl = `${pixConfig.base_url}/oauth/v2/token`;
+      const scopes = 'cob.write cob.read cobv.write cobv.read pix.write pix.read pagamento-pix.write pagamento-pix.read pagamento-boleto.write pagamento-boleto.read extrato.read webhook-banking.write webhook-banking.read';
+
+      const bodyParams = new URLSearchParams({
+        client_id: pixConfig.client_id,
+        client_secret: pixConfig.client_secret_encrypted,
+        grant_type: 'client_credentials',
+        scope: scopes,
+      });
+
+      let tokenResponse: Response;
+      try {
+        tokenResponse = await fetch(tokenUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: bodyParams.toString(),
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+      } catch (fetchError) {
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão mTLS com o Banco Inter.', details: fetchError.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (!tokenResponse.ok) {
+        const errorText = await tokenResponse.text();
+        httpClient.close();
+        console.error('[pix-auth] Inter token request failed:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Falha ao autenticar com o Banco Inter', details: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      httpClient.close();
+      const tokenData = await tokenResponse.json();
+      accessToken = tokenData.access_token;
+      expiresInSeconds = tokenData.expires_in || 3600;
+    }
     // ========== UNKNOWN PROVIDER ==========
     else {
       return new Response(

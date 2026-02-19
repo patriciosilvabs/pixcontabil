@@ -42,6 +42,11 @@ Deno.serve(async (req) => {
       return await handleOnzWebhook(supabaseAdmin, payload, ip_address);
     }
 
+    // Banco Inter Banking webhook: has "codigoSolicitacao" or "tipoTransacao"
+    if (payload.codigoSolicitacao || payload.tipoTransacao) {
+      return await handleInterBankingWebhook(supabaseAdmin, payload, ip_address);
+    }
+
     // Unknown format - log and return OK
     await supabaseAdmin.from('pix_webhook_logs').insert({
       event_type: 'UNKNOWN',
@@ -305,5 +310,60 @@ async function handleOnzWebhook(supabaseAdmin: any, payload: any, ip_address: st
 
   return new Response(JSON.stringify({ success: true }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+// ========== BANCO INTER BANKING HANDLER ==========
+async function handleInterBankingWebhook(supabaseAdmin: any, payload: any, ip_address: string) {
+  const codigoSolicitacao = payload.codigoSolicitacao;
+  const status = payload.status || '';
+  const endToEnd = payload.endToEnd || payload.endToEndId || '';
+
+  await supabaseAdmin.from('pix_webhook_logs').insert({
+    event_type: `INTER_BANKING_${status || 'UNKNOWN'}`,
+    payload,
+    ip_address,
+    processed: false,
+  });
+
+  const lookupId = codigoSolicitacao || endToEnd;
+  if (!lookupId) {
+    return new Response(JSON.stringify({ success: true, message: 'No identifier found' }), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const { data: transaction } = await supabaseAdmin
+    .from('transactions')
+    .select('id, company_id, status')
+    .or(`external_id.eq.${lookupId},pix_e2eid.eq.${lookupId}`)
+    .single();
+
+  if (transaction) {
+    const statusMap: Record<string, string> = {
+      'PROCESSADO': 'completed', 'EFETIVADO': 'completed',
+      'EMPROCESSAMENTO': 'pending', 'APROVACAO': 'pending',
+      'CANCELADO': 'failed', 'DEVOLVIDO': 'refunded',
+    };
+    const internalStatus = statusMap[status.toUpperCase()] || 'pending';
+
+    const updateData: any = { status: internalStatus, pix_provider_response: payload };
+    if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+    if (endToEnd && !transaction.pix_e2eid) updateData.pix_e2eid = endToEnd;
+
+    await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
+
+    await supabaseAdmin.from('audit_logs').insert({
+      company_id: transaction.company_id,
+      entity_type: 'transaction',
+      entity_id: transaction.id,
+      action: 'pix_webhook_received',
+      old_data: { status: transaction.status },
+      new_data: { status: internalStatus, provider: 'inter', codigoSolicitacao },
+    });
+  }
+
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { 'Content-Type': 'application/json' },
   });
 }

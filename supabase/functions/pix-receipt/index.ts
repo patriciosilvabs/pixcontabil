@@ -203,6 +203,28 @@ Deno.serve(async (req) => {
       );
     }
 
+    // ========== BANCO INTER ==========
+    if (provider === 'inter') {
+      // Inter doesn't have a dedicated receipt/PDF endpoint;
+      // Return transaction data from pix_provider_response (same pattern as Woovi)
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('pix_e2eid', end_to_end_id)
+        .single();
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          end_to_end_id,
+          provider: 'inter',
+          receipt_type: 'json',
+          transaction: txData,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     return new Response(
       JSON.stringify({ error: `Provider '${provider}' não suportado` }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

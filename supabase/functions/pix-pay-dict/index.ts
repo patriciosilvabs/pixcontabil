@@ -420,6 +420,65 @@ Deno.serve(async (req) => {
       }
 
       paymentData = await paymentResponse.json();
+    }
+    // ========== BANCO INTER ==========
+    else if (provider === 'inter') {
+      externalId = crypto.randomUUID();
+
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (e) {
+          console.error('[pix-pay-dict] Failed to create mTLS client:', e);
+        }
+      }
+
+      const interPayload = {
+        valor: valor,
+        descricao: descricao ? descricao.substring(0, 140) : 'Pagamento Pix',
+        destinatario: {
+          tipo: 'CHAVE',
+          chave: pix_key,
+        },
+      };
+
+      const paymentUrl = `${config.base_url}/banking/v2/pix`;
+      const fetchHeaders: any = {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+        'x-id-idempotente': externalId,
+      };
+      if (config.provider_company_id) {
+        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = {
+        method: 'POST',
+        headers: fetchHeaders,
+        body: JSON.stringify(interPayload),
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const paymentResponse = await fetch(paymentUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!paymentResponse.ok) {
+        const errorText = await paymentResponse.text();
+        console.error('[pix-pay-dict] Inter error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = await paymentResponse.json();
+      // Map Inter response fields
+      if (paymentData.codigoSolicitacao) {
+        paymentData.e2eId = paymentData.endToEnd || paymentData.codigoSolicitacao;
+      }
     } else {
       return new Response(
         JSON.stringify({ error: `Provider '${provider}' não suportado` }),
