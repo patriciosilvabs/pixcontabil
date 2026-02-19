@@ -13,7 +13,8 @@ function normalizePem(pem: string): string {
 function decodeCert(raw: string): string {
   const trimmed = raw.trim();
   if (trimmed.startsWith('-----')) return normalizePem(trimmed);
-  return normalizePem(atob(trimmed));
+  const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
+  return normalizePem(atob(cleanB64));
 }
 
 const corsHeaders = {
@@ -314,9 +315,13 @@ Deno.serve(async (req) => {
       try {
         certPem = decodeCert(config.certificate_encrypted);
         keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-      } catch {
+        console.log('[pix-balance] Cert starts:', certPem.substring(0, 60));
+        console.log('[pix-balance] Key starts:', keyPem.substring(0, 60));
+        console.log('[pix-balance] Cert length:', certPem.length, 'Key length:', keyPem.length);
+      } catch (e) {
+        console.error('[pix-balance] decodeCert error:', e?.message || e);
         return new Response(
-          JSON.stringify({ error: 'Certificado mTLS inválido' }),
+          JSON.stringify({ error: 'Certificado mTLS inválido', details: e?.message }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
