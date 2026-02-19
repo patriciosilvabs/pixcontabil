@@ -222,6 +222,45 @@ Deno.serve(async (req) => {
         );
       }
       refundData = await resp.json();
+    }
+    // ========== BANCO INTER ==========
+    else if (provider === 'inter') {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
+      const refundUrl = `${config.base_url}/pix/v2/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
+      const fetchHeaders: any = {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      };
+      if (config.provider_company_id) {
+        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = {
+        method: 'PUT',
+        headers: fetchHeaders,
+        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const resp = await fetch(refundUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      refundData = await resp.json();
     } else {
       return new Response(
         JSON.stringify({ error: `Provider '${provider}' não suportado` }),

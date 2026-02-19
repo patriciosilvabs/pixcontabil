@@ -284,6 +284,63 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ========== BANCO INTER ==========
+    else if (provider === 'inter') {
+      if (!config.certificate_encrypted) {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS obrigatório para Banco Inter' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      let certPem: string;
+      let keyPem: string;
+      try {
+        certPem = atob(config.certificate_encrypted);
+        keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+      } catch {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS inválido' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+      const balanceUrl = `${config.base_url}/banking/v2/saldo`;
+      const fetchHeaders: any = { 'Authorization': `Bearer ${accessToken}` };
+      if (config.provider_company_id) {
+        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
+      }
+
+      try {
+        const res = await fetch(balanceUrl, {
+          headers: fetchHeaders,
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          httpClient.close();
+          return new Response(
+            JSON.stringify({ error: 'Falha ao consultar saldo no Banco Inter', details: errText }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const data = await res.json();
+        console.log('[pix-balance] Inter balance response:', JSON.stringify(data));
+        balance = parseFloat(data?.disponivel ?? data?.saldo ?? data?.available ?? '0');
+        httpClient.close();
+      } catch (fetchError) {
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão mTLS com o Banco Inter', details: fetchError.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // ========== UNKNOWN ==========
     else {
       return new Response(

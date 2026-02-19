@@ -192,6 +192,33 @@ Deno.serve(async (req) => {
       const resp = await fetch(statusUrl, fetchOptions);
       httpClient?.close();
       statusData = await resp.json();
+    }
+    // ========== BANCO INTER ==========
+    else if (provider === 'inter') {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
+      const statusUrl = `${config.base_url}/banking/v2/pix/${end_to_end_id}`;
+      const fetchHeaders: any = {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      };
+      if (config.provider_company_id) {
+        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = { method: 'GET', headers: fetchHeaders };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const resp = await fetch(statusUrl, fetchOptions);
+      httpClient?.close();
+      statusData = await resp.json();
     } else {
       return new Response(
         JSON.stringify({ error: `Provider '${provider}' não suportado` }),
@@ -205,8 +232,11 @@ Deno.serve(async (req) => {
     const rawStatus = statusData.status || '';
     const statusMap: Record<string, string> = {
       'REALIZADO': 'completed', 'COMPLETED': 'completed', 'CONFIRMED': 'completed',
+      'PROCESSADO': 'completed', 'EFETIVADO': 'completed',
       'EM_PROCESSAMENTO': 'pending', 'PROCESSING': 'pending', 'ACTIVE': 'pending',
+      'EMPROCESSAMENTO': 'pending', 'APROVACAO': 'pending',
       'NAO_REALIZADO': 'failed', 'FAILED': 'failed', 'ERROR': 'failed',
+      'CANCELADO': 'failed',
       'DEVOLVIDO': 'refunded', 'REFUNDED': 'refunded',
       // Paggue statuses (numeric as string)
       '0': 'pending', '1': 'completed', '2': 'failed', '3': 'pending', '5': 'cancelled',

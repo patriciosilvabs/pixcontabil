@@ -33,6 +33,7 @@ const PIX_PROVIDERS = [
   { value: "onz", label: "ONZ Infopago" },
   { value: "transfeera", label: "Transfeera" },
   { value: "efi", label: "EFI Pay (Efí)" },
+  { value: "inter", label: "Banco Inter" },
 ];
 
 const PIX_KEY_TYPES = [
@@ -135,6 +136,22 @@ const PROVIDER_CONFIG: Record<string, {
       sandbox: 'https://pix-h.api.efipay.com.br',
     },
   },
+  inter: {
+    clientIdLabel: 'Client ID',
+    clientIdPlaceholder: 'Obtido na tela de aplicações do IB',
+    clientIdHelp: 'Obtido no Internet Banking > API > Aplicações.',
+    showClientSecret: true,
+    clientSecretLabel: 'Client Secret',
+    clientSecretHelp: 'Obtido no Internet Banking > API > Aplicações.',
+    showCertificate: true,
+    showCompanyId: true,
+    credentialsTitle: 'Credenciais Banco Inter',
+    credentialsDescription: 'Credenciais OAuth2 + Certificado mTLS obrigatório',
+    urls: {
+      production: 'https://cdpj.partners.bancointer.com.br',
+      sandbox: 'https://cdpj-sandbox.partners.uatinter.co',
+    },
+  },
 };
 
 type PixConfigPurpose = "cash_in" | "cash_out" | "both";
@@ -203,8 +220,8 @@ function ProviderConfigForm({
       ...config,
       provider,
       base_url: baseUrl || config.base_url,
-      certificate_encrypted: provider === 'efi' ? config.certificate_encrypted : undefined,
-      certificate_key_encrypted: provider === 'efi' ? config.certificate_key_encrypted : undefined,
+      certificate_encrypted: (provider === 'efi' || provider === 'inter') ? config.certificate_encrypted : undefined,
+      certificate_key_encrypted: (provider === 'efi' || provider === 'inter') ? config.certificate_key_encrypted : undefined,
       client_secret_encrypted: provider === 'woovi' ? (config.client_secret_encrypted || 'not_required') : config.client_secret_encrypted,
     });
   };
@@ -370,9 +387,9 @@ function ProviderConfigForm({
             </div>
             {providerConfig.showCompanyId && (
               <div className="space-y-2">
-                <Label>Company ID (X-Company-ID)</Label>
-                <Input value={config.provider_company_id || ""} onChange={(e) => setConfig({ ...config, provider_company_id: e.target.value })} placeholder="Ex: 12345" />
-                <p className="text-xs text-muted-foreground">Encontrado no painel Paggue ao gerar as credenciais. Se deixar em branco, será extraído automaticamente.</p>
+                <Label>{config.provider === 'inter' ? 'Conta Corrente (x-conta-corrente)' : 'Company ID (X-Company-ID)'}</Label>
+                <Input value={config.provider_company_id || ""} onChange={(e) => setConfig({ ...config, provider_company_id: e.target.value })} placeholder={config.provider === 'inter' ? 'Número da conta corrente (apenas números)' : 'Ex: 12345'} />
+                <p className="text-xs text-muted-foreground">{config.provider === 'inter' ? 'Número da conta corrente no Banco Inter. Necessário quando a aplicação está associada a mais de uma conta.' : 'Encontrado no painel Paggue ao gerar as credenciais. Se deixar em branco, será extraído automaticamente.'}</p>
               </div>
             )}
             {providerConfig.showCertificate && (

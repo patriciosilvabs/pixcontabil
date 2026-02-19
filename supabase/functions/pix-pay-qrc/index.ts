@@ -486,6 +486,62 @@ Deno.serve(async (req) => {
       }
 
       paymentData = await payResponse.json();
+    }
+    // ========== BANCO INTER - Dynamic QR ==========
+    else if (provider === 'inter') {
+      externalId = crypto.randomUUID();
+
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = atob(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? atob(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
+      const interPayload = {
+        valor: paymentAmount,
+        descricao: descricao ? descricao.substring(0, 140) : 'Pagamento via QR Code',
+        destinatario: {
+          tipo: 'PIX_COPIA_E_COLA',
+          pixCopiaECola: qr_code,
+        },
+      };
+
+      const payUrl = `${config.base_url}/banking/v2/pix`;
+      const fetchHeaders: any = {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+        'x-id-idempotente': externalId,
+      };
+      if (config.provider_company_id) {
+        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = {
+        method: 'POST',
+        headers: fetchHeaders,
+        body: JSON.stringify(interPayload),
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const payResponse = await fetch(payUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!payResponse.ok) {
+        const errorText = await payResponse.text();
+        console.error('[pix-pay-qrc] Inter error:', errorText);
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate QR Code payment', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = await payResponse.json();
+      if (paymentData.codigoSolicitacao) {
+        paymentData.e2eId = paymentData.endToEnd || paymentData.codigoSolicitacao;
+      }
     } else {
       return new Response(
         JSON.stringify({ error: `Provider '${provider}' não suportado` }),
