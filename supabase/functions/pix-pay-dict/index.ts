@@ -410,6 +410,43 @@ Deno.serve(async (req) => {
         );
       }
 
+      // Auto-register webhook if not already done
+      const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-webhook`;
+      const registerWebhookUrl = `${config.base_url}/v2/webhook/${encodeURIComponent(config.pix_key)}`;
+      const webhookFetchOptions: any = {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ webhookUrl }),
+      };
+      if (httpClient) webhookFetchOptions.client = httpClient;
+
+      try {
+        const webhookResponse = await fetch(registerWebhookUrl, webhookFetchOptions);
+        if (!webhookResponse.ok) {
+          const webhookErrorText = await webhookResponse.text();
+          console.warn('[pix-pay-dict] EFI webhook registration warning:', webhookErrorText);
+        } else {
+          console.log('[pix-pay-dict] EFI webhook registered successfully for key:', config.pix_key);
+        }
+      } catch (e) {
+        console.warn('[pix-pay-dict] EFI webhook registration failed:', e);
+      }
+
+      // Need a new httpClient since the previous one may have been consumed
+      if (config.certificate_encrypted) {
+        try {
+          httpClient?.close();
+          const certPem = decodeCert(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (e) {
+          console.error('[pix-pay-dict] Failed to recreate mTLS client:', e);
+        }
+      }
+
       const paymentPayload = {
         valor: valor.toFixed(2),
         pagador: {
