@@ -13,7 +13,8 @@ function normalizePem(pem: string): string {
 function decodeCert(raw: string): string {
   const trimmed = raw.trim();
   if (trimmed.startsWith('-----')) return normalizePem(trimmed);
-  return normalizePem(atob(trimmed));
+  const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
+  return normalizePem(atob(cleanB64));
 }
 
 const corsHeaders = {
