@@ -139,21 +139,32 @@ async function handleEfiWebhook(supabaseAdmin: any, payload: any, ip_address: st
       .single();
 
     if (transaction) {
+      // Check EFI status field to determine real outcome
+      const efiStatus = pixEvent.status;
+      const isFailed = efiStatus === 'NAO_REALIZADO';
+      const errorMotivo = pixEvent.gnExtras?.erro?.motivo;
+
       const updateData: any = {
-        status: 'completed',
-        paid_at: horario || new Date().toISOString(),
+        status: isFailed ? 'failed' : 'completed',
         pix_provider_response: pixEvent,
       };
+      if (!isFailed) {
+        updateData.paid_at = horario || new Date().toISOString();
+      }
+      if (isFailed && errorMotivo) {
+        updateData.description = errorMotivo;
+      }
       if (txid) updateData.pix_txid = txid;
       await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
 
+      const finalStatus = isFailed ? 'failed' : 'completed';
       await supabaseAdmin.from('audit_logs').insert({
         company_id: transaction.company_id,
         entity_type: 'transaction',
         entity_id: transaction.id,
         action: 'pix_webhook_received',
         old_data: { status: transaction.status },
-        new_data: { status: 'completed', endToEndId, valor },
+        new_data: { status: finalStatus, endToEndId, valor, ...(errorMotivo ? { error: errorMotivo } : {}) },
       });
     } else {
       // Incoming payment
