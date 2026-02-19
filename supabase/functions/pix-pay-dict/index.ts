@@ -418,6 +418,7 @@ Deno.serve(async (req) => {
         headers: {
           'Authorization': `Bearer ${access_token}`,
           'Content-Type': 'application/json',
+          'x-skip-mtls-checking': 'true',
         },
         body: JSON.stringify({ webhookUrl }),
       };
