@@ -1,20 +1,19 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 function normalizePem(pem: string): string {
-  // Normalize PEM: ensure 64-char line breaks and proper formatting
   const lines = pem.split('\n').map(l => l.trim()).filter(l => l.length > 0);
   const result: string[] = [];
   for (const line of lines) {
-    if (line.startsWith('-----')) {
-      result.push(line);
-    } else {
-      // Split base64 content into 64-char lines
-      for (let i = 0; i < line.length; i += 64) {
-        result.push(line.substring(i, i + 64));
-      }
-    }
+    if (line.startsWith('-----')) { result.push(line); }
+    else { for (let i = 0; i < line.length; i += 64) result.push(line.substring(i, i + 64)); }
   }
   return result.join('\n') + '\n';
+}
+
+function decodeCert(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
+  return normalizePem(atob(trimmed));
 }
 
 const corsHeaders = {
@@ -379,9 +378,9 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = atob(pixConfig.certificate_encrypted);
+        certPem = decodeCert(pixConfig.certificate_encrypted);
         keyPem = pixConfig.certificate_key_encrypted
-          ? atob(pixConfig.certificate_key_encrypted)
+          ? decodeCert(pixConfig.certificate_key_encrypted)
           : certPem;
       } catch (e) {
         return new Response(
@@ -440,9 +439,9 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = normalizePem(atob(pixConfig.certificate_encrypted));
+        certPem = decodeCert(pixConfig.certificate_encrypted);
         keyPem = pixConfig.certificate_key_encrypted
-          ? normalizePem(atob(pixConfig.certificate_key_encrypted))
+          ? decodeCert(pixConfig.certificate_key_encrypted)
           : certPem;
       } catch (e) {
         return new Response(
