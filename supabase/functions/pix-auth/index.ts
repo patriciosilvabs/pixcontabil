@@ -239,29 +239,34 @@ Deno.serve(async (req) => {
     }
 
     // For other OAuth-based providers, check cached token first (by pix_config_id)
-    let otherCachedQuery = supabase
-      .from('pix_tokens')
-      .select('*')
-      .eq('company_id', company_id)
-      .gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1);
-    if (config.id) {
-      otherCachedQuery = otherCachedQuery.eq('pix_config_id', config.id);
-    }
-    const { data: cachedToken } = await otherCachedQuery.single();
+    // Skip cache when specific scopes are requested (different operations need different tokens)
+    if (!requestedScopes) {
+      let otherCachedQuery = supabase
+        .from('pix_tokens')
+        .select('*')
+        .eq('company_id', company_id)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (config.id) {
+        otherCachedQuery = otherCachedQuery.eq('pix_config_id', config.id);
+      }
+      const { data: cachedToken } = await otherCachedQuery.single();
 
-    if (cachedToken) {
-      console.log('[pix-auth] Using cached token');
-      return new Response(
-        JSON.stringify({
-          access_token: cachedToken.access_token,
-          token_type: cachedToken.token_type,
-          provider,
-          cached: true,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (cachedToken) {
+        console.log('[pix-auth] Using cached token');
+        return new Response(
+          JSON.stringify({
+            access_token: cachedToken.access_token,
+            token_type: cachedToken.token_type,
+            provider,
+            cached: true,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      console.log(`[pix-auth] Skipping cache - specific scopes requested: ${requestedScopes}`);
     }
 
     let accessToken: string;
