@@ -141,6 +141,8 @@ export interface AuditLog {
 }
 
 // New Pix integration types
+export type PixConfigPurpose = "cash_in" | "cash_out" | "both";
+
 export interface PixConfig {
   id: string;
   company_id: string;
@@ -154,6 +156,7 @@ export interface PixConfig {
   certificate_key_encrypted?: string;
   webhook_url?: string;
   webhook_secret?: string;
+  purpose: PixConfigPurpose;
   is_sandbox: boolean;
   is_active: boolean;
   created_at: string;
@@ -163,6 +166,7 @@ export interface PixConfig {
 export interface PixToken {
   id: string;
   company_id: string;
+  pix_config_id?: string;
   access_token: string;
   token_type: string;
   expires_at: string;

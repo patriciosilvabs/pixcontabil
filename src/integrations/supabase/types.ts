@@ -264,6 +264,7 @@ export type Database = {
           pix_key_type: Database["public"]["Enums"]["pix_key_type"]
           provider: string
           provider_company_id: string | null
+          purpose: Database["public"]["Enums"]["pix_config_purpose"]
           updated_at: string
           webhook_secret: string | null
           webhook_url: string | null
@@ -283,6 +284,7 @@ export type Database = {
           pix_key_type: Database["public"]["Enums"]["pix_key_type"]
           provider: string
           provider_company_id?: string | null
+          purpose?: Database["public"]["Enums"]["pix_config_purpose"]
           updated_at?: string
           webhook_secret?: string | null
           webhook_url?: string | null
@@ -302,6 +304,7 @@ export type Database = {
           pix_key_type?: Database["public"]["Enums"]["pix_key_type"]
           provider?: string
           provider_company_id?: string | null
+          purpose?: Database["public"]["Enums"]["pix_config_purpose"]
           updated_at?: string
           webhook_secret?: string | null
           webhook_url?: string | null
@@ -310,7 +313,7 @@ export type Database = {
           {
             foreignKeyName: "pix_configs_company_id_fkey"
             columns: ["company_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -376,6 +379,7 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
+          pix_config_id: string | null
           token_type: string | null
         }
         Insert: {
@@ -384,6 +388,7 @@ export type Database = {
           created_at?: string
           expires_at: string
           id?: string
+          pix_config_id?: string | null
           token_type?: string | null
         }
         Update: {
@@ -392,6 +397,7 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          pix_config_id?: string | null
           token_type?: string | null
         }
         Relationships: [
@@ -400,6 +406,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pix_tokens_pix_config_id_fkey"
+            columns: ["pix_config_id"]
+            isOneToOne: false
+            referencedRelation: "pix_configs"
             referencedColumns: ["id"]
           },
         ]
@@ -777,6 +790,7 @@ export type Database = {
     Enums: {
       app_role: "admin" | "operator"
       classification_type: "cost" | "expense"
+      pix_config_purpose: "cash_in" | "cash_out" | "both"
       pix_key_type: "cpf" | "cnpj" | "email" | "phone" | "random"
       pix_type: "key" | "copy_paste" | "qrcode" | "boleto"
       receipt_status: "pending" | "processing" | "completed" | "failed"
@@ -910,6 +924,7 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "operator"],
       classification_type: ["cost", "expense"],
+      pix_config_purpose: ["cash_in", "cash_out", "both"],
       pix_key_type: ["cpf", "cnpj", "email", "phone", "random"],
       pix_type: ["key", "copy_paste", "qrcode", "boleto"],
       receipt_status: ["pending", "processing", "completed", "failed"],

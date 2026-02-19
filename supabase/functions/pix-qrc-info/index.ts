@@ -43,12 +43,26 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { data: config } = await supabase
+    // Get Pix config for cash-in (QR code info/decode)
+    let config: any = null;
+    const { data: cashInConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
+      .eq('purpose', 'cash_in')
       .single();
+    config = cashInConfig;
+    if (!config) {
+      const { data: bothConfig } = await supabase
+        .from('pix_configs')
+        .select('*')
+        .eq('company_id', company_id)
+        .eq('is_active', true)
+        .eq('purpose', 'both')
+        .single();
+      config = bothConfig;
+    }
 
     if (!config) {
       return new Response(
@@ -62,7 +76,7 @@ Deno.serve(async (req) => {
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id }),
+      body: JSON.stringify({ company_id, purpose: 'cash_in' }),
     });
 
     if (!authResponse.ok) {
