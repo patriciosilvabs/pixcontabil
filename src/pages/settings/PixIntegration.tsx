@@ -511,14 +511,16 @@ export default function PixIntegration() {
   }, []);
 
   // Load existing configs
+  const currentCompanyId = currentCompany?.id;
   useEffect(() => {
     async function loadConfigs() {
-      if (!currentCompany) return;
+      if (!currentCompanyId) return;
+      setIsLoading(true);
       try {
         const { data, error } = await supabase
           .from("pix_configs")
           .select("*")
-          .eq("company_id", currentCompany.id);
+          .eq("company_id", currentCompanyId);
 
         if (data && data.length > 0) {
           let foundSeparate = false;
@@ -558,7 +560,7 @@ export default function PixIntegration() {
       }
     }
     loadConfigs();
-  }, [currentCompany, configVersion]);
+  }, [currentCompanyId, configVersion]);
 
   const handleToggleSeparateConfigs = (separate: boolean) => {
     setHasSeparateConfigs(separate);
