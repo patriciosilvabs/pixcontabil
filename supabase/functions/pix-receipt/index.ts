@@ -1,41 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-function normalizePem(pem: string): string {
-  const lines = pem.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  const result: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith('-----')) { result.push(line); }
-    else { for (let i = 0; i < line.length; i += 64) result.push(line.substring(i, i + 64)); }
-  }
-  return result.join('\n') + '\n';
-}
-function decodeCert(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
-  const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
-  return normalizePem(atob(cleanB64));
-}
-function parseCaCerts(raw: string): string[] {
-  let content = raw.trim();
-  if (!content.startsWith('-----')) { try { content = atob(content.replace(/[\s\r\n]/g, '')); } catch { /* use as-is */ } }
-  const parts = content.split(/-----END CERTIFICATE-----/);
-  const certs: string[] = [];
-  for (const part of parts) {
-    const beginIdx = part.indexOf('-----BEGIN CERTIFICATE-----');
-    if (beginIdx === -1) continue;
-    const cleanB64 = part.substring(beginIdx + '-----BEGIN CERTIFICATE-----'.length).replace(/[^A-Za-z0-9+/=]/g, '');
-    if (!cleanB64) continue;
-    const lines: string[] = ['-----BEGIN CERTIFICATE-----'];
-    for (let i = 0; i < cleanB64.length; i += 64) lines.push(cleanB64.substring(i, i + 64));
-    lines.push('-----END CERTIFICATE-----');
-    certs.push(lines.join('\n') + '\n');
-  }
-  return certs;
-}
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 Deno.serve(async (req) => {
@@ -82,7 +49,7 @@ Deno.serve(async (req) => {
     if (transaction_id && (!end_to_end_id || !company_id)) {
       const { data: txData } = await supabase
         .from('transactions')
-        .select('company_id, pix_e2eid, pix_provider_response, amount, description, paid_at, pix_key')
+        .select('company_id, pix_e2eid')
         .eq('id', transaction_id)
         .single();
       if (txData) {
@@ -98,7 +65,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // For receipts, try cash_out first then both then cash_in
+    // Get config
     let config: any = null;
     for (const p of ['cash_out', 'both', 'cash_in']) {
       const { data: c } = await supabase
@@ -118,8 +85,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const provider = config.provider;
-
+    // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
@@ -135,147 +101,47 @@ Deno.serve(async (req) => {
 
     const { access_token } = await authResponse.json();
 
-    // ========== WOOVI ==========
-    // Woovi doesn't have a receipt/PDF endpoint; return transaction data
-    if (provider === 'woovi') {
-      const { data: txData } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('pix_e2eid', end_to_end_id)
-        .single();
-
+    // ONZ receipt via proxy
+    const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
+    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+    if (!proxyUrl || !proxyApiKey) {
       return new Response(
-        JSON.stringify({
-          success: true,
-          end_to_end_id,
-          provider: 'woovi',
-          receipt_type: 'json',
-          transaction: txData,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // ========== ONZ (via proxy mTLS) ==========
-    if (provider === 'onz') {
-      const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
+    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
+    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-      if (!proxyUrl || !proxyApiKey) {
-        return new Response(
-          JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
-      if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
-      try {
-        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-          body: JSON.stringify({ url: receiptUrl, method: 'GET', headers: fetchHeaders }),
-        });
-
-        const proxyData = await proxyResponse.json();
-        const data = proxyData.data || proxyData;
-
-        if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
-          return new Response(
-            JSON.stringify({ error: 'Failed to get receipt', provider_error: JSON.stringify(data) }),
-            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-
-        return new Response(
-          JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      } catch (e) {
-        return new Response(
-          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-
-    // ========== TRANSFEERA ==========
-    if (provider === 'transfeera') {
-      const receiptUrl = `${config.base_url}/pix/transfer/${end_to_end_id}/receipt`;
-      const resp = await fetch(receiptUrl, {
-        headers: { 'Authorization': `Bearer ${access_token}` },
+    try {
+      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+        body: JSON.stringify({ url: receiptUrl, method: 'GET', headers: fetchHeaders }),
       });
-      const data = await resp.json();
-      return new Response(
-        JSON.stringify({ success: true, end_to_end_id, provider: 'transfeera', pdf_base64: data.pdf || data.receipt, content_type: 'application/pdf' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
-    // ========== EFI ==========
-    if (provider === 'efi') {
-      let httpClient: Deno.HttpClient | undefined;
-      if (config.certificate_encrypted) {
-        try {
-          const certPem = decodeCert(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-        } catch (_) { /* ignore */ }
-      }
+      const proxyData = await proxyResponse.json();
+      const data = proxyData.data || proxyData;
 
-      const receiptUrl = `${config.base_url}/v2/gn/receipts/${end_to_end_id}`;
-      const fetchOptions: any = {
-        method: 'GET',
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-      };
-      if (httpClient) fetchOptions.client = httpClient;
-
-      const resp = await fetch(receiptUrl, fetchOptions);
-      httpClient?.close();
-
-      if (!resp.ok) {
-        const errorText = await resp.text();
+      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
         return new Response(
-          JSON.stringify({ error: 'Failed to get receipt', provider_error: errorText }),
+          JSON.stringify({ error: 'Failed to get receipt', provider_error: JSON.stringify(data) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const receiptData = await resp.json();
       return new Response(
-        JSON.stringify({ success: true, end_to_end_id, provider: 'efi', pdf_base64: receiptData.pdf || receiptData.data?.pdf, content_type: 'application/pdf' }),
+        JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-    }
-
-    // ========== BANCO INTER ==========
-    if (provider === 'inter') {
-      // Inter doesn't have a dedicated receipt/PDF endpoint;
-      // Return transaction data from pix_provider_response (same pattern as Woovi)
-      const { data: txData } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('pix_e2eid', end_to_end_id)
-        .single();
-
+    } catch (e) {
       return new Response(
-        JSON.stringify({
-          success: true,
-          end_to_end_id,
-          provider: 'inter',
-          receipt_type: 'json',
-          transaction: txData,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-
-    return new Response(
-      JSON.stringify({ error: `Provider '${provider}' não suportado` }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
 
   } catch (error) {
     console.error('[pix-receipt] Error:', error);

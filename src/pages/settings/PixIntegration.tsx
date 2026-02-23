@@ -28,12 +28,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
-  { value: "paggue", label: "Paggue" },
-  { value: "woovi", label: "Woovi (OpenPix)" },
   { value: "onz", label: "ONZ Infopago" },
-  { value: "transfeera", label: "Transfeera" },
-  { value: "efi", label: "EFI Pay (Efí)" },
-  { value: "inter", label: "Banco Inter" },
 ];
 
 const PIX_KEY_TYPES = [
@@ -58,36 +53,6 @@ const PROVIDER_CONFIG: Record<string, {
   credentialsDescription: string;
   urls: { production: string; sandbox: string };
 }> = {
-  paggue: {
-    clientIdLabel: 'Client Key',
-    clientIdPlaceholder: '50284687438...',
-    clientIdHelp: 'Obtido no painel Paggue > Integrações > client_key.',
-    showClientSecret: true,
-    clientSecretLabel: 'Client Secret',
-    clientSecretHelp: 'Obtido no painel Paggue > Integrações > client_secret.',
-    showCertificate: false,
-    showCompanyId: true,
-    credentialsTitle: 'Credenciais Paggue',
-    credentialsDescription: 'Client Key + Client Secret + Company ID (X-Company-ID)',
-    urls: {
-      production: 'https://ms.paggue.io',
-      sandbox: 'https://ms.paggue.io',
-    },
-  },
-  woovi: {
-    clientIdLabel: 'AppID',
-    clientIdPlaceholder: 'Q2xpZW50X0lkXzEyMzQ1Njc4OTB...',
-    clientIdHelp: 'Obtido no painel Woovi/OpenPix > API > AppID.',
-    showClientSecret: false,
-    showCertificate: false,
-    showCompanyId: false,
-    credentialsTitle: 'Credenciais Woovi (OpenPix)',
-    credentialsDescription: 'Apenas o AppID é necessário para autenticação',
-    urls: {
-      production: 'https://api.openpix.com.br',
-      sandbox: 'https://api.openpix.com.br',
-    },
-  },
   onz: {
     clientIdLabel: 'Client ID',
     clientIdPlaceholder: 'seu_client_id',
@@ -102,54 +67,6 @@ const PROVIDER_CONFIG: Record<string, {
     urls: {
       production: 'https://secureapi.bancodigital.onz.software/api/v2',
       sandbox: 'https://secureapi.bancodigital.hmg.onz.software/api/v2',
-    },
-  },
-  transfeera: {
-    clientIdLabel: 'Client ID',
-    clientIdPlaceholder: 'seu_client_id',
-    clientIdHelp: 'Obtido no painel Transfeera > Configurações > API.',
-    showClientSecret: true,
-    clientSecretLabel: 'Client Secret',
-    clientSecretHelp: 'Obtido no painel Transfeera > Configurações > API.',
-    showCertificate: false,
-    showCompanyId: false,
-    credentialsTitle: 'Credenciais Transfeera',
-    credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
-    urls: {
-      production: 'https://api.transfeera.com',
-      sandbox: 'https://api-sandbox.transfeera.com',
-    },
-  },
-  efi: {
-    clientIdLabel: 'Client ID',
-    clientIdPlaceholder: 'Client_Id_xxxxxxxxxxxxxxx',
-    clientIdHelp: 'Obtido no painel EFI Pay > API > Aplicações.',
-    showClientSecret: true,
-    clientSecretLabel: 'Client Secret',
-    clientSecretHelp: 'Obtido no painel EFI Pay > API > Aplicações.',
-    showCertificate: true,
-    showCompanyId: false,
-    credentialsTitle: 'Credenciais EFI Pay',
-    credentialsDescription: 'Credenciais OAuth2 + Certificado mTLS obrigatório',
-    urls: {
-      production: 'https://pix.api.efipay.com.br',
-      sandbox: 'https://pix-h.api.efipay.com.br',
-    },
-  },
-  inter: {
-    clientIdLabel: 'Client ID',
-    clientIdPlaceholder: 'Obtido na tela de aplicações do IB',
-    clientIdHelp: 'Obtido no Internet Banking > API > Aplicações.',
-    showClientSecret: true,
-    clientSecretLabel: 'Client Secret',
-    clientSecretHelp: 'Obtido no Internet Banking > API > Aplicações.',
-    showCertificate: true,
-    showCompanyId: true,
-    credentialsTitle: 'Credenciais Banco Inter',
-    credentialsDescription: 'Credenciais OAuth2 + Certificado mTLS obrigatório',
-    urls: {
-      production: 'https://cdpj.partners.bancointer.com.br',
-      sandbox: 'https://cdpj-sandbox.partners.uatinter.co',
     },
   },
 };
