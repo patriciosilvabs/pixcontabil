@@ -1,72 +1,56 @@
 
-# Corrigir Edge Functions de Boleto conforme documentacao oficial ONZ
+# Corrigir erro de pagamento de boleto + Configurar webhooks para ONZ
 
-## Problemas encontrados
+## Problema 1: TypeError no pagamento de boleto
 
-Comparando o codigo atual com a documentacao oficial da API ONZ Billets, ha as seguintes divergencias:
+O erro `Cannot read properties of undefined (reading 'toString')` ocorre na linha 175 de `NewPayment.tsx`:
 
-### 1. `billet-pay/index.ts` - Payload incompleto
-- **Problema**: O campo `description` e **obrigatorio** na API ONZ, mas o codigo atual nao o envia no payload.
-- **Problema**: O campo `payment` (objeto com `currency` e `amount`) existe na API mas nao esta sendo enviado.
-- **Problema**: A extracao do `amount` da resposta usa `paymentData.amount` mas a API retorna `paymentData.payment.amount`.
-- **Problema**: O `external_id` salvo deve usar `paymentData.id` (number int64 conforme docs).
-
-**Correcao**:
-```typescript
-const onzPayload: any = {
-  digitableCode: codigo_barras,
-  description: descricao || 'Pagamento de boleto',
-};
-if (payment_flow) {
-  onzPayload.paymentFlow = payment_flow;
-}
-// Opcional: se o valor for informado, enviar no payload
-if (valor) {
-  onzPayload.payment = { currency: 'BRL', amount: valor };
-}
+```
+startBilletPolling(result.billet_id.toString());
 ```
 
-E para extrair o valor da resposta:
+A Edge Function `billet-pay` retorna `external_id` no response, mas o frontend espera `billet_id`. O campo `billet_id` nao existe na resposta, causando o crash. O pagamento ja foi processado com sucesso pela ONZ, mas o frontend quebra antes de redirecionar o usuario.
+
+**Correcao:** Alterar a linha 175 para usar `result.external_id` em vez de `result.billet_id`:
+
 ```typescript
-const externalId = String(paymentData.id || idempotencyKey);
-const amount = paymentData.payment?.amount || valor || 0;
+startBilletPolling(result.external_id?.toString() || result.transaction_id);
 ```
 
-### 2. `billet-check-status/index.ts` - Mapeamento de status incorreto
-- **Problema**: O mapa de status usa valores incorretos. A API ONZ retorna: `CANCELED`, `PROCESSING`, `LIQUIDATED`, `REFUNDED`, `PARTIALLY_REFUNDED` (com virgulas nos nomes no enum da doc, provavelmente sem virgula na pratica).
-- **Problema**: O codigo mapeia `PAID` e `COMPLETED` que nao existem na API ONZ.
+Tambem precisamos atualizar a interface `BilletPaymentResult` no hook `useBilletPayment.ts` para refletir os campos reais retornados pela Edge Function (substituir `billet_id` por `external_id`).
 
-**Correcao do mapa de status**:
-```typescript
-const statusMap: Record<string, string> = {
-  'LIQUIDATED': 'completed',
-  'PROCESSING': 'pending',
-  'CANCELED': 'failed',
-  'REFUNDED': 'refunded',
-  'PARTIALLY_REFUNDED': 'refunded',
-};
+## Problema 2: Webhooks ONZ nao configurados
+
+A imagem mostra que todos os 5 tipos de webhook (Transferencia, Recebimento, Estorno, Fila de Saida de Pagamentos, Infracoes) estao "Nao Configurado" e "Pausado" no painel ONZ.
+
+Para que o sistema receba notificacoes de status dos pagamentos (boletos e Pix), e necessario configurar pelo menos os webhooks de **Transferencia** e **Fila de Saida de Pagamentos** no painel ONZ.
+
+A URL do webhook deve apontar para a Edge Function `pix-webhook` do sistema. Como o webhook precisa de autenticacao via `x-webhook-secret`, precisamos:
+
+1. Verificar qual e a URL publica do webhook
+2. Orientar a configuracao no painel ONZ com a URL correta e o header de seguranca
+
+## Arquivos a serem alterados
+
+### 1. `src/hooks/useBilletPayment.ts`
+- Atualizar a interface `BilletPaymentResult`: substituir `billet_id: number` por `external_id: string`
+
+### 2. `src/pages/NewPayment.tsx`
+- Linha 175: Corrigir de `result.billet_id.toString()` para `result.external_id || result.transaction_id`
+
+### 3. `src/constants/app.ts`
+- Incrementar versao para `v1.1.3`
+
+## Configuracao de Webhooks (Manual no painel ONZ)
+
+Apos a correcao do codigo, sera necessario configurar os webhooks no painel da ONZ. A URL do webhook do sistema e:
+
+```
+https://ntvgthwqxixkoemyxhqo.supabase.co/functions/v1/pix-webhook
 ```
 
-Alem disso, a resposta deve incluir campos da API como `billetInfo`, `creditorAccount`, `debtorAccount` para enriquecer os dados.
+Os tipos que devem ser configurados:
+- **Transferencia** - para receber confirmacoes de pagamentos Pix
+- **Fila de Saida de Pagamentos** - para receber atualizacoes de status de boletos
 
-### 3. `billet-receipt/index.ts` - Caminho de extracao do PDF incorreto
-- **Problema**: O codigo extrai o PDF como `data.pdf || data.receipt`, mas a documentacao mostra que a resposta e `{ data: { pdf: "base64..." } }`.
-
-**Correcao**:
-```typescript
-// A resposta da API e: { data: { pdf: "base64string" } }
-const receiptData = data.data || data;
-const pdfBase64 = receiptData.pdf || receiptData.receipt;
-```
-
-## Resumo das alteracoes
-
-| Arquivo | Alteracao |
-|---|---|
-| `billet-pay/index.ts` | Adicionar `description` ao payload ONZ, enviar `payment` opcional, corrigir extracao de `amount` e `id` da resposta |
-| `billet-check-status/index.ts` | Corrigir mapeamento de status para usar `LIQUIDATED`, `PROCESSING`, `CANCELED`, `REFUNDED`; incluir `is_completed` no retorno |
-| `billet-receipt/index.ts` | Corrigir caminho de extracao do PDF para `data.data.pdf` |
-
-## Deploy
-
-Apos as correcoes, deploy das 3 funcoes: `billet-pay`, `billet-check-status`, `billet-receipt`.
+O header `x-webhook-secret` deve ser configurado com o valor do secret armazenado no sistema.
