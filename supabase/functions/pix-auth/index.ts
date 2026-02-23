@@ -34,7 +34,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const { company_id, purpose } = await req.json();
+    const { company_id, purpose, force_new } = await req.json();
 
     if (!company_id) {
       return new Response(
@@ -87,30 +87,34 @@ Deno.serve(async (req) => {
 
     console.log(`[pix-auth] Provider: onz`);
 
-    // Check cached token
-    let cachedTokenQuery = supabase
-      .from('pix_tokens')
-      .select('*')
-      .eq('company_id', company_id)
-      .gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1);
-    if (config.id) {
-      cachedTokenQuery = cachedTokenQuery.eq('pix_config_id', config.id);
-    }
-    const { data: cachedToken } = await cachedTokenQuery.single();
+    // Check cached token (skip if force_new)
+    if (!force_new) {
+      let cachedTokenQuery = supabase
+        .from('pix_tokens')
+        .select('*')
+        .eq('company_id', company_id)
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (config.id) {
+        cachedTokenQuery = cachedTokenQuery.eq('pix_config_id', config.id);
+      }
+      const { data: cachedToken } = await cachedTokenQuery.single();
 
-    if (cachedToken) {
-      console.log('[pix-auth] Using cached token');
-      return new Response(
-        JSON.stringify({
-          access_token: cachedToken.access_token,
-          token_type: cachedToken.token_type,
-          provider: 'onz',
-          cached: true,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (cachedToken) {
+        console.log('[pix-auth] Using cached token');
+        return new Response(
+          JSON.stringify({
+            access_token: cachedToken.access_token,
+            token_type: cachedToken.token_type,
+            provider: 'onz',
+            cached: true,
+          }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    } else {
+      console.log('[pix-auth] force_new=true, skipping cache');
     }
 
     // ========== ONZ Infopago (via proxy mTLS) ==========
