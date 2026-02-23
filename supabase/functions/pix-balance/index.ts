@@ -262,7 +262,14 @@ Deno.serve(async (req) => {
         const proxyData = await proxyResponse.json();
         const data = proxyData.data || proxyData;
         console.log('[pix-balance] ONZ response:', JSON.stringify(data));
-        balance = parseFloat(data?.available ?? data?.balance ?? data?.saldo ?? '0');
+        const balanceEntry = Array.isArray(data) ? data[0] : data;
+        balance = parseFloat(
+          balanceEntry?.balanceAmount?.available 
+          ?? balanceEntry?.available 
+          ?? balanceEntry?.balance 
+          ?? balanceEntry?.saldo 
+          ?? '0'
+        );
       } catch (fetchError) {
         return new Response(
           JSON.stringify({ error: 'Falha na conexão com ONZ', details: fetchError.message }),
