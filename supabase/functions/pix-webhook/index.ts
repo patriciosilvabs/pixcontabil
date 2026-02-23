@@ -35,18 +35,7 @@ async function verifyWebhookSecret(req: Request, supabaseAdmin: any): Promise<bo
   const webhookSecret = req.headers.get('x-webhook-secret');
   
   if (!webhookSecret) {
-    // Check if ANY pix_config has a webhook_secret configured
-    const { data: configs } = await supabaseAdmin
-      .from('pix_configs')
-      .select('webhook_secret')
-      .eq('is_active', true)
-      .not('webhook_secret', 'is', null);
-    
-    // If no secrets are configured, allow (backwards compatibility)
-    if (!configs || configs.length === 0) return true;
-    
-    // Secrets exist but none was provided - reject
-    console.warn('[pix-webhook] Webhook secret required but not provided');
+    console.warn('[pix-webhook] Webhook secret header missing - rejecting request');
     return false;
   }
 
