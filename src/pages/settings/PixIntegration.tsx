@@ -95,10 +95,10 @@ const PROVIDER_CONFIG: Record<string, {
     showClientSecret: true,
     clientSecretLabel: 'Client Secret',
     clientSecretHelp: 'Obtido no painel ONZ Infopago > Integrações.',
-    showCertificate: false,
+    showCertificate: true,
     showCompanyId: false,
     credentialsTitle: 'Credenciais ONZ Infopago',
-    credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
+    credentialsDescription: 'Credenciais OAuth2 (Client Credentials) + Certificado mTLS',
     urls: {
       production: 'https://secureapi.bancodigital.onz.software/api/v2',
       sandbox: 'https://secureapi.bancodigital.hmg.onz.software/api/v2',
