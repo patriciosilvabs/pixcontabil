@@ -1,57 +1,45 @@
 
-## Corrigir URLs da API ONZ nas Edge Functions
+# Corrigir formato da requisição OAuth para ONZ
 
-O erro de DNS (`Name or service not known`) ocorre porque o `base_url` salvo no banco (`https://secureapi.bancodigital.onz.software/api/v2`) esta incorreto -- esse dominio nao existe mais.
+## Problema identificado
+As credenciais da ONZ estao corretas no banco de dados, mas o `pix-auth` envia o body da autenticacao OAuth em formato **camelCase** (`clientId`, `clientSecret`, `grantType`) como JSON. Muitas APIs OAuth (incluindo possivelmente a ONZ/Infopago) esperam o formato padrao **snake_case** (`client_id`, `client_secret`, `grant_type`), potencialmente como `application/x-www-form-urlencoded`. O erro `404: Application not found` pode ser a resposta generica do servidor quando nao consegue identificar a aplicacao devido ao formato incorreto dos campos.
 
-De acordo com a documentacao oficial da ONZ (imagem enviada), as URLs corretas sao:
+## Solucao
 
-- **Contas (cash-out):** `https://cashout.infopago.com.br/api/v2`
-- **QRCodes (cash-in):** `https://api.pix.infopago.com.br`
+Alterar a secao ONZ do `pix-auth` para tentar o formato padrao OAuth2 primeiro:
 
-### Problema adicional
+### Arquivo: `supabase/functions/pix-auth/index.ts`
 
-A ONZ usa **dois dominios diferentes** para operacoes distintas. O sistema atual suporta apenas um `base_url` por registro `pix_configs`. Como o registro atual tem `purpose: both`, precisamos lidar com isso nas Edge Functions.
+Na secao ONZ (~linha 163), alterar o `requestBody` e o `Content-Type`:
 
-### Plano
-
-**1. Atualizar o `base_url` no banco de dados**
-
-Alterar o registro existente para usar a URL de cash-out (que e a mais usada -- auth, balance, payments, receipts):
-
-```text
-base_url: https://cashout.infopago.com.br/api/v2
+**De (atual):**
+```javascript
+const requestBody = {
+  clientId: pixConfig.client_id,
+  clientSecret: pixConfig.client_secret_encrypted,
+  grantType: 'client_credentials',
+};
+// headers: { 'Content-Type': 'application/json' }
 ```
 
-**2. Hardcode da URL do QRCodes nas funcoes que precisam**
-
-Nas Edge Functions que fazem operacoes de QR Code (cash-in), usar `https://api.pix.infopago.com.br` diretamente quando o provider for `onz`, ja que essa URL e fixa e documentada.
-
-### Funcoes afetadas e suas URLs
-
-| Funcao | Operacao | URL correta |
-|---|---|---|
-| pix-auth | OAuth token | `cashout.infopago.com.br/api/v2/oauth/token` |
-| pix-balance | Saldo | `cashout.infopago.com.br/api/v2/accounts/balances/` |
-| pix-pay-dict | Pagamento por chave | `cashout.infopago.com.br/api/v2/pix/payments/dict` |
-| pix-pay-qrc | Pagamento por QR | `cashout.infopago.com.br/api/v2/pix/payments/qrcode` |
-| pix-qrc-info | Decodificar QR | `cashout.infopago.com.br/api/v2/pix/qrcode/decode` |
-| pix-receipt | Comprovante | `cashout.infopago.com.br/api/v2/pix/receipts/` |
-| pix-check-status | Status | `cashout.infopago.com.br/api/v2/pix/` |
-
-Todas as operacoes atuais usam a Accounts API (cash-out), entao basta corrigir o `base_url` no banco. Nenhuma funcao precisa do dominio `api.pix.infopago.com.br` no momento.
-
-### Alteracoes
-
-1. **SQL Update** -- Atualizar `base_url` no `pix_configs` de `https://secureapi.bancodigital.onz.software/api/v2` para `https://cashout.infopago.com.br/api/v2`
-
-2. **Nenhuma alteracao em codigo** -- As Edge Functions ja usam `${config.base_url}/...` corretamente. Basta corrigir o dado no banco.
-
-### Detalhes tecnicos
-
-A autenticacao OAuth sera chamada em:
-```text
-POST https://cashout.infopago.com.br/api/v2/oauth/token
-Body: { clientId, clientSecret, grantType: "client_credentials" }
+**Para:**
+```javascript
+const requestBody = {
+  client_id: pixConfig.client_id,
+  client_secret: pixConfig.client_secret_encrypted,
+  grant_type: 'client_credentials',
+};
+// headers: { 'Content-Type': 'application/json' }
 ```
 
-O certificado mTLS continuara sendo usado via `Deno.createHttpClient({ cert, key })` como ja implementado.
+Manter JSON como Content-Type, mas usar snake_case nos campos. Se ainda falhar, a proxima iteracao testara `application/x-www-form-urlencoded`.
+
+### Tambem adicionar log no proxy para debug
+
+No proxy (`docs/onz-proxy/index.js`), adicionar log do body enviado (sem secrets) para facilitar diagnostico futuro.
+
+## Detalhes tecnicos
+
+- A alteracao e minima: apenas renomear 3 campos no objeto `requestBody` na secao ONZ do `pix-auth`
+- Nao afeta nenhum outro provedor (EFI, Inter, Transfeera, Paggue, Woovi)
+- O proxy nao precisa de alteracao pois ele apenas repassa o body como recebido
