@@ -170,12 +170,31 @@ Deno.serve(async (req) => {
       statusData = await resp.json();
       console.log('[pix-check-status] Paggue raw status:', JSON.stringify(statusData));
     }
-    // ========== ONZ ==========
+    // ========== ONZ (mTLS direto) ==========
     else if (provider === 'onz') {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = decodeCert(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
       const statusUrl = `${config.base_url}/pix/payments/${end_to_end_id}`;
-      const resp = await fetch(statusUrl, {
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-      });
+      const fetchHeaders: any = {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      };
+      if (config.provider_company_id) {
+        fetchHeaders['X-Company-ID'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = { method: 'GET', headers: fetchHeaders };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const resp = await fetch(statusUrl, fetchOptions);
+      httpClient?.close();
       statusData = await resp.json();
     }
     // ========== TRANSFEERA ==========

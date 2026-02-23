@@ -203,50 +203,63 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ========== ONZ Infopago (via proxy) ==========
+    // ========== ONZ Infopago (mTLS direto) ==========
     else if (provider === 'onz') {
       const balanceUrl = `${config.base_url}/accounts/balances/`;
-      console.log(`[pix-balance] ONZ: GET ${balanceUrl} (via proxy)`);
+      console.log(`[pix-balance] ONZ: GET ${balanceUrl} (mTLS direto)`);
 
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-
-      if (!proxyUrl || !proxyApiKey) {
+      if (!config.certificate_encrypted) {
         return new Response(
-          JSON.stringify({ error: 'ONZ proxy not configured' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Certificado mTLS obrigatório para ONZ' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({
-          url: balanceUrl,
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${accessToken}` },
-        }),
-      });
-
-      if (!proxyResponse.ok) {
-        const errText = await proxyResponse.text();
-        console.error('[pix-balance] ONZ proxy error:', errText);
+      let certPem: string;
+      let keyPem: string;
+      try {
+        certPem = decodeCert(config.certificate_encrypted);
+        keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
+      } catch {
         return new Response(
-          JSON.stringify({ error: 'Falha ao consultar saldo na ONZ', details: errText }),
+          JSON.stringify({ error: 'Certificado mTLS inválido' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+      try {
+        const fetchHeaders: any = { 'Authorization': `Bearer ${accessToken}` };
+        if (config.provider_company_id) {
+          fetchHeaders['X-Company-ID'] = config.provider_company_id;
+        }
+        const res = await fetch(balanceUrl, {
+          headers: fetchHeaders,
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          httpClient.close();
+          console.error('[pix-balance] ONZ balance error:', errText);
+          return new Response(
+            JSON.stringify({ error: 'Falha ao consultar saldo na ONZ', details: errText }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const data = await res.json();
+        httpClient.close();
+        console.log('[pix-balance] ONZ balance response:', JSON.stringify(data));
+        balance = parseFloat(data?.available ?? data?.balance ?? data?.saldo ?? '0');
+      } catch (fetchError) {
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão mTLS com ONZ', details: fetchError.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      const proxyResult = await proxyResponse.json();
-      if (proxyResult.status !== 200) {
-        return new Response(
-          JSON.stringify({ error: 'ONZ balance failed', details: proxyResult.data }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const data = proxyResult.data;
-      balance = parseFloat(data?.available ?? data?.balance ?? data?.saldo ?? '0');
     }
 
     // ========== EFI Pay ==========

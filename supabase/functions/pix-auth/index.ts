@@ -273,21 +273,34 @@ Deno.serve(async (req) => {
     let tokenType = 'Bearer';
     let expiresInSeconds = 3600;
 
-    // ========== ONZ Infopago (via proxy) ==========
+    // ========== ONZ Infopago (mTLS direto) ==========
     if (provider === 'onz') {
-      console.log('[pix-auth] ONZ: requesting token via proxy');
+      console.log('[pix-auth] ONZ: requesting token via direct mTLS');
       const baseUrl = pixConfig.base_url.replace(/\/+$/, '');
       const tokenUrl = `${baseUrl}/oauth/token`;
 
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-
-      if (!proxyUrl || !proxyApiKey) {
+      if (!pixConfig.certificate_encrypted) {
         return new Response(
-          JSON.stringify({ error: 'ONZ proxy not configured. Set ONZ_PROXY_URL and ONZ_PROXY_API_KEY secrets.' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Certificado mTLS é obrigatório para a ONZ.' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+
+      let certPem: string;
+      let keyPem: string;
+      try {
+        certPem = decodeCert(pixConfig.certificate_encrypted);
+        keyPem = pixConfig.certificate_key_encrypted
+          ? decodeCert(pixConfig.certificate_key_encrypted)
+          : certPem;
+      } catch (e) {
+        return new Response(
+          JSON.stringify({ error: 'Certificado mTLS inválido.', details: e.message }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
 
       const requestBody = {
         clientId: pixConfig.client_id,
@@ -296,38 +309,26 @@ Deno.serve(async (req) => {
       };
 
       try {
-        const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/proxy`, {
+        const tokenResponse = await fetch(tokenUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-proxy-api-key': proxyApiKey,
-          },
-          body: JSON.stringify({
-            url: tokenUrl,
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: requestBody,
-          }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          // @ts-ignore - Deno specific
+          client: httpClient,
         });
 
-        if (!proxyResponse.ok) {
-          const errorText = await proxyResponse.text();
-          console.error('[pix-auth] ONZ proxy error:', errorText);
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          httpClient.close();
+          console.error('[pix-auth] ONZ auth error:', errorText);
           return new Response(
-            JSON.stringify({ error: 'Falha ao autenticar com ONZ via proxy', details: errorText }),
+            JSON.stringify({ error: 'Falha ao autenticar com ONZ', details: errorText }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        const proxyResult = await proxyResponse.json();
-        const tokenData = proxyResult.data;
-
-        if (proxyResult.status !== 200) {
-          return new Response(
-            JSON.stringify({ error: 'ONZ auth failed', details: tokenData }),
-            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
+        httpClient.close();
+        const tokenData = await tokenResponse.json();
 
         accessToken = tokenData.accessToken || tokenData.access_token;
         if (tokenData.expiresAt) {
@@ -336,9 +337,10 @@ Deno.serve(async (req) => {
           expiresInSeconds = tokenData.expires_in;
         }
       } catch (e) {
-        console.error('[pix-auth] ONZ proxy fetch error:', e);
+        httpClient.close();
+        console.error('[pix-auth] ONZ mTLS fetch error:', e);
         return new Response(
-          JSON.stringify({ error: 'Falha na conexão com proxy ONZ', details: e.message }),
+          JSON.stringify({ error: 'Falha na conexão mTLS com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }

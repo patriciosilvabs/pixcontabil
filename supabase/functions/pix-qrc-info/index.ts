@@ -222,32 +222,46 @@ Deno.serve(async (req) => {
         }
       }
     }
-    // ========== ONZ (via proxy) ==========
+    // ========== ONZ (mTLS direto) ==========
     else if (provider === 'onz') {
       const infoUrl = `${config.base_url}/pix/qrcode/decode`;
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
 
-      if (!proxyUrl || !proxyApiKey) {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = decodeCert(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
+      const fetchHeaders: any = {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      };
+      if (config.provider_company_id) {
+        fetchHeaders['X-Company-ID'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = {
+        method: 'POST',
+        headers: fetchHeaders,
+        body: JSON.stringify({ qrcode: qr_code }),
+      };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const resp = await fetch(infoUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
         return new Response(
-          JSON.stringify({ error: 'ONZ proxy not configured' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Failed to decode QR Code', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({
-          url: infoUrl,
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-          body: { qrcode: qr_code },
-        }),
-      });
-
-      const proxyResult = await proxyResponse.json();
-      qrcInfo = proxyResult.data;
+      qrcInfo = await resp.json();
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
