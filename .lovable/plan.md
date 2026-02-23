@@ -1,113 +1,72 @@
 
+# Corrigir Edge Functions de Boleto conforme documentacao oficial ONZ
 
-# Migrar sistema exclusivamente para provedor ONZ Infopago
+## Problemas encontrados
 
-## Resumo
+Comparando o codigo atual com a documentacao oficial da API ONZ Billets, ha as seguintes divergencias:
 
-Remover todo o codigo de provedores legados (Woovi, Paggue, Transfeera, EFI Pay, Banco Inter) de todas as Edge Functions e do frontend, mantendo apenas o provedor ONZ Infopago. Alem disso, reescrever a funcao `billet-pay` para usar o endpoint ONZ `POST /billets/payments` com o campo `digitableCode`.
+### 1. `billet-pay/index.ts` - Payload incompleto
+- **Problema**: O campo `description` e **obrigatorio** na API ONZ, mas o codigo atual nao o envia no payload.
+- **Problema**: O campo `payment` (objeto com `currency` e `amount`) existe na API mas nao esta sendo enviado.
+- **Problema**: A extracao do `amount` da resposta usa `paymentData.amount` mas a API retorna `paymentData.payment.amount`.
+- **Problema**: O `external_id` salvo deve usar `paymentData.id` (number int64 conforme docs).
 
-## Escopo das alteracoes
-
-### Edge Functions a reescrever (7 funcoes)
-
-1. **pix-auth/index.ts** (~580 linhas -> ~120 linhas)
-   - Remover blocos: Woovi (linhas 170-181), Paggue (183-280), Transfeera (378-405), EFI (407-465), Inter (467-531)
-   - Manter apenas: bloco ONZ (318-376) + cache de token + lookup de config
-
-2. **pix-balance/index.ts** (~416 linhas -> ~100 linhas)
-   - Remover blocos: Transfeera (133-151), Woovi (153-172), Paggue (174-225), EFI (281-331), Inter (333-392)
-   - Manter apenas: bloco ONZ (227-279)
-
-3. **pix-pay-dict/index.ts** (~635 linhas -> ~150 linhas)
-   - Remover blocos: Woovi (162-229), Paggue (230-303), Transfeera (361-413), EFI (414-507), Inter (508-566)
-   - Manter apenas: bloco ONZ (304-360) + criacao de transacao
-
-4. **pix-pay-qrc/index.ts** (~657 linhas -> ~180 linhas)
-   - Remover blocos: Woovi (229-333), Paggue (334-409), Transfeera (458-479), EFI (480-520), Inter (521-576)
-   - Manter apenas: bloco ONZ (410-457) + criacao de transacao
-
-5. **pix-qrc-info/index.ts** (~356 linhas -> ~100 linhas)
-   - Remover blocos: Woovi (128-241), Transfeera (283-292), EFI (293-323)
-   - Manter apenas: bloco ONZ (242-282)
-
-6. **pix-check-status/index.ts** (~333 linhas -> ~100 linhas)
-   - Remover blocos: Woovi (158-174), Paggue (175-189), Transfeera (221-228), EFI (229-250), Inter (251-277)
-   - Manter apenas: bloco ONZ (190-220) + normalizacao de status
-
-7. **pix-refund/index.ts** (~371 linhas -> ~100 linhas)
-   - Remover blocos: Woovi (169-189), Transfeera (230-250), EFI (251-281), Inter (282-320)
-   - Manter apenas: bloco ONZ (190-229)
-
-8. **pix-receipt/index.ts** (~287 linhas -> ~80 linhas)
-   - Remover blocos: Woovi (138-157), Transfeera (204-215), EFI (217-251), Inter (253-273)
-   - Manter apenas: bloco ONZ (159-202)
-
-9. **pix-webhook/index.ts** (~340 linhas -> ~100 linhas)
-   - Remover handlers: Woovi, EFI, Transfeera, Inter Banking
-   - Manter apenas: handler ONZ + deteccao de formato generico BCB (array `pix`) para compatibilidade
-
-10. **billet-pay/index.ts** (reescrita completa ~120 linhas)
-    - Substituir integracao Inter por ONZ
-    - Endpoint: `POST {base_url}/billets/payments` via proxy mTLS
-    - Payload: `{ digitableCode, paymentFlow? }` (valor atualizado automaticamente pela ONZ)
-    - Manter criacao de transacao e audit log
-
-11. **billet-check-status/index.ts** (reativar ~80 linhas)
-    - Reativar com integracao ONZ: `GET {base_url}/billets/{id}` via proxy mTLS
-    - Retornar status normalizado
-
-12. **billet-receipt/index.ts** (reativar ~80 linhas)
-    - Reativar com integracao ONZ: `GET {base_url}/billets/payments/receipt/{id}` via proxy mTLS
-    - Retornar PDF em base64
-
-### Frontend (1 arquivo)
-
-13. **src/pages/settings/PixIntegration.tsx**
-    - Remover provedores legados do array `PIX_PROVIDERS` (manter apenas ONZ)
-    - Remover entradas do `PROVIDER_CONFIG` para paggue, woovi, transfeera, efi, inter
-    - Simplificar UI pois so ha um provedor
-
-### Codigo morto a limpar
-
-14. **docs/onz-proxy/** - Manter (documentacao do proxy, ainda relevante)
-
-## Detalhes tecnicos da integracao ONZ para boletos
-
-### Pagamento de boleto (billet-pay)
-```
-POST {base_url}/billets/payments
-Headers: Authorization: Bearer {token}, x-idempotency-key: {uuid}
-Body: {
-  "digitableCode": "23793.38128 ...",
-  "paymentFlow": "INSTANT"  // ou "APPROVAL_REQUIRED"
+**Correcao**:
+```typescript
+const onzPayload: any = {
+  digitableCode: codigo_barras,
+  description: descricao || 'Pagamento de boleto',
+};
+if (payment_flow) {
+  onzPayload.paymentFlow = payment_flow;
+}
+// Opcional: se o valor for informado, enviar no payload
+if (valor) {
+  onzPayload.payment = { currency: 'BRL', amount: valor };
 }
 ```
-- O valor e sempre o atualizado (com juros/multas) - nao precisa enviar
-- Boletos com valor alteravel pelo pagador so podem ser pagos pela interface web da ONZ
 
-### Consulta de status (billet-check-status)
-```
-GET {base_url}/billets/{id}
-Headers: Authorization: Bearer {token}
+E para extrair o valor da resposta:
+```typescript
+const externalId = String(paymentData.id || idempotencyKey);
+const amount = paymentData.payment?.amount || valor || 0;
 ```
 
-### Comprovante (billet-receipt)
+### 2. `billet-check-status/index.ts` - Mapeamento de status incorreto
+- **Problema**: O mapa de status usa valores incorretos. A API ONZ retorna: `CANCELED`, `PROCESSING`, `LIQUIDATED`, `REFUNDED`, `PARTIALLY_REFUNDED` (com virgulas nos nomes no enum da doc, provavelmente sem virgula na pratica).
+- **Problema**: O codigo mapeia `PAID` e `COMPLETED` que nao existem na API ONZ.
+
+**Correcao do mapa de status**:
+```typescript
+const statusMap: Record<string, string> = {
+  'LIQUIDATED': 'completed',
+  'PROCESSING': 'pending',
+  'CANCELED': 'failed',
+  'REFUNDED': 'refunded',
+  'PARTIALLY_REFUNDED': 'refunded',
+};
 ```
-GET {base_url}/billets/payments/receipt/{id}
-Headers: Authorization: Bearer {token}
+
+Alem disso, a resposta deve incluir campos da API como `billetInfo`, `creditorAccount`, `debtorAccount` para enriquecer os dados.
+
+### 3. `billet-receipt/index.ts` - Caminho de extracao do PDF incorreto
+- **Problema**: O codigo extrai o PDF como `data.pdf || data.receipt`, mas a documentacao mostra que a resposta e `{ data: { pdf: "base64..." } }`.
+
+**Correcao**:
+```typescript
+// A resposta da API e: { data: { pdf: "base64string" } }
+const receiptData = data.data || data;
+const pdfBase64 = receiptData.pdf || receiptData.receipt;
 ```
 
-## Proxy mTLS
+## Resumo das alteracoes
 
-Todas as chamadas ONZ continuam passando pelo proxy mTLS existente no Google Cloud Run (`ONZ_PROXY_URL`), que ja esta configurado e funcional.
+| Arquivo | Alteracao |
+|---|---|
+| `billet-pay/index.ts` | Adicionar `description` ao payload ONZ, enviar `payment` opcional, corrigir extracao de `amount` e `id` da resposta |
+| `billet-check-status/index.ts` | Corrigir mapeamento de status para usar `LIQUIDATED`, `PROCESSING`, `CANCELED`, `REFUNDED`; incluir `is_completed` no retorno |
+| `billet-receipt/index.ts` | Corrigir caminho de extracao do PDF para `data.data.pdf` |
 
-## Ordem de implementacao
+## Deploy
 
-1. Reescrever `pix-auth` (dependencia de todas as outras funcoes)
-2. Reescrever demais funcoes Pix em paralelo (balance, pay-dict, pay-qrc, qrc-info, check-status, refund, receipt)
-3. Reescrever `billet-pay` para ONZ
-4. Reativar `billet-check-status` e `billet-receipt` com ONZ
-5. Reescrever `pix-webhook` (apenas ONZ)
-6. Atualizar frontend `PixIntegration.tsx`
-7. Deploy e teste
-
+Apos as correcoes, deploy das 3 funcoes: `billet-pay`, `billet-check-status`, `billet-receipt`.
