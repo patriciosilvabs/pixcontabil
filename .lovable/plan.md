@@ -1,48 +1,54 @@
 
+# Adicionar versao do sistema no Dashboard
 
-# Corrigir exibicao do saldo ONZ no Dashboard
+## O que sera feito
 
-## Problema identificado
+Exibir a versao atual do sistema (ex: `v1.0.0`) em dois locais:
 
-Os logs mostram claramente o bug:
+1. **Mobile**: Na barra verde (sub-bar), ao lado do nome da empresa
+2. **Desktop (sidebar)**: Abaixo do nome/role do usuario logado
 
+A versao sera definida como uma constante centralizada para facilitar atualizacoes futuras.
+
+## Locais de exibicao
+
+**Mobile (MobileHeader.tsx)** - Na sub-bar verde, ao lado do nome da empresa:
+- Antes: `Empresa XYZ`
+- Depois: `Empresa XYZ - v1.0.0`
+
+**Desktop (MainLayout.tsx)** - Na secao do usuario no rodape da sidebar:
+- Antes: Nome + "Administrador"
+- Depois: Nome + "Administrador" + "v1.0.0" (em texto menor abaixo)
+
+## Detalhes tecnicos
+
+### 1. Criar constante de versao
+- Arquivo: `src/constants/app.ts`
+- Conteudo: `export const APP_VERSION = "v1.0.0";`
+
+### 2. Alterar MobileHeader.tsx (linha 97-99)
+- Importar `APP_VERSION`
+- Adicionar versao ao lado do nome da empresa na sub-bar verde:
+```tsx
+<span className="font-semibold truncate max-w-[180px]">
+  {currentCompany?.name || "Empresa"}{" "}
+  <span className="font-normal opacity-70">{APP_VERSION}</span>
+</span>
 ```
-ONZ response: [{"eventDate":"...","balanceAmount":{"currency":"BRL","available":56.22,...}}]
-Balance: 0
+
+### 3. Alterar MainLayout.tsx (linhas 155-157)
+- Importar `APP_VERSION`
+- Adicionar versao abaixo da role do usuario:
+```tsx
+<p className="text-xs text-sidebar-foreground/60">
+  {isAdmin ? "Administrador" : "Operador"}
+</p>
+<p className="text-[10px] text-sidebar-foreground/40">
+  {APP_VERSION}
+</p>
 ```
 
-A API ONZ retorna um **array** de objetos, onde o saldo esta dentro de `balanceAmount.available`. O codigo atual (linha 265) faz:
-
-```javascript
-balance = parseFloat(data?.available ?? data?.balance ?? data?.saldo ?? '0');
-```
-
-Isso resulta em `parseFloat('0')` porque `data` e um array, nao tem propriedade `available`.
-
-## Correcao
-
-Alterar a linha 265 do arquivo `supabase/functions/pix-balance/index.ts` para extrair o saldo corretamente da estrutura retornada pela API ONZ v2:
-
-```javascript
-// Se data for array, pegar o primeiro elemento
-const balanceEntry = Array.isArray(data) ? data[0] : data;
-balance = parseFloat(
-  balanceEntry?.balanceAmount?.available 
-  ?? balanceEntry?.available 
-  ?? balanceEntry?.balance 
-  ?? balanceEntry?.saldo 
-  ?? '0'
-);
-```
-
-## Resultado esperado
-
-O saldo de R$ 56,22 sera exibido corretamente no card do Dashboard, tanto na versao desktop quanto mobile.
-
-## Arquivos alterados
-
-- `supabase/functions/pix-balance/index.ts` (linha 265) - corrigir parsing da resposta ONZ
-
-## Deploy
-
-A funcao `pix-balance` sera reimplantada automaticamente apos a alteracao.
+## Arquivos envolvidos
+- `src/constants/app.ts` (novo) - constante de versao
+- `src/components/layout/MobileHeader.tsx` - adicionar versao na sub-bar
+- `src/components/layout/MainLayout.tsx` - adicionar versao na sidebar
