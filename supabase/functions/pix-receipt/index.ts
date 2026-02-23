@@ -156,36 +156,33 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ========== ONZ (chamada direta com caCerts) ==========
+    // ========== ONZ (via proxy mTLS) ==========
     if (provider === 'onz') {
       const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
 
-      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
-      if (!caCertRaw) {
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+      if (!proxyUrl || !proxyApiKey) {
         return new Response(
-          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
+          JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      const caCerts = parseCaCerts(caCertRaw);
-      const httpClient = Deno.createHttpClient({ caCerts });
 
       const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
       try {
-        const response = await fetch(receiptUrl, {
-          method: 'GET',
-          headers: fetchHeaders,
-          // @ts-ignore - Deno specific
-          client: httpClient,
+        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+          body: JSON.stringify({ url: receiptUrl, method: 'GET', headers: fetchHeaders }),
         });
 
-        const data = await response.json();
-        httpClient.close();
+        const proxyData = await proxyResponse.json();
+        const data = proxyData.data || proxyData;
 
-        if (!response.ok) {
+        if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
           return new Response(
             JSON.stringify({ error: 'Failed to get receipt', provider_error: JSON.stringify(data) }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -197,7 +194,6 @@ Deno.serve(async (req) => {
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       } catch (e) {
-        httpClient.close();
         return new Response(
           JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

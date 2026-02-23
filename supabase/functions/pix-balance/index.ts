@@ -224,21 +224,19 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ========== ONZ Infopago (chamada direta com caCerts) ==========
+    // ========== ONZ Infopago (via proxy mTLS) ==========
     else if (provider === 'onz') {
       const balanceUrl = `${config.base_url}/accounts/balances/`;
       console.log(`[pix-balance] ONZ: GET ${balanceUrl}`);
 
-      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
-      if (!caCertRaw) {
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+      if (!proxyUrl || !proxyApiKey) {
         return new Response(
-          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
+          JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      const caCerts = parseCaCerts(caCertRaw);
-      const httpClient = Deno.createHttpClient({ caCerts });
 
       const fetchHeaders: any = { 'Authorization': `Bearer ${accessToken}` };
       if (config.provider_company_id) {
@@ -246,29 +244,26 @@ Deno.serve(async (req) => {
       }
 
       try {
-        const response = await fetch(balanceUrl, {
-          method: 'GET',
-          headers: fetchHeaders,
-          // @ts-ignore - Deno specific
-          client: httpClient,
+        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+          body: JSON.stringify({ url: balanceUrl, method: 'GET', headers: fetchHeaders }),
         });
 
-        if (!response.ok) {
-          const errText = await response.text();
-          httpClient.close();
-          console.error('[pix-balance] ONZ error:', errText);
+        if (!proxyResponse.ok) {
+          const errText = await proxyResponse.text();
+          console.error('[pix-balance] ONZ proxy error:', errText);
           return new Response(
             JSON.stringify({ error: 'Falha ao consultar saldo na ONZ', details: errText }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        const data = await response.json();
-        httpClient.close();
+        const proxyData = await proxyResponse.json();
+        const data = proxyData.data || proxyData;
         console.log('[pix-balance] ONZ response:', JSON.stringify(data));
         balance = parseFloat(data?.available ?? data?.balance ?? data?.saldo ?? '0');
       } catch (fetchError) {
-        httpClient.close();
         return new Response(
           JSON.stringify({ error: 'Falha na conexão com ONZ', details: fetchError.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

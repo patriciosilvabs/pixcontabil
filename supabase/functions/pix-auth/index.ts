@@ -314,22 +314,20 @@ Deno.serve(async (req) => {
     let tokenType = 'Bearer';
     let expiresInSeconds = 3600;
 
-    // ========== ONZ Infopago (chamada direta com caCerts) ==========
+    // ========== ONZ Infopago (via proxy mTLS) ==========
     if (provider === 'onz') {
-      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
-      if (!caCertRaw) {
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+      if (!proxyUrl || !proxyApiKey) {
         return new Response(
-          JSON.stringify({ error: 'ONZ_CA_CERT não configurado.' }),
+          JSON.stringify({ error: 'ONZ_PROXY_URL ou ONZ_PROXY_API_KEY não configurado.' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const caCerts = parseCaCerts(caCertRaw);
-      const httpClient = Deno.createHttpClient({ caCerts });
-
       const baseUrl = pixConfig.base_url.replace(/\/+$/, '');
       const tokenUrl = `${baseUrl}/oauth/token`;
-      console.log(`[pix-auth] ONZ: requesting token directly -> ${tokenUrl}`);
+      console.log(`[pix-auth] ONZ: requesting token via proxy -> ${tokenUrl}`);
 
       const formBody = new URLSearchParams({
         client_id: pixConfig.client_id,
@@ -338,26 +336,28 @@ Deno.serve(async (req) => {
       }).toString();
 
       try {
-        const tokenResponse = await fetch(tokenUrl, {
+        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: formBody,
-          // @ts-ignore - Deno specific
-          client: httpClient,
+          headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+          body: JSON.stringify({
+            url: tokenUrl,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body_raw: formBody,
+          }),
         });
 
-        if (!tokenResponse.ok) {
-          const errorText = await tokenResponse.text();
-          httpClient.close();
-          console.error('[pix-auth] ONZ auth error:', errorText);
+        if (!proxyResponse.ok) {
+          const errorText = await proxyResponse.text();
+          console.error('[pix-auth] ONZ proxy error:', errorText);
           return new Response(
             JSON.stringify({ error: 'Falha ao autenticar com ONZ', details: errorText }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        const tokenData = await tokenResponse.json();
-        httpClient.close();
+        const proxyData = await proxyResponse.json();
+        const tokenData = proxyData.data || proxyData;
         console.log('[pix-auth] ONZ token received successfully');
 
         accessToken = tokenData.accessToken || tokenData.access_token;
@@ -367,7 +367,6 @@ Deno.serve(async (req) => {
           expiresInSeconds = tokenData.expires_in;
         }
       } catch (e) {
-        httpClient.close();
         console.error('[pix-auth] ONZ fetch error:', e);
         return new Response(
           JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),

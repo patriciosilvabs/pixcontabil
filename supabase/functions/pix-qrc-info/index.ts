@@ -239,37 +239,33 @@ Deno.serve(async (req) => {
         }
       }
     }
-    // ========== ONZ (chamada direta com caCerts) ==========
+    // ========== ONZ (via proxy mTLS) ==========
     else if (provider === 'onz') {
       const infoUrl = `${config.base_url}/pix/qrcode/decode`;
 
-      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
-      if (!caCertRaw) {
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+      if (!proxyUrl || !proxyApiKey) {
         return new Response(
-          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
+          JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      const caCerts = parseCaCerts(caCertRaw);
-      const httpClient = Deno.createHttpClient({ caCerts });
 
       const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
       try {
-        const response = await fetch(infoUrl, {
+        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
           method: 'POST',
-          headers: fetchHeaders,
-          body: JSON.stringify({ qrcode: qr_code }),
-          // @ts-ignore - Deno specific
-          client: httpClient,
+          headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+          body: JSON.stringify({ url: infoUrl, method: 'POST', headers: fetchHeaders, body: { qrcode: qr_code } }),
         });
 
-        const data = await response.json();
-        httpClient.close();
+        const proxyData = await proxyResponse.json();
+        const data = proxyData.data || proxyData;
 
-        if (!response.ok) {
+        if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
           return new Response(
             JSON.stringify({ error: 'Failed to decode QR Code', provider_error: JSON.stringify(data) }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -278,7 +274,6 @@ Deno.serve(async (req) => {
 
         qrcInfo = data;
       } catch (e) {
-        httpClient.close();
         return new Response(
           JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
