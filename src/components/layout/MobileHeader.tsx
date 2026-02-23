@@ -1,4 +1,5 @@
 import React from "react";
+import { APP_VERSION } from "@/constants/app";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getInitials } from "@/lib/utils";
@@ -95,7 +96,8 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
           <span className="font-medium">Conta: 0001</span>
         </div>
         <span className="font-semibold truncate max-w-[180px]">
-          {currentCompany?.name || "Empresa"}
+          {currentCompany?.name || "Empresa"}{" "}
+          <span className="font-normal opacity-70">{APP_VERSION}</span>
         </span>
       </div>
     </header>

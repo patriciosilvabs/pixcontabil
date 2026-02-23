@@ -1,4 +1,5 @@
 import React from "react";
+import { APP_VERSION } from "@/constants/app";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
@@ -154,6 +155,9 @@ export function MainLayout({ children }: MainLayoutProps) {
                   </p>
                   <p className="text-xs text-sidebar-foreground/60">
                     {isAdmin ? "Administrador" : "Operador"}
+                  </p>
+                  <p className="text-[10px] text-sidebar-foreground/40">
+                    {APP_VERSION}
                   </p>
                 </div>
                 <ChevronDown className="h-4 w-4 text-sidebar-foreground/60" />
