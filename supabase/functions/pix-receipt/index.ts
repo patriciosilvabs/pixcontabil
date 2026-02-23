@@ -156,41 +156,53 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ========== ONZ (via proxy mTLS) ==========
+    // ========== ONZ (chamada direta com caCerts) ==========
     if (provider === 'onz') {
       const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
 
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-      if (!proxyUrl || !proxyApiKey) {
+      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+      if (!caCertRaw) {
         return new Response(
-          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      const caCerts = parseCaCerts(caCertRaw);
+      const httpClient = Deno.createHttpClient({ caCerts });
+
       const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({ url: receiptUrl, method: 'GET', headers: fetchHeaders }),
-      });
+      try {
+        const response = await fetch(receiptUrl, {
+          method: 'GET',
+          headers: fetchHeaders,
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
 
-      const proxyData = await proxyResponse.json();
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+        const data = await response.json();
+        httpClient.close();
+
+        if (!response.ok) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to get receipt', provider_error: JSON.stringify(data) }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
         return new Response(
-          JSON.stringify({ error: 'Failed to get receipt', provider_error: JSON.stringify(proxyData.data || proxyData) }),
+          JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      } catch (e) {
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      const data = proxyData.data || proxyData;
-      return new Response(
-        JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
     // ========== TRANSFEERA ==========

@@ -301,7 +301,7 @@ Deno.serve(async (req) => {
       paymentData = await payResponse.json();
       console.log('[pix-pay-dict] Paggue payment created:', JSON.stringify(paymentData));
     }
-    // ========== ONZ (via proxy mTLS) ==========
+    // ========== ONZ (chamada direta com caCerts) ==========
     else if (provider === 'onz') {
       externalId = generateIdEnvio();
       const payUrl = `${config.base_url}/pix/payments/dict`;
@@ -312,34 +312,48 @@ Deno.serve(async (req) => {
         idExterno: externalId,
       };
 
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-      if (!proxyUrl || !proxyApiKey) {
+      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+      if (!caCertRaw) {
         return new Response(
-          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      const caCerts = parseCaCerts(caCertRaw);
+      const httpClient = Deno.createHttpClient({ caCerts });
+
       const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({ url: payUrl, method: 'POST', headers: fetchHeaders, body: onzPayload }),
-      });
+      try {
+        const response = await fetch(payUrl, {
+          method: 'POST',
+          headers: fetchHeaders,
+          body: JSON.stringify(onzPayload),
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
 
-      const proxyData = await proxyResponse.json();
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
-        console.error('[pix-pay-dict] ONZ proxy error:', JSON.stringify(proxyData));
+        const data = await response.json();
+        httpClient.close();
+
+        if (!response.ok) {
+          console.error('[pix-pay-dict] ONZ error:', JSON.stringify(data));
+          return new Response(
+            JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: JSON.stringify(data) }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        paymentData = data;
+      } catch (e) {
+        httpClient.close();
         return new Response(
-          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: JSON.stringify(proxyData.data || proxyData) }),
+          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      paymentData = proxyData.data || proxyData;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
