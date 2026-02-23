@@ -38,14 +38,14 @@ Deno.serve(async (req) => {
 
     // Get Pix config
     let config: any = null;
-    const { data: cashInConfig } = await supabase
+    const { data: cashOutConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
-      .eq('purpose', 'cash_in')
+      .eq('purpose', 'cash_out')
       .single();
-    config = cashInConfig;
+    config = cashOutConfig;
     if (!config) {
       const { data: bothConfig } = await supabase
         .from('pix_configs')
@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
-      body: JSON.stringify({ company_id, purpose: 'cash_in' }),
+      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
     });
 
     if (!authResponse.ok) {
