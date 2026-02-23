@@ -13,7 +13,7 @@ interface PayBilletParams {
 interface BilletPaymentResult {
   success: boolean;
   transaction_id: string;
-  billet_id: number;
+  external_id: string;
   status: string;
   amount?: number;
   due_date?: string;
