@@ -1,41 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-function normalizePem(pem: string): string {
-  const lines = pem.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  const result: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith('-----')) { result.push(line); }
-    else { for (let i = 0; i < line.length; i += 64) result.push(line.substring(i, i + 64)); }
-  }
-  return result.join('\n') + '\n';
-}
-function decodeCert(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
-  const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
-  return normalizePem(atob(cleanB64));
-}
-function parseCaCerts(raw: string): string[] {
-  let content = raw.trim();
-  if (!content.startsWith('-----')) { try { content = atob(content.replace(/[\s\r\n]/g, '')); } catch { /* use as-is */ } }
-  const parts = content.split(/-----END CERTIFICATE-----/);
-  const certs: string[] = [];
-  for (const part of parts) {
-    const beginIdx = part.indexOf('-----BEGIN CERTIFICATE-----');
-    if (beginIdx === -1) continue;
-    const cleanB64 = part.substring(beginIdx + '-----BEGIN CERTIFICATE-----'.length).replace(/[^A-Za-z0-9+/=]/g, '');
-    if (!cleanB64) continue;
-    const lines: string[] = ['-----BEGIN CERTIFICATE-----'];
-    for (let i = 0; i < cleanB64.length; i += 64) lines.push(cleanB64.substring(i, i + 64));
-    lines.push('-----END CERTIFICATE-----');
-    certs.push(lines.join('\n') + '\n');
-  }
-  return certs;
-}
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
 function generateRefundId(): string {
@@ -133,6 +100,7 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get config
     const { data: config } = await supabase
       .from('pix_configs')
       .select('*')
@@ -147,8 +115,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const provider = config.provider;
-
+    // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
@@ -164,163 +131,43 @@ Deno.serve(async (req) => {
 
     const { access_token } = await authResponse.json();
     const refundId = generateRefundId();
-    let refundData: any;
 
-    // ========== WOOVI ==========
-    if (provider === 'woovi') {
-      const refundUrl = `${config.base_url}/api/v1/charge/${transaction.pix_e2eid}/refund`;
-      const resp = await fetch(refundUrl, {
-        method: 'POST',
-        headers: { 'Authorization': access_token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          correlationID: refundId,
-          value: Math.round(refundValue * 100),
-          comment: motivo || 'Devolução',
-        }),
-      });
-      if (!resp.ok) {
-        const errorText = await resp.text();
-        return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      refundData = await resp.json();
-    }
-    // ========== ONZ (via proxy mTLS) ==========
-    else if (provider === 'onz') {
-      const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-      if (!proxyUrl || !proxyApiKey) {
-        return new Response(
-          JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
-      if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
-      try {
-        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-          body: JSON.stringify({ url: refundUrl, method: 'PUT', headers: fetchHeaders, body: { valor: refundValue.toFixed(2) } }),
-        });
-
-        const proxyData = await proxyResponse.json();
-        const data = proxyData.data || proxyData;
-
-        if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
-          return new Response(
-            JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(data) }),
-            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-        refundData = data;
-      } catch (e) {
-        return new Response(
-          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }
-    // ========== TRANSFEERA ==========
-    else if (provider === 'transfeera') {
-      const refundUrl = `${config.base_url}/pix/refund`;
-      const resp = await fetch(refundUrl, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          end_to_end_id: transaction.pix_e2eid,
-          value: refundValue,
-          description: motivo || 'Devolução',
-        }),
-      });
-      if (!resp.ok) {
-        const errorText = await resp.text();
-        return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      refundData = await resp.json();
-    }
-    // ========== EFI ==========
-    else if (provider === 'efi') {
-      let httpClient: Deno.HttpClient | undefined;
-      if (config.certificate_encrypted) {
-        try {
-          const certPem = decodeCert(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-        } catch (_) { /* ignore */ }
-      }
-
-      const refundUrl = `${config.base_url}/v2/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-      const fetchOptions: any = {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
-      };
-      if (httpClient) fetchOptions.client = httpClient;
-
-      const resp = await fetch(refundUrl, fetchOptions);
-      httpClient?.close();
-
-      if (!resp.ok) {
-        const errorText = await resp.text();
-        return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      refundData = await resp.json();
-    }
-    // ========== BANCO INTER ==========
-    else if (provider === 'inter') {
-      let httpClient: Deno.HttpClient | undefined;
-      if (config.certificate_encrypted) {
-        try {
-          const certPem = decodeCert(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-        } catch (_) { /* ignore */ }
-      }
-
-      const refundUrl = `${config.base_url}/pix/v2/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-      const fetchHeaders: any = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      };
-      if (config.provider_company_id) {
-        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
-      }
-
-      const fetchOptions: any = {
-        method: 'PUT',
-        headers: fetchHeaders,
-        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
-      };
-      if (httpClient) fetchOptions.client = httpClient;
-
-      const resp = await fetch(refundUrl, fetchOptions);
-      httpClient?.close();
-
-      if (!resp.ok) {
-        const errorText = await resp.text();
-        return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      refundData = await resp.json();
-    } else {
+    // ONZ refund via proxy
+    const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
+    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+    if (!proxyUrl || !proxyApiKey) {
       return new Response(
-        JSON.stringify({ error: `Provider '${provider}' não suportado` }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
+    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
+
+    let refundData: any;
+    try {
+      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+        body: JSON.stringify({ url: refundUrl, method: 'PUT', headers: fetchHeaders, body: { valor: refundValue.toFixed(2) } }),
+      });
+
+      const proxyData = await proxyResponse.json();
+      const data = proxyData.data || proxyData;
+
+      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(data) }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      refundData = data;
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -347,7 +194,7 @@ Deno.serve(async (req) => {
       entity_type: 'pix_refund',
       entity_id: savedRefund?.id,
       action: 'pix_refund_requested',
-      new_data: { provider, refund_id: refundId, valor: refundValue, status: refundData.status },
+      new_data: { provider: 'onz', refund_id: refundId, valor: refundValue, status: refundData.status },
     });
 
     return new Response(

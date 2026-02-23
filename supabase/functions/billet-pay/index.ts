@@ -1,22 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-function normalizePem(pem: string): string {
-  const lines = pem.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  const result: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith('-----')) { result.push(line); }
-    else { for (let i = 0; i < line.length; i += 64) result.push(line.substring(i, i + 64)); }
-  }
-  return result.join('\n') + '\n';
-}
-
-function decodeCert(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('-----')) return normalizePem(trimmed);
-  const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
-  return normalizePem(atob(cleanB64));
-}
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -53,7 +36,7 @@ Deno.serve(async (req) => {
 
     const userId = userData.user.id;
     const body = await req.json();
-    const { company_id, codigo_barras, valor, data_pagamento, data_vencimento, descricao } = body;
+    const { company_id, codigo_barras, descricao, payment_flow } = body;
 
     if (!company_id || !codigo_barras) {
       return new Response(
@@ -62,14 +45,13 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get Inter config specifically (boleto only supported by Inter)
+    // Get config (cash_out or both)
     let config: any = null;
     const { data: cashOutConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
-      .eq('provider', 'inter')
       .in('purpose', ['cash_out', 'both'])
       .limit(1)
       .maybeSingle();
@@ -77,160 +59,133 @@ Deno.serve(async (req) => {
 
     if (!config) {
       return new Response(
-        JSON.stringify({ error: 'Pagamento de boletos requer configuração do Banco Inter. Configure o provedor Inter nas configurações Pix.' }),
+        JSON.stringify({ error: 'Configuração Pix não encontrada para pagamento de boletos.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const provider = config.provider;
+    // Get auth token
+    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+      method: 'POST',
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+    });
 
-    // ========== BANCO INTER ==========
-    if (provider === 'inter') {
-      if (!config.certificate_encrypted) {
-        return new Response(
-          JSON.stringify({ error: 'Certificado mTLS obrigatório para Banco Inter' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Get auth token
-      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-        method: 'POST',
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id, purpose: 'cash_out', scopes: 'pagamento-boleto.write pagamento-boleto.read' }),
-      });
-
-      if (!authResponse.ok) {
-        return new Response(
-          JSON.stringify({ error: 'Falha ao autenticar com o provedor' }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const { access_token } = await authResponse.json();
-
-      let certPem: string;
-      let keyPem: string;
-      try {
-        certPem = decodeCert(config.certificate_encrypted);
-        keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-      } catch {
-        return new Response(
-          JSON.stringify({ error: 'Certificado mTLS inválido' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-
-      const today = new Date().toISOString().split('T')[0];
-      const interPayload: any = {
-        codBarraLinhaDigitavel: codigo_barras,
-        valorPagar: valor ? Number(valor).toFixed(2) : undefined,
-        dataPagamento: data_pagamento || today,
-      };
-      if (data_vencimento) {
-        interPayload.dataVencimento = data_vencimento;
-      }
-
-      const fetchHeaders: any = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      };
-      if (config.provider_company_id) {
-        fetchHeaders['x-conta-corrente'] = config.provider_company_id;
-      }
-
-      let paymentResponse: Response;
-      try {
-        paymentResponse = await fetch(`${config.base_url}/banking/v2/pagamento`, {
-          method: 'POST',
-          headers: fetchHeaders,
-          body: JSON.stringify(interPayload),
-          // @ts-ignore - Deno specific
-          client: httpClient,
-        });
-      } catch (fetchError) {
-        httpClient.close();
-        return new Response(
-          JSON.stringify({ error: 'Falha na conexão mTLS com o Banco Inter', details: fetchError.message }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      httpClient.close();
-
-      if (!paymentResponse.ok) {
-        const errorText = await paymentResponse.text();
-        console.error('[billet-pay] Inter error:', errorText);
-        return new Response(
-          JSON.stringify({ error: 'Falha ao pagar boleto via Banco Inter', provider_error: errorText }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const paymentData = await paymentResponse.json();
-      console.log('[billet-pay] Inter payment response:', JSON.stringify(paymentData));
-
-      // Save transaction
-      const supabaseAdmin = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-      );
-
-      const externalId = paymentData.codigoTransacao || paymentData.codigoBarra || crypto.randomUUID();
-
-      const { data: newTransaction, error: insertError } = await supabaseAdmin
-        .from('transactions')
-        .insert({
-          company_id,
-          created_by: userId,
-          amount: valor || 0,
-          status: 'pending',
-          pix_type: 'boleto' as const,
-          boleto_code: codigo_barras,
-          description: descricao || 'Pagamento de boleto',
-          external_id: externalId,
-          pix_provider_response: paymentData,
-        })
-        .select('id')
-        .single();
-
-      if (insertError) {
-        console.error('[billet-pay] Failed to create transaction:', insertError);
-        return new Response(
-          JSON.stringify({ error: 'Failed to save transaction' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      await supabaseAdmin.from('audit_logs').insert({
-        user_id: userId,
-        company_id,
-        entity_type: 'transaction',
-        entity_id: newTransaction.id,
-        action: 'billet_payment_initiated',
-        new_data: { provider, externalId, valor, status: 'pending' },
-      });
-
+    if (!authResponse.ok) {
       return new Response(
-        JSON.stringify({
-          success: true,
-          transaction_id: newTransaction.id,
-          external_id: externalId,
-          status: paymentData.statusPagamento || 'PROCESSING',
-          provider_response: paymentData,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Falha ao autenticar com o provedor' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // ========== OTHER PROVIDERS ==========
+    const { access_token } = await authResponse.json();
+
+    // ONZ billet payment via proxy
+    const payUrl = `${config.base_url}/billets/payments`;
+    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+    if (!proxyUrl || !proxyApiKey) {
+      return new Response(
+        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const idempotencyKey = crypto.randomUUID();
+    const onzPayload: any = {
+      digitableCode: codigo_barras,
+    };
+    if (payment_flow) {
+      onzPayload.paymentFlow = payment_flow; // "INSTANT" or "APPROVAL_REQUIRED"
+    }
+
+    const fetchHeaders: any = {
+      'Authorization': `Bearer ${access_token}`,
+      'Content-Type': 'application/json',
+      'x-idempotency-key': idempotencyKey,
+    };
+    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
+
+    let paymentData: any;
+    try {
+      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+        body: JSON.stringify({ url: payUrl, method: 'POST', headers: fetchHeaders, body: onzPayload }),
+      });
+
+      const proxyData = await proxyResponse.json();
+      const data = proxyData.data || proxyData;
+
+      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+        console.error('[billet-pay] ONZ error:', JSON.stringify(data));
+        return new Response(
+          JSON.stringify({ error: 'Falha ao pagar boleto via ONZ', provider_error: JSON.stringify(data) }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      paymentData = data;
+    } catch (e) {
+      return new Response(
+        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('[billet-pay] ONZ payment response:', JSON.stringify(paymentData));
+
+    // Save transaction
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    const externalId = paymentData.id || paymentData.paymentId || idempotencyKey;
+    const amount = paymentData.amount || paymentData.valor || 0;
+
+    const { data: newTransaction, error: insertError } = await supabaseAdmin
+      .from('transactions')
+      .insert({
+        company_id,
+        created_by: userId,
+        amount,
+        status: 'pending',
+        pix_type: 'boleto' as const,
+        boleto_code: codigo_barras,
+        description: descricao || 'Pagamento de boleto',
+        external_id: externalId,
+        pix_provider_response: paymentData,
+      })
+      .select('id')
+      .single();
+
+    if (insertError) {
+      console.error('[billet-pay] Failed to create transaction:', insertError);
+      return new Response(
+        JSON.stringify({ error: 'Failed to save transaction' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    await supabaseAdmin.from('audit_logs').insert({
+      user_id: userId,
+      company_id,
+      entity_type: 'transaction',
+      entity_id: newTransaction.id,
+      action: 'billet_payment_initiated',
+      new_data: { provider: 'onz', externalId, amount, status: 'pending' },
+    });
+
     return new Response(
-      JSON.stringify({ 
-        error: `Pagamento de boletos não é suportado pelo provedor '${provider}'. Atualmente disponível apenas para Banco Inter.`,
+      JSON.stringify({
+        success: true,
+        transaction_id: newTransaction.id,
+        external_id: externalId,
+        status: paymentData.status || 'PROCESSING',
+        provider_response: paymentData,
       }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
