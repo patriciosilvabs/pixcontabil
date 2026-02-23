@@ -222,8 +222,8 @@ function ProviderConfigForm({
       ...config,
       provider,
       base_url: baseUrl || config.base_url,
-      certificate_encrypted: (provider === 'efi' || provider === 'inter') ? config.certificate_encrypted : undefined,
-      certificate_key_encrypted: (provider === 'efi' || provider === 'inter') ? config.certificate_key_encrypted : undefined,
+      certificate_encrypted: PROVIDER_CONFIG[provider]?.showCertificate ? config.certificate_encrypted : undefined,
+      certificate_key_encrypted: PROVIDER_CONFIG[provider]?.showCertificate ? config.certificate_key_encrypted : undefined,
       client_secret_encrypted: provider === 'woovi' ? (config.client_secret_encrypted || 'not_required') : config.client_secret_encrypted,
     });
   };
