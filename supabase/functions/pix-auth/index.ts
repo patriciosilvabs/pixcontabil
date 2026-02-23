@@ -330,11 +330,14 @@ Deno.serve(async (req) => {
       const tokenUrl = `${baseUrl}/oauth/token`;
       console.log(`[pix-auth] ONZ: requesting token via proxy -> ${tokenUrl}`);
 
-      const requestBody = {
+      // OAuth2 RFC 6749 requires x-www-form-urlencoded for token requests
+      const formBody = new URLSearchParams({
         client_id: pixConfig.client_id,
         client_secret: pixConfig.client_secret_encrypted,
         grant_type: 'client_credentials',
-      };
+      }).toString();
+
+      console.log(`[pix-auth] ONZ: sending form-urlencoded body (${formBody.length} chars)`);
 
       try {
         const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
@@ -346,8 +349,8 @@ Deno.serve(async (req) => {
           body: JSON.stringify({
             url: tokenUrl,
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: requestBody,
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body_raw: formBody,
           }),
         });
 
