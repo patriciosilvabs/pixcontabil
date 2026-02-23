@@ -305,12 +305,20 @@ Deno.serve(async (req) => {
     else if (provider === 'onz') {
       externalId = generateIdEnvio();
       const payUrl = `${config.base_url}/pix/payments/dict`;
-      const onzPayload = {
-        valor: valor.toFixed(2),
-        chaveDestinatario: pix_key,
-        descricao: descricao || 'Pagamento Pix',
-        idExterno: externalId,
+      const onzPayload: any = {
+        pixKey: pix_key,
+        payment: {
+          amount: valor,
+          currency: 'BRL',
+        },
+        description: descricao || 'Pagamento Pix',
       };
+
+      // Optional fields
+      const { creditor_document, priority, payment_flow } = body as any;
+      if (creditor_document) onzPayload.creditorDocument = creditor_document;
+      if (priority) onzPayload.priority = priority;
+      if (payment_flow) onzPayload.paymentFlow = payment_flow;
 
       const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
       const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
@@ -321,7 +329,7 @@ Deno.serve(async (req) => {
         );
       }
 
-      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
+      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json', 'x-idempotency-key': externalId };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
       try {
