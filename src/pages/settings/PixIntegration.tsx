@@ -211,6 +211,7 @@ function ProviderConfigForm({
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
+  const [testMessage, setTestMessage] = useState<string>("");
   const [showSecrets, setShowSecrets] = useState(false);
 
   const providerConfig = config.provider ? PROVIDER_CONFIG[config.provider] : null;
@@ -297,6 +298,7 @@ function ProviderConfigForm({
     if (!currentCompany) return;
     setIsTesting(true);
     setTestResult(null);
+    setTestMessage("");
 
     try {
       await handleSave(false);
@@ -304,16 +306,36 @@ function ProviderConfigForm({
         body: { company_id: currentCompany.id, purpose: config.purpose },
       });
 
-      if (error || !data?.access_token) {
+      if (error) {
+        // Extract detailed error from FunctionsHttpError
+        let errorDetail = "Não foi possível autenticar.";
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            errorDetail = body?.error || body?.details || errorDetail;
+          } else if (error.message) {
+            errorDetail = error.message;
+          }
+        } catch { /* use default */ }
+        
         setTestResult("error");
-        toast({ variant: "destructive", title: "Falha na conexão", description: data?.error || "Não foi possível autenticar." });
+        setTestMessage(errorDetail);
+        toast({ variant: "destructive", title: "Falha na conexão", description: errorDetail });
+      } else if (!data?.access_token) {
+        const msg = data?.error || "Resposta sem access_token.";
+        setTestResult("error");
+        setTestMessage(msg);
+        toast({ variant: "destructive", title: "Falha na conexão", description: msg });
       } else {
         setTestResult("success");
+        setTestMessage(`Token obtido com sucesso via ${PIX_PROVIDERS.find(p => p.value === config.provider)?.label}.`);
         toast({ title: "Conexão OK!", description: `Credenciais validadas com ${PIX_PROVIDERS.find(p => p.value === config.provider)?.label}.` });
       }
-    } catch {
+    } catch (e: any) {
       setTestResult("error");
-      toast({ variant: "destructive", title: "Erro", description: "Falha ao testar a conexão." });
+      const msg = e?.message || "Falha ao testar a conexão.";
+      setTestMessage(msg);
+      toast({ variant: "destructive", title: "Erro", description: msg });
     } finally {
       setIsTesting(false);
     }
@@ -500,8 +522,9 @@ function ProviderConfigForm({
               <span>Integração {config.is_active ? "ativa" : "desativada"}</span>
             </div>
             {testResult && (
-              <div className={`flex items-center gap-2 ${testResult === "success" ? "text-success" : "text-destructive"}`}>
-                {testResult === "success" ? <><CheckCircle2 className="h-5 w-5" /><span>Conexão OK</span></> : <><AlertCircle className="h-5 w-5" /><span>Falha na conexão</span></>}
+              <div className={`flex items-center gap-2 text-sm ${testResult === "success" ? "text-success" : "text-destructive"}`}>
+                {testResult === "success" ? <CheckCircle2 className="h-5 w-5 shrink-0" /> : <AlertCircle className="h-5 w-5 shrink-0" />}
+                <span className="line-clamp-2">{testMessage || (testResult === "success" ? "Conexão OK" : "Falha na conexão")}</span>
               </div>
             )}
           </div>
