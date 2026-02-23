@@ -1,67 +1,89 @@
 
 
-## Diagnostico
+## Auto-gerar e anexar comprovante Pix
 
-Identifiquei **3 problemas** que causaram a situacao onde o app mostra "sucesso" mas o Pix nao foi efetivamente transferido:
+Quando um pagamento Pix por chave for realizado com sucesso, o sistema vai automaticamente gerar um comprovante digital (imagem PNG) com os dados da transacao e anexa-lo, eliminando a necessidade de captura manual.
 
-### Problema 1: Limite diario na EFI esta R$ 0,00
-A EFI recebeu a solicitacao de pagamento mas **rejeitou** com a mensagem:
-> "Voce esta tentando transferir R$ 1,99. No momento, seu limite disponivel para o dia de hoje e R$ 0,00."
+### O que muda para o usuario
 
-Isso e uma configuracao na sua conta EFI que precisa ser ajustada no painel da Gerencianet/EFI Pay.
+- Apos confirmar o pagamento Pix por chave, o comprovante e gerado e anexado automaticamente em segundo plano
+- O usuario e redirecionado direto para a tela de transacoes (ou para a tela de classificacao simplificada) sem precisar tirar foto
+- O comprovante digital contem: data/hora, valor, chave Pix do destinatario, ID da transacao (e2eId), nome do provedor
 
-### Problema 2: Webhook marca pagamento como "completed" sem verificar status
-O webhook da EFI enviou uma notificacao com status `NAO_REALIZADO` (falhou), mas o codigo do webhook **ignora o status** e marca tudo como "completed". Por isso a transacao aparece como concluida no app mesmo tendo falhado.
+### Detalhes tecnicos
 
-### Problema 3: Funcao de verificar status usa metodo de autenticacao quebrado
-A funcao `pix-check-status` usa `getClaims()` que causa erro 503. Deveria usar `getUser()`. Isso impede que o polling de status funcione corretamente.
+#### 1. Nova Edge Function: `generate-pix-receipt` 
+**Arquivo:** `supabase/functions/generate-pix-receipt/index.ts`
 
----
+Funcao que recebe os dados da transacao e gera uma imagem PNG do comprovante usando a biblioteca `resvg` (disponivel no Deno) para renderizar SVG em PNG:
 
-## Plano de correcao
+- Recebe: `transaction_id`, `company_id`
+- Busca os dados da transacao no banco
+- Gera um SVG com layout de comprovante bancario (data, valor, chave, e2eId, status)
+- Converte SVG para PNG usando `resvg-js` (compativel com Deno)
+- Faz upload do PNG para o bucket `receipts` no caminho `{company_id}/{transaction_id}/{timestamp}_comprovante_pix.png`
+- Cria o registro na tabela `receipts` com os dados do arquivo
+- Retorna o caminho do arquivo
 
-### 1. Corrigir o webhook da EFI para respeitar o status real
+#### 2. Chamar auto-geracao apos pagamento no webhook
 **Arquivo:** `supabase/functions/pix-webhook/index.ts`
 
-Na funcao `handleEfiWebhook`, ao processar cada notificacao, verificar o campo `status` do payload EFI:
-- `NAO_REALIZADO` -> marcar transacao como `failed`
-- `REALIZADO` / sem erro -> marcar como `completed`
-- Salvar a mensagem de erro do campo `gnExtras.erro.motivo` na descricao
+No handler da EFI (e demais provedores), apos marcar a transacao como `completed`:
+- Chamar `generate-pix-receipt` internamente passando `transaction_id` e `company_id`
+- Isso garante que mesmo pagamentos confirmados via webhook tenham comprovante auto-gerado
 
-### 2. Corrigir autenticacao na funcao pix-check-status
-**Arquivo:** `supabase/functions/pix-check-status/index.ts`
+#### 3. Chamar auto-geracao apos pagamento no frontend (fallback)
+**Arquivo:** `src/hooks/usePixPayment.ts`
 
-Substituir `getClaims(token)` por `getUser()` (padrao correto para Edge Functions).
+No retorno do `payByKey`, apos obter o `transaction_id`:
+- Invocar `supabase.functions.invoke('generate-pix-receipt')` em background (sem await bloqueante)
+- Isso cobre o cenario onde o webhook demora ou o pagamento ja e confirmado imediatamente
 
-### 3. Mostrar erro real ao usuario no app
-Quando uma transacao for marcada como `failed`, o app deve exibir a mensagem de erro do provedor para que o usuario saiba o que aconteceu (ex: limite diario insuficiente).
+#### 4. Ajustar fluxo pos-pagamento
+**Arquivos:** `src/components/pix/PixKeyDialog.tsx`, `src/pages/NewPayment.tsx`
 
----
+- Apos pagamento por chave, navegar para `/transactions` em vez de `/pix/receipt/:id`
+- A tela de classificacao (Custo/Despesa) pode ser apresentada como um dialog inline ou na propria tela de transacoes, ja que o comprovante foi auto-gerado
+- Manter a rota `/pix/receipt/:id` funcional para casos de boleto ou quando o usuario quiser reanexar
 
-## Secao tecnica
+#### 5. Layout do comprovante SVG gerado
 
-### Webhook EFI - Mudanca no mapeamento de status (pix-webhook/index.ts)
 ```text
-Antes:
-  - Qualquer notificacao EFI -> status = "completed"
-
-Depois:
-  - Verificar pixEvent.status:
-    - "NAO_REALIZADO" -> status = "failed", nao setar paid_at
-    - "REALIZADO" / sem campo status -> status = "completed", setar paid_at
-  - Armazenar gnExtras.erro.motivo como informacao adicional
++----------------------------------+
+|     COMPROVANTE PIX              |
+|     [logo/icone]                 |
++----------------------------------+
+| Data: 23/02/2026 14:30           |
+| Valor: R$ 1.500,00               |
+| Chave Pix: fulano@email.com      |
+| Beneficiario: Nome               |
+| E2E ID: E1234567890123456        |
+| Status: Confirmado               |
++----------------------------------+
+| Gerado automaticamente           |
++----------------------------------+
 ```
 
-### pix-check-status - Correcao de autenticacao (pix-check-status/index.ts)
-```text
-Antes:
-  const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-  const userId = claims.claims.sub;
+#### Sequencia de eventos
 
-Depois:
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
+```text
+Usuario confirma pagamento
+    |
+    v
+pix-pay-dict cria transacao (status: pending)
+    |
+    v
+Frontend chama generate-pix-receipt (background)
+    |
+    v
+Webhook confirma pagamento (status: completed)
+    |
+    v
+Webhook tambem chama generate-pix-receipt (idempotente - verifica se ja existe receipt)
+    |
+    v
+Comprovante PNG salvo no storage + registro na tabela receipts
 ```
 
-### Acao necessaria no painel EFI
-Para que os pagamentos Pix funcionem de fato, voce precisa acessar o painel da EFI Pay (app.gerencianet.com.br ou app.sejaefi.com.br) e aumentar o limite diario de transferencias Pix, que atualmente esta em R$ 0,00.
+A funcao `generate-pix-receipt` sera idempotente: antes de gerar, verifica se ja existe um receipt para aquela transacao. Se existir, nao duplica.
 
