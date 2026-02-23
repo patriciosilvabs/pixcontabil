@@ -139,31 +139,39 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ========== ONZ (via proxy) ==========
+    // ========== ONZ (mTLS direto) ==========
     if (provider === 'onz') {
       const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
 
-      if (!proxyUrl || !proxyApiKey) {
+      let httpClient: Deno.HttpClient | undefined;
+      if (config.certificate_encrypted) {
+        try {
+          const certPem = decodeCert(config.certificate_encrypted);
+          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
+          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+        } catch (_) { /* ignore */ }
+      }
+
+      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
+      if (config.provider_company_id) {
+        fetchHeaders['X-Company-ID'] = config.provider_company_id;
+      }
+
+      const fetchOptions: any = { method: 'GET', headers: fetchHeaders };
+      if (httpClient) fetchOptions.client = httpClient;
+
+      const resp = await fetch(receiptUrl, fetchOptions);
+      httpClient?.close();
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
         return new Response(
-          JSON.stringify({ error: 'ONZ proxy not configured' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ error: 'Failed to get receipt', provider_error: errorText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const proxyResponse = await fetch(`https://${proxyUrl.replace(/^https?:\/\//, '').replace(/\/+$/, '')}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({
-          url: receiptUrl,
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${access_token}` },
-        }),
-      });
-
-      const proxyResult = await proxyResponse.json();
-      const data = proxyResult.data;
+      const data = await resp.json();
       return new Response(
         JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
