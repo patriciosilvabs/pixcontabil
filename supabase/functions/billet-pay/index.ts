@@ -1,5 +1,63 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+/**
+ * Convert 44-digit bank barcode to 47-digit linha digitável.
+ * If already 47+ digits, return as-is (already linha digitável).
+ */
+function convertToLinhaDigitavel(code: string): string {
+  const clean = code.replace(/[\s.\-]/g, '');
+  
+  // Already linha digitável or convênio format
+  if (clean.length !== 44 || clean[0] === '8') {
+    return clean;
+  }
+
+  // Barcode layout (44 digits):
+  // [0-3]  bank+currency
+  // [4]    general check digit
+  // [5-8]  due date factor
+  // [9-18] amount (10 digits)
+  // [19-43] free field (25 digits)
+  const bankCurrency = clean.substring(0, 4);      // 4 chars
+  const checkDigit = clean[4];                       // 1 char
+  const dueFactor = clean.substring(5, 9);           // 4 chars
+  const amount = clean.substring(9, 19);             // 10 chars
+  const freeField1 = clean.substring(19, 24);        // 5 chars
+  const freeField2 = clean.substring(24, 34);        // 10 chars
+  const freeField3 = clean.substring(34, 44);        // 10 chars
+
+  // Field 1: bankCurrency(4) + freeField1(5) + check1
+  const field1Content = bankCurrency + freeField1;
+  const check1 = mod10(field1Content);
+
+  // Field 2: freeField2(10) + check2
+  const check2 = mod10(freeField2);
+
+  // Field 3: freeField3(10) + check3
+  const check3 = mod10(freeField3);
+
+  // Linha digitável: field1(9) + check1 + field2(10) + check2 + field3(10) + check3 + checkDigit + dueFactor + amount
+  return field1Content + check1 + freeField2 + check2 + freeField3 + check3 + checkDigit + dueFactor + amount;
+}
+
+/**
+ * Calculate Mod10 check digit (used in linha digitável)
+ */
+function mod10(value: string): string {
+  let sum = 0;
+  let weight = 2;
+  for (let i = value.length - 1; i >= 0; i--) {
+    let product = parseInt(value[i], 10) * weight;
+    if (product >= 10) {
+      product = Math.floor(product / 10) + (product % 10);
+    }
+    sum += product;
+    weight = weight === 2 ? 1 : 2;
+  }
+  const remainder = sum % 10;
+  return remainder === 0 ? '0' : String(10 - remainder);
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -91,9 +149,15 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Convert 44-digit barcode to 47-digit linha digitável if needed
+    // ONZ expects digitableCode (linha digitável, 47 digits)
+    const digitableCode = convertToLinhaDigitavel(codigo_barras);
+    console.log(`[billet-pay] Input (${codigo_barras.length} digits): ${codigo_barras}`);
+    console.log(`[billet-pay] Sending digitableCode (${digitableCode.length} digits): ${digitableCode}`);
+
     const idempotencyKey = crypto.randomUUID();
     const onzPayload: any = {
-      digitableCode: codigo_barras,
+      digitableCode,
       description: descricao || 'Pagamento de boleto',
     };
     if (payment_flow) {
