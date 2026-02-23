@@ -51,7 +51,7 @@ app.post('/proxy', async (req, res) => {
 
   // Only allow ONZ domains
   const parsedUrl = new URL(url);
-  const allowed = ['cashout.infopago.com.br', 'sandbox.infopago.com.br'];
+  const allowed = ['cashout.infopago.com.br', 'sandbox.infopago.com.br', 'secureapi.bancodigital.onz.software'];
   if (!allowed.includes(parsedUrl.hostname)) {
     return res.status(403).json({ error: `Domain ${parsedUrl.hostname} not allowed` });
   }
