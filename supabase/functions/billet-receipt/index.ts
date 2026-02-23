@@ -125,12 +125,15 @@ Deno.serve(async (req) => {
         );
       }
 
+      const receiptData = data.data || data;
+      const pdfBase64 = receiptData.pdf || receiptData.receipt;
+
       return new Response(
         JSON.stringify({
           success: true,
           billet_id: billetExternalId,
           provider: 'onz',
-          pdf_base64: data.pdf || data.receipt,
+          pdf_base64: pdfBase64,
           content_type: 'application/pdf',
         }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
