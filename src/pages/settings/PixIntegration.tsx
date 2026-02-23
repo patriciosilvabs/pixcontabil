@@ -166,6 +166,10 @@ interface PixConfig {
   pix_key_type: "cpf" | "cnpj" | "email" | "phone" | "random";
   certificate_encrypted?: string;
   certificate_key_encrypted?: string;
+  certificate_cash_in?: string;
+  certificate_key_cash_in?: string;
+  certificate_cash_out?: string;
+  certificate_key_cash_out?: string;
   provider_company_id?: string;
   webhook_url?: string;
   webhook_secret?: string;
@@ -259,6 +263,10 @@ function ProviderConfigForm({
       if (providerConfig?.showCertificate) {
         configData.certificate_encrypted = config.certificate_encrypted || null;
         configData.certificate_key_encrypted = config.certificate_key_encrypted || null;
+        configData.certificate_cash_in = config.certificate_cash_in || null;
+        configData.certificate_key_cash_in = config.certificate_key_cash_in || null;
+        configData.certificate_cash_out = config.certificate_cash_out || null;
+        configData.certificate_key_cash_out = config.certificate_key_cash_out || null;
       }
 
       let error;
@@ -395,7 +403,7 @@ function ProviderConfigForm({
                 <p className="text-xs text-muted-foreground">{config.provider === 'inter' ? 'Número da conta corrente no Banco Inter. Necessário quando a aplicação está associada a mais de uma conta.' : 'Encontrado no painel Paggue ao gerar as credenciais. Se deixar em branco, será extraído automaticamente.'}</p>
               </div>
             )}
-            {providerConfig.showCertificate && (
+            {providerConfig.showCertificate && config.purpose !== 'both' && (
               <>
                 <div className="space-y-2">
                   <Label>Certificado mTLS - PEM (Base64)</Label>
@@ -404,6 +412,32 @@ function ProviderConfigForm({
                 <div className="space-y-2">
                   <Label>Chave Privada do Certificado - PEM (Base64, opcional)</Label>
                   <Textarea value={config.certificate_key_encrypted || ""} onChange={(e) => setConfig({ ...config, certificate_key_encrypted: e.target.value })} placeholder="Se o .pem acima contiver cert+key, deixe em branco." rows={3} />
+                </div>
+              </>
+            )}
+            {providerConfig.showCertificate && config.purpose === 'both' && (
+              <>
+                <div className="border rounded-lg p-4 space-y-3">
+                  <p className="text-sm font-medium flex items-center gap-2"><ArrowDownToLine className="h-4 w-4 text-primary" /> Certificado para Recebimento (Cash-in)</p>
+                  <div className="space-y-2">
+                    <Label>Certificado mTLS Cash-in - PEM (Base64)</Label>
+                    <Textarea value={config.certificate_cash_in || ""} onChange={(e) => setConfig({ ...config, certificate_cash_in: e.target.value })} placeholder="Cole aqui o certificado .pem para cash-in" rows={3} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Chave Privada Cash-in - PEM (Base64, opcional)</Label>
+                    <Textarea value={config.certificate_key_cash_in || ""} onChange={(e) => setConfig({ ...config, certificate_key_cash_in: e.target.value })} placeholder="Se o .pem acima contiver cert+key, deixe em branco." rows={3} />
+                  </div>
+                </div>
+                <div className="border rounded-lg p-4 space-y-3">
+                  <p className="text-sm font-medium flex items-center gap-2"><ArrowUpFromLine className="h-4 w-4 text-primary" /> Certificado para Pagamento (Cash-out)</p>
+                  <div className="space-y-2">
+                    <Label>Certificado mTLS Cash-out - PEM (Base64)</Label>
+                    <Textarea value={config.certificate_cash_out || ""} onChange={(e) => setConfig({ ...config, certificate_cash_out: e.target.value })} placeholder="Cole aqui o certificado .pem para cash-out" rows={3} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Chave Privada Cash-out - PEM (Base64, opcional)</Label>
+                    <Textarea value={config.certificate_key_cash_out || ""} onChange={(e) => setConfig({ ...config, certificate_key_cash_out: e.target.value })} placeholder="Se o .pem acima contiver cert+key, deixe em branco." rows={3} />
+                  </div>
                 </div>
               </>
             )}
@@ -535,6 +569,10 @@ export default function PixIntegration() {
               pix_key_type: cfg.pix_key_type,
               certificate_encrypted: cfg.certificate_encrypted || undefined,
               certificate_key_encrypted: cfg.certificate_key_encrypted || undefined,
+              certificate_cash_in: (cfg as any).certificate_cash_in || undefined,
+              certificate_key_cash_in: (cfg as any).certificate_key_cash_in || undefined,
+              certificate_cash_out: (cfg as any).certificate_cash_out || undefined,
+              certificate_key_cash_out: (cfg as any).certificate_key_cash_out || undefined,
               provider_company_id: (cfg as any).provider_company_id || undefined,
               webhook_url: cfg.webhook_url || undefined,
               webhook_secret: cfg.webhook_secret || undefined,
