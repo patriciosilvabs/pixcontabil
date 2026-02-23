@@ -43,7 +43,7 @@ app.post('/proxy', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  const { url, method = 'POST', headers = {}, body } = req.body;
+  const { url, method = 'POST', headers = {}, body, body_raw } = req.body;
 
   if (!url || !url.startsWith('https://')) {
     return res.status(400).json({ error: 'Valid HTTPS url is required' });
@@ -57,7 +57,11 @@ app.post('/proxy', async (req, res) => {
   }
 
   console.log(`[proxy] ${method} ${url}`);
-  if (body) {
+  if (body_raw) {
+    // Mask secrets in form-urlencoded string for logging
+    const sanitizedRaw = body_raw.replace(/client_secret=[^&]+/, 'client_secret=***');
+    console.log(`[proxy] Raw body: ${sanitizedRaw}`);
+  } else if (body) {
     const sanitized = { ...body };
     if (sanitized.client_secret) sanitized.client_secret = '***';
     if (sanitized.clientSecret) sanitized.clientSecret = '***';
@@ -76,7 +80,8 @@ app.post('/proxy', async (req, res) => {
   const agent = new https.Agent(agentOptions);
 
   try {
-    const requestBody = body ? JSON.stringify(body) : undefined;
+    // Support raw string body (e.g. form-urlencoded) or JSON object body
+    const requestBody = body_raw ? body_raw : (body ? JSON.stringify(body) : undefined);
 
     const fetchOptions = {
       method,
