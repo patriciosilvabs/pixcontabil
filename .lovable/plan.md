@@ -1,45 +1,93 @@
 
-# Corrigir formato da requisição OAuth para ONZ
 
-## Problema identificado
-As credenciais da ONZ estao corretas no banco de dados, mas o `pix-auth` envia o body da autenticacao OAuth em formato **camelCase** (`clientId`, `clientSecret`, `grantType`) como JSON. Muitas APIs OAuth (incluindo possivelmente a ONZ/Infopago) esperam o formato padrao **snake_case** (`client_id`, `client_secret`, `grant_type`), potencialmente como `application/x-www-form-urlencoded`. O erro `404: Application not found` pode ser a resposta generica do servidor quando nao consegue identificar a aplicacao devido ao formato incorreto dos campos.
+# Eliminar proxy ONZ: usar `caCerts` nativo do Deno
 
-## Solucao
+## Contexto
 
-Alterar a secao ONZ do `pix-auth` para tentar o formato padrao OAuth2 primeiro:
+O proxy mTLS no Railway foi criado apenas porque o Deno nao confiava na CA do servidor ONZ (`UnknownIssuer`). Nao ha mTLS bidirecional obrigatorio — o servidor ONZ nao exige certificado client. A solucao correta e passar o certificado CA do servidor via `caCerts` no `Deno.createHttpClient`.
 
-### Arquivo: `supabase/functions/pix-auth/index.ts`
+## Pre-requisito
 
-Na secao ONZ (~linha 163), alterar o `requestBody` e o `Content-Type`:
+O secret `ONZ_CA_CERT` ja existe no projeto. Verificar se contem o PEM correto da CA do servidor ONZ. Para extrair:
 
-**De (atual):**
-```javascript
-const requestBody = {
-  clientId: pixConfig.client_id,
-  clientSecret: pixConfig.client_secret_encrypted,
-  grantType: 'client_credentials',
-};
-// headers: { 'Content-Type': 'application/json' }
+```text
+openssl s_client -connect cashout.infopago.com.br:443 -showcerts < /dev/null 2>/dev/null | openssl x509 -outform PEM
 ```
 
-**Para:**
-```javascript
-const requestBody = {
-  client_id: pixConfig.client_id,
-  client_secret: pixConfig.client_secret_encrypted,
-  grant_type: 'client_credentials',
-};
-// headers: { 'Content-Type': 'application/json' }
+Salvar o output completo (incluindo `-----BEGIN/END CERTIFICATE-----`) como valor do secret `ONZ_CA_CERT`.
+
+## Plano de implementacao
+
+### 1. Criar helper compartilhado para HttpClient ONZ
+
+Em cada Edge Function que usa ONZ, adicionar uma funcao helper (ou repetir o pattern inline) que cria o `httpClient`:
+
+```typescript
+function createOnzClient(): Deno.HttpClient {
+  const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+  if (!caCertRaw) throw new Error('ONZ_CA_CERT not configured');
+  const caCerts = parseCaCerts(caCertRaw); // ja existe em todas as functions
+  return Deno.createHttpClient({ caCerts });
+}
 ```
 
-Manter JSON como Content-Type, mas usar snake_case nos campos. Se ainda falhar, a proxima iteracao testara `application/x-www-form-urlencoded`.
+### 2. Alterar as 8 Edge Functions
 
-### Tambem adicionar log no proxy para debug
+Substituir toda logica de proxy por chamadas diretas com `fetch` + `client: httpClient`. Arquivos afetados:
 
-No proxy (`docs/onz-proxy/index.js`), adicionar log do body enviado (sem secrets) para facilitar diagnostico futuro.
+| Arquivo | Operacao |
+|---|---|
+| `pix-auth/index.ts` | OAuth token (POST /oauth/token) |
+| `pix-balance/index.ts` | Consulta saldo (GET /accounts/balances/) |
+| `pix-pay-dict/index.ts` | Pagamento por chave (POST /pix/payments/dict) |
+| `pix-pay-qrc/index.ts` | Pagamento QR Code |
+| `pix-qrc-info/index.ts` | Decode QR Code |
+| `pix-check-status/index.ts` | Status do pagamento |
+| `pix-receipt/index.ts` | Comprovante |
+| `pix-refund/index.ts` | Devolucao |
 
-## Detalhes tecnicos
+**Padrao da alteracao (exemplo pix-balance):**
 
-- A alteracao e minima: apenas renomear 3 campos no objeto `requestBody` na secao ONZ do `pix-auth`
-- Nao afeta nenhum outro provedor (EFI, Inter, Transfeera, Paggue, Woovi)
-- O proxy nao precisa de alteracao pois ele apenas repassa o body como recebido
+De:
+```typescript
+const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+// ... fetch via proxy ...
+const proxyResponse = await fetch(`${proxyUrl}/proxy`, { ... });
+const proxyData = await proxyResponse.json();
+const data = proxyData.data || proxyData;
+```
+
+Para:
+```typescript
+const httpClient = createOnzClient();
+try {
+  const response = await fetch(balanceUrl, {
+    method: 'GET',
+    headers: fetchHeaders,
+    // @ts-ignore - Deno specific
+    client: httpClient,
+  });
+  const data = await response.json();
+  // ... processar data diretamente (sem wrapper proxyData.data) ...
+} finally {
+  httpClient.close();
+}
+```
+
+### 3. pix-auth: formato do body OAuth
+
+Manter o formato `application/x-www-form-urlencoded` com `client_id`, `client_secret`, `grant_type` (snake_case) que ja foi implementado. Apenas trocar o transporte de proxy para chamada direta.
+
+### 4. Remover dependencias do proxy
+
+- Os secrets `ONZ_PROXY_URL` e `ONZ_PROXY_API_KEY` podem ser mantidos por enquanto (nao quebram nada)
+- O codigo do proxy em `docs/onz-proxy/` pode ser mantido como referencia
+
+## Resumo das mudancas
+
+- **8 Edge Functions** alteradas: remover logica de proxy, usar `Deno.createHttpClient({ caCerts })` com chamada direta
+- **0 novas dependencias** — usa APIs nativas do Deno
+- **Nenhuma mudanca no frontend** — as Edge Functions mantêm a mesma interface
+- **Resultado**: elimina dependencia do Railway, reduz latencia (1 hop a menos), simplifica debug
+
