@@ -427,6 +427,13 @@ export type Database = {
             referencedRelation: "pix_configs"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pix_tokens_pix_config_id_fkey"
+            columns: ["pix_config_id"]
+            isOneToOne: false
+            referencedRelation: "pix_configs_safe"
+            referencedColumns: ["id"]
+          },
         ]
       }
       pix_webhook_logs: {
@@ -782,7 +789,62 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      pix_configs_safe: {
+        Row: {
+          base_url: string | null
+          company_id: string | null
+          created_at: string | null
+          id: string | null
+          is_active: boolean | null
+          is_sandbox: boolean | null
+          pix_key: string | null
+          pix_key_type: Database["public"]["Enums"]["pix_key_type"] | null
+          provider: string | null
+          provider_company_id: string | null
+          purpose: Database["public"]["Enums"]["pix_config_purpose"] | null
+          updated_at: string | null
+          webhook_url: string | null
+        }
+        Insert: {
+          base_url?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          is_sandbox?: boolean | null
+          pix_key?: string | null
+          pix_key_type?: Database["public"]["Enums"]["pix_key_type"] | null
+          provider?: string | null
+          provider_company_id?: string | null
+          purpose?: Database["public"]["Enums"]["pix_config_purpose"] | null
+          updated_at?: string | null
+          webhook_url?: string | null
+        }
+        Update: {
+          base_url?: string | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          is_active?: boolean | null
+          is_sandbox?: boolean | null
+          pix_key?: string | null
+          pix_key_type?: Database["public"]["Enums"]["pix_key_type"] | null
+          provider?: string | null
+          provider_company_id?: string | null
+          purpose?: Database["public"]["Enums"]["pix_config_purpose"] | null
+          updated_at?: string | null
+          webhook_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pix_configs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       get_user_companies: { Args: { _user_id: string }; Returns: string[] }
