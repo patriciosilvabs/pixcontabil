@@ -57,6 +57,12 @@ app.post('/proxy', async (req, res) => {
   }
 
   console.log(`[proxy] ${method} ${url}`);
+  if (body) {
+    const sanitized = { ...body };
+    if (sanitized.client_secret) sanitized.client_secret = '***';
+    if (sanitized.clientSecret) sanitized.clientSecret = '***';
+    console.log(`[proxy] Request body keys:`, Object.keys(body), `body (sanitized):`, JSON.stringify(sanitized));
+  }
 
   const agentOptions = {
     cert: clientCert,
