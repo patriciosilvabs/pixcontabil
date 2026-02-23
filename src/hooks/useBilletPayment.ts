@@ -68,7 +68,9 @@ export function useBilletPayment() {
       const { data, error } = await supabase.functions.invoke('billet-pay', {
         body: {
           company_id: currentCompany.id,
-          ...params,
+          codigo_barras: params.digitable_code,
+          descricao: params.description,
+          valor: params.amount,
         },
       });
 
