@@ -62,31 +62,23 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get Pix config for cash-out (boleto uses same provider)
+    // Get Inter config specifically (boleto only supported by Inter)
     let config: any = null;
     const { data: cashOutConfig } = await supabase
       .from('pix_configs')
       .select('*')
       .eq('company_id', company_id)
       .eq('is_active', true)
-      .eq('purpose', 'cash_out')
-      .single();
+      .eq('provider', 'inter')
+      .in('purpose', ['cash_out', 'both'])
+      .limit(1)
+      .maybeSingle();
     config = cashOutConfig;
-    if (!config) {
-      const { data: bothConfig } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .eq('purpose', 'both')
-        .single();
-      config = bothConfig;
-    }
 
     if (!config) {
       return new Response(
-        JSON.stringify({ error: 'Configuração Pix não encontrada' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Pagamento de boletos requer configuração do Banco Inter. Configure o provedor Inter nas configurações Pix.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
