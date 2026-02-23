@@ -187,30 +187,40 @@ Deno.serve(async (req) => {
       statusData = await resp.json();
       console.log('[pix-check-status] Paggue raw status:', JSON.stringify(statusData));
     }
-    // ========== ONZ (via proxy mTLS) ==========
+    // ========== ONZ (chamada direta com caCerts) ==========
     else if (provider === 'onz') {
       const statusUrl = `${config.base_url}/pix/payments/${end_to_end_id}`;
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
 
-      if (!proxyUrl || !proxyApiKey) {
+      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+      if (!caCertRaw) {
         return new Response(
-          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      const caCerts = parseCaCerts(caCertRaw);
+      const httpClient = Deno.createHttpClient({ caCerts });
+
       const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({ url: statusUrl, method: 'GET', headers: fetchHeaders }),
-      });
-
-      const proxyData = await proxyResponse.json();
-      statusData = proxyData.data || proxyData;
+      try {
+        const response = await fetch(statusUrl, {
+          method: 'GET',
+          headers: fetchHeaders,
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+        statusData = await response.json();
+        httpClient.close();
+      } catch (e) {
+        httpClient.close();
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {

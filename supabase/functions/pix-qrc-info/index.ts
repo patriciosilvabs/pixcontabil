@@ -239,37 +239,51 @@ Deno.serve(async (req) => {
         }
       }
     }
-    // ========== ONZ (via proxy mTLS) ==========
+    // ========== ONZ (chamada direta com caCerts) ==========
     else if (provider === 'onz') {
       const infoUrl = `${config.base_url}/pix/qrcode/decode`;
 
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-      if (!proxyUrl || !proxyApiKey) {
+      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+      if (!caCertRaw) {
         return new Response(
-          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      const caCerts = parseCaCerts(caCertRaw);
+      const httpClient = Deno.createHttpClient({ caCerts });
+
       const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
       if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({ url: infoUrl, method: 'POST', headers: fetchHeaders, body: { qrcode: qr_code } }),
-      });
+      try {
+        const response = await fetch(infoUrl, {
+          method: 'POST',
+          headers: fetchHeaders,
+          body: JSON.stringify({ qrcode: qr_code }),
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
 
-      const proxyData = await proxyResponse.json();
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+        const data = await response.json();
+        httpClient.close();
+
+        if (!response.ok) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to decode QR Code', provider_error: JSON.stringify(data) }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        qrcInfo = data;
+      } catch (e) {
+        httpClient.close();
         return new Response(
-          JSON.stringify({ error: 'Failed to decode QR Code', provider_error: JSON.stringify(proxyData.data || proxyData) }),
+          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      qrcInfo = proxyData.data || proxyData;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {

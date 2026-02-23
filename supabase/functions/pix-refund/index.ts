@@ -15,6 +15,23 @@ function decodeCert(raw: string): string {
   const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
   return normalizePem(atob(cleanB64));
 }
+function parseCaCerts(raw: string): string[] {
+  let content = raw.trim();
+  if (!content.startsWith('-----')) { try { content = atob(content.replace(/[\s\r\n]/g, '')); } catch { /* use as-is */ } }
+  const parts = content.split(/-----END CERTIFICATE-----/);
+  const certs: string[] = [];
+  for (const part of parts) {
+    const beginIdx = part.indexOf('-----BEGIN CERTIFICATE-----');
+    if (beginIdx === -1) continue;
+    const cleanB64 = part.substring(beginIdx + '-----BEGIN CERTIFICATE-----'.length).replace(/[^A-Za-z0-9+/=]/g, '');
+    if (!cleanB64) continue;
+    const lines: string[] = ['-----BEGIN CERTIFICATE-----'];
+    for (let i = 0; i < cleanB64.length; i += 64) lines.push(cleanB64.substring(i, i + 64));
+    lines.push('-----END CERTIFICATE-----');
+    certs.push(lines.join('\n') + '\n');
+  }
+  return certs;
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -170,38 +187,50 @@ Deno.serve(async (req) => {
       }
       refundData = await resp.json();
     }
-    // ========== ONZ (via proxy mTLS) ==========
+    // ========== ONZ (chamada direta com caCerts) ==========
     else if (provider === 'onz') {
       const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
 
-      if (!proxyUrl || !proxyApiKey) {
+      const caCertRaw = Deno.env.get('ONZ_CA_CERT');
+      if (!caCertRaw) {
         return new Response(
-          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          JSON.stringify({ error: 'ONZ_CA_CERT não configurado' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-        body: JSON.stringify({
-          url: refundUrl,
-          method: 'PUT',
-          headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-          body: { valor: refundValue.toFixed(2) },
-        }),
-      });
+      const caCerts = parseCaCerts(caCertRaw);
+      const httpClient = Deno.createHttpClient({ caCerts });
 
-      const proxyData = await proxyResponse.json();
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
+      if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
+
+      try {
+        const response = await fetch(refundUrl, {
+          method: 'PUT',
+          headers: fetchHeaders,
+          body: JSON.stringify({ valor: refundValue.toFixed(2) }),
+          // @ts-ignore - Deno specific
+          client: httpClient,
+        });
+
+        const data = await response.json();
+        httpClient.close();
+
+        if (!response.ok) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(data) }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        refundData = data;
+      } catch (e) {
+        httpClient.close();
         return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(proxyData.data || proxyData) }),
+          JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      refundData = proxyData.data || proxyData;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
