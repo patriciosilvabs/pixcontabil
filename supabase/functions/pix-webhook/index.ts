@@ -5,6 +5,80 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
 };
 
+// ========== VALIDATION HELPERS ==========
+function isValidUUID(str: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+function sanitizeString(str: unknown, maxLength = 255): string {
+  if (typeof str !== 'string') return '';
+  return str.replace(/[^\w\s\-.:@/]/g, '').substring(0, maxLength);
+}
+
+function isValidE2EId(str: unknown): boolean {
+  if (typeof str !== 'string') return false;
+  // E2E IDs are alphanumeric, typically 32 chars (BCB standard)
+  return /^[A-Za-z0-9]{1,64}$/.test(str);
+}
+
+function isValidAmount(val: unknown): boolean {
+  if (typeof val === 'number') return val >= 0 && val <= 999999999;
+  if (typeof val === 'string') {
+    const num = parseFloat(val);
+    return !isNaN(num) && num >= 0 && num <= 999999999;
+  }
+  return false;
+}
+
+// ========== WEBHOOK SECRET VERIFICATION ==========
+async function verifyWebhookSecret(req: Request, supabaseAdmin: any): Promise<boolean> {
+  const webhookSecret = req.headers.get('x-webhook-secret');
+  
+  if (!webhookSecret) {
+    // Check if ANY pix_config has a webhook_secret configured
+    const { data: configs } = await supabaseAdmin
+      .from('pix_configs')
+      .select('webhook_secret')
+      .eq('is_active', true)
+      .not('webhook_secret', 'is', null);
+    
+    // If no secrets are configured, allow (backwards compatibility)
+    if (!configs || configs.length === 0) return true;
+    
+    // Secrets exist but none was provided - reject
+    console.warn('[pix-webhook] Webhook secret required but not provided');
+    return false;
+  }
+
+  // Verify the provided secret matches any active config
+  const { data: matchingConfigs } = await supabaseAdmin
+    .from('pix_configs')
+    .select('id')
+    .eq('webhook_secret', webhookSecret)
+    .eq('is_active', true)
+    .limit(1);
+
+  return matchingConfigs && matchingConfigs.length > 0;
+}
+
+// ========== RATE LIMITING (simple in-memory) ==========
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW = 60_000; // 1 minute
+const RATE_LIMIT_MAX = 100; // max 100 requests per IP per minute
+
+function isRateLimited(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW });
+    return false;
+  }
+  
+  entry.count++;
+  return entry.count > RATE_LIMIT_MAX;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -15,10 +89,59 @@ Deno.serve(async (req) => {
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
   );
 
+  const ip_address = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
+
+  // Rate limiting
+  if (isRateLimited(ip_address)) {
+    console.warn('[pix-webhook] Rate limited IP:', ip_address);
+    return new Response(
+      JSON.stringify({ error: 'Too many requests' }),
+      { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   try {
-    const ip_address = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'unknown';
-    const payload = await req.json();
-    console.log('[pix-webhook] Received webhook:', JSON.stringify(payload));
+    // Verify webhook secret
+    const isAuthorized = await verifyWebhookSecret(req.clone(), supabaseAdmin);
+    if (!isAuthorized) {
+      await supabaseAdmin.from('pix_webhook_logs').insert({
+        event_type: 'UNAUTHORIZED',
+        payload: { message: 'Invalid or missing webhook secret' },
+        ip_address,
+        processed: false,
+        error_message: 'Webhook secret verification failed',
+      });
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    let payload: any;
+    try {
+      const body = await req.text();
+      if (body.length > 1_000_000) { // 1MB max
+        return new Response(
+          JSON.stringify({ error: 'Payload too large' }),
+          { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      payload = JSON.parse(body);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (typeof payload !== 'object' || payload === null) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid payload format' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('[pix-webhook] Received webhook from IP:', ip_address);
 
     // ========== DETECT PROVIDER FORMAT ==========
 
@@ -64,7 +187,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('[pix-webhook] Error:', error);
     return new Response(
-      JSON.stringify({ error: 'Internal server error', details: error.message }),
+      JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -72,10 +195,10 @@ Deno.serve(async (req) => {
 
 // ========== WOOVI HANDLER ==========
 async function handleWooviWebhook(supabaseAdmin: any, payload: any, ip_address: string) {
-  const event = payload.event;
+  const event = sanitizeString(payload.event, 64);
   const charge = payload.charge || payload.pix || {};
-  const correlationID = charge.correlationID || payload.correlationID;
-  const value = charge.value ? charge.value / 100 : 0; // Woovi uses centavos
+  const correlationID = sanitizeString(charge.correlationID || payload.correlationID, 64);
+  const value = charge.value ? charge.value / 100 : 0;
 
   await supabaseAdmin.from('pix_webhook_logs').insert({
     event_type: event,
@@ -121,7 +244,13 @@ async function handleWooviWebhook(supabaseAdmin: any, payload: any, ip_address: 
 // ========== EFI HANDLER ==========
 async function handleEfiWebhook(supabaseAdmin: any, payload: any, ip_address: string) {
   for (const pixEvent of payload.pix) {
-    const { endToEndId, txid, valor, horario, infoPagador, chave, devolucoes } = pixEvent;
+    const endToEndId = sanitizeString(pixEvent.endToEndId, 64);
+    const txid = sanitizeString(pixEvent.txid, 64);
+    const valor = pixEvent.valor;
+    const horario = pixEvent.horario;
+    const infoPagador = sanitizeString(pixEvent.infoPagador, 255);
+    const chave = sanitizeString(pixEvent.chave, 255);
+    const devolucoes = pixEvent.devolucoes;
 
     await supabaseAdmin.from('pix_webhook_logs').insert({
       event_type: devolucoes && devolucoes.length > 0 ? 'REFUND' : 'PIX',
@@ -130,7 +259,7 @@ async function handleEfiWebhook(supabaseAdmin: any, payload: any, ip_address: st
       processed: false,
     });
 
-    if (!endToEndId) continue;
+    if (!endToEndId || !isValidE2EId(endToEndId)) continue;
 
     const { data: transaction } = await supabaseAdmin
       .from('transactions')
