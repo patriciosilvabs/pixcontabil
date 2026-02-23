@@ -170,22 +170,38 @@ Deno.serve(async (req) => {
       }
       refundData = await resp.json();
     }
-    // ========== ONZ ==========
+    // ========== ONZ (via proxy mTLS) ==========
     else if (provider === 'onz') {
       const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
-      const resp = await fetch(refundUrl, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ valor: refundValue.toFixed(2) }),
-      });
-      if (!resp.ok) {
-        const errorText = await resp.text();
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+
+      if (!proxyUrl || !proxyApiKey) {
         return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: errorText }),
+          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+        body: JSON.stringify({
+          url: refundUrl,
+          method: 'PUT',
+          headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' },
+          body: { valor: refundValue.toFixed(2) },
+        }),
+      });
+
+      const proxyData = await proxyResponse.json();
+      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(proxyData.data || proxyData) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      refundData = await resp.json();
+      refundData = proxyData.data || proxyData;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {

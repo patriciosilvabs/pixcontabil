@@ -15,6 +15,23 @@ function decodeCert(raw: string): string {
   const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
   return normalizePem(atob(cleanB64));
 }
+function parseCaCerts(raw: string): string[] {
+  let content = raw.trim();
+  if (!content.startsWith('-----')) { try { content = atob(content.replace(/[\s\r\n]/g, '')); } catch { /* use as-is */ } }
+  const parts = content.split(/-----END CERTIFICATE-----/);
+  const certs: string[] = [];
+  for (const part of parts) {
+    const beginIdx = part.indexOf('-----BEGIN CERTIFICATE-----');
+    if (beginIdx === -1) continue;
+    const cleanB64 = part.substring(beginIdx + '-----BEGIN CERTIFICATE-----'.length).replace(/[^A-Za-z0-9+/=]/g, '');
+    if (!cleanB64) continue;
+    const lines: string[] = ['-----BEGIN CERTIFICATE-----'];
+    for (let i = 0; i < cleanB64.length; i += 64) lines.push(cleanB64.substring(i, i + 64));
+    lines.push('-----END CERTIFICATE-----');
+    certs.push(lines.join('\n') + '\n');
+  }
+  return certs;
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -284,7 +301,7 @@ Deno.serve(async (req) => {
       paymentData = await payResponse.json();
       console.log('[pix-pay-dict] Paggue payment created:', JSON.stringify(paymentData));
     }
-    // ========== ONZ (mTLS direto) ==========
+    // ========== ONZ (via proxy mTLS) ==========
     else if (provider === 'onz') {
       externalId = generateIdEnvio();
       const payUrl = `${config.base_url}/pix/payments/dict`;
@@ -295,45 +312,34 @@ Deno.serve(async (req) => {
         idExterno: externalId,
       };
 
-      let httpClient: Deno.HttpClient | undefined;
-      if (config.certificate_encrypted) {
-        try {
-          const certPem = decodeCert(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-        } catch (e) {
-          console.error('[pix-pay-dict] Failed to create mTLS client:', e);
-        }
-      }
-
-      const fetchHeaders: any = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      };
-      if (config.provider_company_id) {
-        fetchHeaders['X-Company-ID'] = config.provider_company_id;
-      }
-
-      const fetchOptions: any = {
-        method: 'POST',
-        headers: fetchHeaders,
-        body: JSON.stringify(onzPayload),
-      };
-      if (httpClient) fetchOptions.client = httpClient;
-
-      const payResponse = await fetch(payUrl, fetchOptions);
-      httpClient?.close();
-
-      if (!payResponse.ok) {
-        const errorText = await payResponse.text();
-        console.error('[pix-pay-dict] ONZ error:', errorText);
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+      if (!proxyUrl || !proxyApiKey) {
         return new Response(
-          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: errorText }),
+          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
+      if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
+
+      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+        body: JSON.stringify({ url: payUrl, method: 'POST', headers: fetchHeaders, body: onzPayload }),
+      });
+
+      const proxyData = await proxyResponse.json();
+      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+        console.error('[pix-pay-dict] ONZ proxy error:', JSON.stringify(proxyData));
+        return new Response(
+          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: JSON.stringify(proxyData.data || proxyData) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      paymentData = await payResponse.json();
+      paymentData = proxyData.data || proxyData;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {

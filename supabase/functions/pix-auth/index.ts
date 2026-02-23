@@ -17,6 +17,27 @@ function decodeCert(raw: string): string {
   return normalizePem(atob(cleanB64));
 }
 
+function parseCaCerts(raw: string): string[] {
+  let content = raw.trim();
+  if (!content.startsWith('-----')) {
+    try { content = atob(content.replace(/[\s\r\n]/g, '')); } catch { /* use as-is */ }
+  }
+  const parts = content.split(/-----END CERTIFICATE-----/);
+  const certs: string[] = [];
+  for (const part of parts) {
+    const beginIdx = part.indexOf('-----BEGIN CERTIFICATE-----');
+    if (beginIdx === -1) continue;
+    const certContent = part.substring(beginIdx + '-----BEGIN CERTIFICATE-----'.length);
+    const cleanB64 = certContent.replace(/[^A-Za-z0-9+/=]/g, '');
+    if (!cleanB64) continue;
+    const lines: string[] = ['-----BEGIN CERTIFICATE-----'];
+    for (let i = 0; i < cleanB64.length; i += 64) lines.push(cleanB64.substring(i, i + 64));
+    lines.push('-----END CERTIFICATE-----');
+    certs.push(lines.join('\n') + '\n');
+  }
+  return certs;
+}
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -273,34 +294,21 @@ Deno.serve(async (req) => {
     let tokenType = 'Bearer';
     let expiresInSeconds = 3600;
 
-    // ========== ONZ Infopago (mTLS direto) ==========
+    // ========== ONZ Infopago (via proxy mTLS) ==========
     if (provider === 'onz') {
-      console.log('[pix-auth] ONZ: requesting token via direct mTLS');
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+
+      if (!proxyUrl || !proxyApiKey) {
+        return new Response(
+          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const baseUrl = pixConfig.base_url.replace(/\/+$/, '');
       const tokenUrl = `${baseUrl}/oauth/token`;
-
-      if (!pixConfig.certificate_encrypted) {
-        return new Response(
-          JSON.stringify({ error: 'Certificado mTLS é obrigatório para a ONZ.' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      let certPem: string;
-      let keyPem: string;
-      try {
-        certPem = decodeCert(pixConfig.certificate_encrypted);
-        keyPem = pixConfig.certificate_key_encrypted
-          ? decodeCert(pixConfig.certificate_key_encrypted)
-          : certPem;
-      } catch (e) {
-        return new Response(
-          JSON.stringify({ error: 'Certificado mTLS inválido.', details: e.message }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
+      console.log(`[pix-auth] ONZ: requesting token via proxy -> ${tokenUrl}`);
 
       const requestBody = {
         clientId: pixConfig.client_id,
@@ -309,27 +317,41 @@ Deno.serve(async (req) => {
       };
 
       try {
-        const tokenResponse = await fetch(tokenUrl, {
+        const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          // @ts-ignore - Deno specific
-          client: httpClient,
+          headers: {
+            'Content-Type': 'application/json',
+            'x-proxy-api-key': proxyApiKey,
+          },
+          body: JSON.stringify({
+            url: tokenUrl,
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: requestBody,
+          }),
         });
 
-        if (!tokenResponse.ok) {
-          const errorText = await tokenResponse.text();
-          httpClient.close();
-          console.error('[pix-auth] ONZ auth error:', errorText);
+        if (!proxyResponse.ok) {
+          const errorText = await proxyResponse.text();
+          console.error('[pix-auth] ONZ proxy error:', errorText);
           return new Response(
-            JSON.stringify({ error: 'Falha ao autenticar com ONZ', details: errorText }),
+            JSON.stringify({ error: 'Falha ao autenticar com ONZ via proxy', details: errorText }),
             { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
 
-        httpClient.close();
-        const tokenData = await tokenResponse.json();
+        const proxyData = await proxyResponse.json();
+        console.log('[pix-auth] ONZ proxy response status:', proxyData.status);
 
+        if (proxyData.status && proxyData.status >= 400) {
+          console.error('[pix-auth] ONZ auth error:', JSON.stringify(proxyData.data));
+          return new Response(
+            JSON.stringify({ error: 'Falha ao autenticar com ONZ', details: JSON.stringify(proxyData.data) }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const tokenData = proxyData.data || proxyData;
         accessToken = tokenData.accessToken || tokenData.access_token;
         if (tokenData.expiresAt) {
           expiresInSeconds = Math.floor((tokenData.expiresAt * 1000 - Date.now()) / 1000);
@@ -337,10 +359,9 @@ Deno.serve(async (req) => {
           expiresInSeconds = tokenData.expires_in;
         }
       } catch (e) {
-        httpClient.close();
-        console.error('[pix-auth] ONZ mTLS fetch error:', e);
+        console.error('[pix-auth] ONZ proxy fetch error:', e);
         return new Response(
-          JSON.stringify({ error: 'Falha na conexão mTLS com ONZ', details: e.message }),
+          JSON.stringify({ error: 'Falha na conexão com proxy ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
