@@ -15,6 +15,23 @@ function decodeCert(raw: string): string {
   const cleanB64 = trimmed.replace(/[\s\r\n]/g, '');
   return normalizePem(atob(cleanB64));
 }
+function parseCaCerts(raw: string): string[] {
+  let content = raw.trim();
+  if (!content.startsWith('-----')) { try { content = atob(content.replace(/[\s\r\n]/g, '')); } catch { /* use as-is */ } }
+  const parts = content.split(/-----END CERTIFICATE-----/);
+  const certs: string[] = [];
+  for (const part of parts) {
+    const beginIdx = part.indexOf('-----BEGIN CERTIFICATE-----');
+    if (beginIdx === -1) continue;
+    const cleanB64 = part.substring(beginIdx + '-----BEGIN CERTIFICATE-----'.length).replace(/[^A-Za-z0-9+/=]/g, '');
+    if (!cleanB64) continue;
+    const lines: string[] = ['-----BEGIN CERTIFICATE-----'];
+    for (let i = 0; i < cleanB64.length; i += 64) lines.push(cleanB64.substring(i, i + 64));
+    lines.push('-----END CERTIFICATE-----');
+    certs.push(lines.join('\n') + '\n');
+  }
+  return certs;
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -170,32 +187,30 @@ Deno.serve(async (req) => {
       statusData = await resp.json();
       console.log('[pix-check-status] Paggue raw status:', JSON.stringify(statusData));
     }
-    // ========== ONZ (mTLS direto) ==========
+    // ========== ONZ (via proxy mTLS) ==========
     else if (provider === 'onz') {
-      let httpClient: Deno.HttpClient | undefined;
-      if (config.certificate_encrypted) {
-        try {
-          const certPem = decodeCert(config.certificate_encrypted);
-          const keyPem = config.certificate_key_encrypted ? decodeCert(config.certificate_key_encrypted) : certPem;
-          httpClient = Deno.createHttpClient({ cert: certPem, key: keyPem });
-        } catch (_) { /* ignore */ }
-      }
-
       const statusUrl = `${config.base_url}/pix/payments/${end_to_end_id}`;
-      const fetchHeaders: any = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      };
-      if (config.provider_company_id) {
-        fetchHeaders['X-Company-ID'] = config.provider_company_id;
+      const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+      const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+
+      if (!proxyUrl || !proxyApiKey) {
+        return new Response(
+          JSON.stringify({ error: 'Proxy mTLS não configurado para ONZ' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
 
-      const fetchOptions: any = { method: 'GET', headers: fetchHeaders };
-      if (httpClient) fetchOptions.client = httpClient;
+      const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
+      if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const resp = await fetch(statusUrl, fetchOptions);
-      httpClient?.close();
-      statusData = await resp.json();
+      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+        body: JSON.stringify({ url: statusUrl, method: 'GET', headers: fetchHeaders }),
+      });
+
+      const proxyData = await proxyResponse.json();
+      statusData = proxyData.data || proxyData;
     }
     // ========== TRANSFEERA ==========
     else if (provider === 'transfeera') {
