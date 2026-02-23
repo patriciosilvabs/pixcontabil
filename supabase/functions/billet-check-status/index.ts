@@ -128,11 +128,13 @@ Deno.serve(async (req) => {
     console.log('[billet-check-status] Status received:', JSON.stringify(statusData));
 
     // Normalize status
-    const rawStatus = String(statusData.status || '').toUpperCase();
+    const rawStatus = String(statusData.status || '').toUpperCase().replace(/,/g, '');
     const statusMap: Record<string, string> = {
-      'PAID': 'completed', 'COMPLETED': 'completed', 'REALIZADO': 'completed',
-      'PENDING': 'pending', 'PROCESSING': 'pending', 'EM_PROCESSAMENTO': 'pending',
-      'FAILED': 'failed', 'CANCELLED': 'failed', 'CANCELADO': 'failed',
+      'LIQUIDATED': 'completed',
+      'PROCESSING': 'pending',
+      'CANCELED': 'failed',
+      'REFUNDED': 'refunded',
+      'PARTIALLY_REFUNDED': 'refunded',
     };
     const internalStatus = statusMap[rawStatus] || 'pending';
 
@@ -150,7 +152,12 @@ Deno.serve(async (req) => {
         billet_id: billetExternalId,
         status: statusData.status,
         internal_status: internalStatus,
+        is_completed: internalStatus === 'completed',
         provider: 'onz',
+        billetInfo: statusData.billetInfo || null,
+        creditorAccount: statusData.creditorAccount || null,
+        debtorAccount: statusData.debtorAccount || null,
+        payment: statusData.payment || null,
         payload: statusData,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

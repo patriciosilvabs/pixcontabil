@@ -36,7 +36,7 @@ Deno.serve(async (req) => {
 
     const userId = userData.user.id;
     const body = await req.json();
-    const { company_id, codigo_barras, descricao, payment_flow } = body;
+    const { company_id, codigo_barras, descricao, payment_flow, valor } = body;
 
     if (!company_id || !codigo_barras) {
       return new Response(
@@ -94,9 +94,13 @@ Deno.serve(async (req) => {
     const idempotencyKey = crypto.randomUUID();
     const onzPayload: any = {
       digitableCode: codigo_barras,
+      description: descricao || 'Pagamento de boleto',
     };
     if (payment_flow) {
-      onzPayload.paymentFlow = payment_flow; // "INSTANT" or "APPROVAL_REQUIRED"
+      onzPayload.paymentFlow = payment_flow;
+    }
+    if (valor) {
+      onzPayload.payment = { currency: 'BRL', amount: valor };
     }
 
     const fetchHeaders: any = {
@@ -141,8 +145,8 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    const externalId = paymentData.id || paymentData.paymentId || idempotencyKey;
-    const amount = paymentData.amount || paymentData.valor || 0;
+    const externalId = String(paymentData.id || idempotencyKey);
+    const amount = paymentData.payment?.amount || valor || 0;
 
     const { data: newTransaction, error: insertError } = await supabaseAdmin
       .from('transactions')
