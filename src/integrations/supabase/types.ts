@@ -251,7 +251,11 @@ export type Database = {
       pix_configs: {
         Row: {
           base_url: string
+          certificate_cash_in: string | null
+          certificate_cash_out: string | null
           certificate_encrypted: string | null
+          certificate_key_cash_in: string | null
+          certificate_key_cash_out: string | null
           certificate_key_encrypted: string | null
           client_id: string
           client_secret_encrypted: string
@@ -271,7 +275,11 @@ export type Database = {
         }
         Insert: {
           base_url: string
+          certificate_cash_in?: string | null
+          certificate_cash_out?: string | null
           certificate_encrypted?: string | null
+          certificate_key_cash_in?: string | null
+          certificate_key_cash_out?: string | null
           certificate_key_encrypted?: string | null
           client_id: string
           client_secret_encrypted: string
@@ -291,7 +299,11 @@ export type Database = {
         }
         Update: {
           base_url?: string
+          certificate_cash_in?: string | null
+          certificate_cash_out?: string | null
           certificate_encrypted?: string | null
+          certificate_key_cash_in?: string | null
+          certificate_key_cash_out?: string | null
           certificate_key_encrypted?: string | null
           client_id?: string
           client_secret_encrypted?: string

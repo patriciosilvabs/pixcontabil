@@ -53,7 +53,27 @@ interface PixConfig {
   is_sandbox: boolean;
   certificate_encrypted?: string;
   certificate_key_encrypted?: string;
+  certificate_cash_in?: string;
+  certificate_key_cash_in?: string;
+  certificate_cash_out?: string;
+  certificate_key_cash_out?: string;
   provider_company_id?: string;
+  purpose?: string;
+}
+
+// Resolve the correct certificate based on purpose and operation
+function resolveCert(config: PixConfig, operationPurpose?: string): { cert?: string; key?: string } {
+  // If config has purpose 'both' and we have purpose-specific certs, use them
+  if (config.purpose === 'both' && operationPurpose) {
+    if (operationPurpose === 'cash_in' && config.certificate_cash_in) {
+      return { cert: config.certificate_cash_in, key: config.certificate_key_cash_in || undefined };
+    }
+    if (operationPurpose === 'cash_out' && config.certificate_cash_out) {
+      return { cert: config.certificate_cash_out, key: config.certificate_key_cash_out || undefined };
+    }
+  }
+  // Fallback to the legacy fields
+  return { cert: config.certificate_encrypted || undefined, key: config.certificate_key_encrypted || undefined };
 }
 
 Deno.serve(async (req) => {
@@ -397,7 +417,8 @@ Deno.serve(async (req) => {
     }
     // ========== EFI Pay ==========
     else if (provider === 'efi') {
-      if (!pixConfig.certificate_encrypted) {
+      const resolved = resolveCert(pixConfig, purpose);
+      if (!resolved.cert) {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS é obrigatório para a EFI Pay.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -407,10 +428,8 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = decodeCert(pixConfig.certificate_encrypted);
-        keyPem = pixConfig.certificate_key_encrypted
-          ? decodeCert(pixConfig.certificate_key_encrypted)
-          : certPem;
+        certPem = decodeCert(resolved.cert);
+        keyPem = resolved.key ? decodeCert(resolved.key) : certPem;
       } catch (e) {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS inválido.' }),
@@ -458,7 +477,8 @@ Deno.serve(async (req) => {
     }
     // ========== BANCO INTER ==========
     else if (provider === 'inter') {
-      if (!pixConfig.certificate_encrypted) {
+      const resolved = resolveCert(pixConfig, purpose);
+      if (!resolved.cert) {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS é obrigatório para o Banco Inter.' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -468,10 +488,8 @@ Deno.serve(async (req) => {
       let certPem: string;
       let keyPem: string;
       try {
-        certPem = decodeCert(pixConfig.certificate_encrypted);
-        keyPem = pixConfig.certificate_key_encrypted
-          ? decodeCert(pixConfig.certificate_key_encrypted)
-          : certPem;
+        certPem = decodeCert(resolved.cert);
+        keyPem = resolved.key ? decodeCert(resolved.key) : certPem;
       } catch (e) {
         return new Response(
           JSON.stringify({ error: 'Certificado mTLS inválido.' }),
