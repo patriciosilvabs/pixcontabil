@@ -157,6 +157,23 @@ async function handleEfiWebhook(supabaseAdmin: any, payload: any, ip_address: st
       if (txid) updateData.pix_txid = txid;
       await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
 
+      // Auto-generate receipt for completed payments
+      if (!isFailed) {
+        try {
+          const receiptUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`;
+          fetch(receiptUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            },
+            body: JSON.stringify({ transaction_id: transaction.id, company_id: transaction.company_id }),
+          }).catch(e => console.error('[pix-webhook] Auto-receipt generation failed:', e));
+        } catch (e) {
+          console.error('[pix-webhook] Error triggering receipt generation:', e);
+        }
+      }
+
       const finalStatus = isFailed ? 'failed' : 'completed';
       await supabaseAdmin.from('audit_logs').insert({
         company_id: transaction.company_id,

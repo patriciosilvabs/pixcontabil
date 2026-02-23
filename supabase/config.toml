@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.delete-user]
 verify_jwt = false
+
+[functions.generate-pix-receipt]
+verify_jwt = false
