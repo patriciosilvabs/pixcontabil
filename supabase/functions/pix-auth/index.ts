@@ -331,9 +331,9 @@ Deno.serve(async (req) => {
       console.log(`[pix-auth] ONZ: requesting token via proxy -> ${tokenUrl}`);
 
       const requestBody = {
-        clientId: pixConfig.client_id,
-        clientSecret: pixConfig.client_secret_encrypted,
-        grantType: 'client_credentials',
+        client_id: pixConfig.client_id,
+        client_secret: pixConfig.client_secret_encrypted,
+        grant_type: 'client_credentials',
       };
 
       try {
