@@ -82,8 +82,9 @@ Deno.serve(async (req) => {
 
     const { access_token } = await authResponse.json();
 
-    // ONZ QR decode via proxy
-    const infoUrl = `${config.base_url}/pix/qrcode/decode`;
+    // ONZ QR decode via proxy - use /api/v1/decode/emv (not available under /api/v2)
+    const baseOrigin = new URL(config.base_url).origin;
+    const infoUrl = `${baseOrigin}/api/v1/decode/emv`;
     const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
     const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
     if (!proxyUrl || !proxyApiKey) {
@@ -101,7 +102,7 @@ Deno.serve(async (req) => {
       const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: infoUrl, method: 'POST', headers: fetchHeaders, body: { qrcode: qr_code } }),
+        body: JSON.stringify({ url: infoUrl, method: 'POST', headers: fetchHeaders, body: { emv: qr_code } }),
       });
 
       const proxyData = await proxyResponse.json();
