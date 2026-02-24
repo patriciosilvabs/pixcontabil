@@ -133,7 +133,7 @@ Deno.serve(async (req) => {
     const refundId = generateRefundId();
 
     // ONZ refund via proxy
-    const refundUrl = `${config.base_url}/pix/${transaction.pix_e2eid}/devolucao/${refundId}`;
+    const refundUrl = `${config.base_url}/pix/payments/refund/${transaction.pix_e2eid}/${refundId}`;
     const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
     const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
     if (!proxyUrl || !proxyApiKey) {
@@ -151,7 +151,7 @@ Deno.serve(async (req) => {
       const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: refundUrl, method: 'PUT', headers: fetchHeaders, body: { valor: refundValue.toFixed(2) } }),
+        body: JSON.stringify({ url: refundUrl, method: 'PUT', headers: fetchHeaders, body: { amount: refundValue } }),
       });
 
       const proxyData = await proxyResponse.json();
