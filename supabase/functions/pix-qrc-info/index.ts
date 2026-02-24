@@ -105,7 +105,19 @@ Deno.serve(async (req) => {
         body: JSON.stringify({ url: infoUrl, method: 'POST', headers: fetchHeaders, body: { emv: qr_code } }),
       });
 
-      const proxyData = await proxyResponse.json();
+      const rawText = await proxyResponse.text();
+      console.log('[pix-qrc-info] Proxy raw response status:', proxyResponse.status, 'body:', rawText.substring(0, 500));
+
+      let proxyData: any;
+      try {
+        proxyData = JSON.parse(rawText);
+      } catch {
+        return new Response(
+          JSON.stringify({ error: 'Proxy returned invalid JSON', raw: rawText.substring(0, 300) }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       const data = proxyData.data || proxyData;
 
       if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
