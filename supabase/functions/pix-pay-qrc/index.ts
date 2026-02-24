@@ -217,7 +217,40 @@ Deno.serve(async (req) => {
 
     const onzResult = proxyData.data || proxyData;
 
+    // If ONZ rejects the QR Code format, fallback to pix-pay-dict using extracted key
     if (!proxyResponse.ok && proxyResponse.status !== 202) {
+      const isInvalidQr = onzResult?.type === 'onz-0010' || onzResult?.title === 'Invalid QrCode';
+      
+      if (isInvalidQr && destKey) {
+        console.log('[pix-pay-qrc] ONZ rejected QR format, falling back to pix-pay-dict with key:', destKey);
+        
+        const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
+          method: 'POST',
+          headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
+        });
+
+        const dictResult = await dictResponse.json();
+
+        if (!dictResponse.ok) {
+          return new Response(JSON.stringify(dictResult), {
+            status: dictResponse.status,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Update transaction to mark as QR code type
+        if (dictResult.transaction_id) {
+          const supabaseAdmin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+          await supabaseAdmin2.from('transactions').update({ pix_type: 'qrcode', pix_copia_cola: qr_code }).eq('id', dictResult.transaction_id);
+        }
+
+        return new Response(
+          JSON.stringify({ ...dictResult, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       return new Response(
         JSON.stringify({ error: 'Falha no pagamento via QR Code', details: onzResult }),
         { status: proxyResponse.status >= 400 ? proxyResponse.status : 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
