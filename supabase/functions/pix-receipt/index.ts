@@ -102,7 +102,7 @@ Deno.serve(async (req) => {
     const { access_token } = await authResponse.json();
 
     // ONZ receipt via proxy
-    const receiptUrl = `${config.base_url}/pix/receipts/${end_to_end_id}`;
+    const receiptUrl = `${config.base_url}/pix/payments/receipt/${end_to_end_id}`;
     const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
     const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
     if (!proxyUrl || !proxyApiKey) {

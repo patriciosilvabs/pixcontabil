@@ -135,12 +135,13 @@ Deno.serve(async (req) => {
     // Normalize status
     const rawStatus = statusData.status || '';
     const statusMap: Record<string, string> = {
-      'REALIZADO': 'completed', 'COMPLETED': 'completed', 'CONFIRMED': 'completed',
-      'PROCESSADO': 'completed', 'EFETIVADO': 'completed', 'CONCLUIDO': 'completed',
-      'EM_PROCESSAMENTO': 'pending', 'PROCESSING': 'pending', 'ACTIVE': 'pending',
-      'NAO_REALIZADO': 'failed', 'FAILED': 'failed', 'ERROR': 'failed',
+      'LIQUIDATED': 'completed', 'REALIZADO': 'completed', 'COMPLETED': 'completed',
+      'CONFIRMED': 'completed', 'PROCESSADO': 'completed', 'EFETIVADO': 'completed', 'CONCLUIDO': 'completed',
+      'PROCESSING': 'pending', 'EM_PROCESSAMENTO': 'pending', 'ACTIVE': 'pending',
+      'CANCELED': 'failed', 'NAO_REALIZADO': 'failed', 'FAILED': 'failed', 'ERROR': 'failed',
       'CANCELADO': 'failed', 'FALHA': 'failed', 'ERRO': 'failed',
-      'DEVOLVIDO': 'refunded', 'REFUNDED': 'refunded',
+      'REFUNDED': 'refunded', 'DEVOLVIDO': 'refunded',
+      'PARTIALLY_REFUNDED': 'refunded',
     };
     const rawStatusStr = String(rawStatus).toUpperCase();
     const internalStatus = statusMap[rawStatusStr] || 'pending';
