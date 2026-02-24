@@ -146,38 +146,116 @@ Deno.serve(async (req) => {
       );
     }
 
-    // ===== DYNAMIC QR CODE: delegate to pix-pay-dict using extracted key =====
-    if (!destKey) {
+    // ===== DYNAMIC QR CODE: use ONZ /pix/payments/qrc to properly settle =====
+    console.log('[pix-pay-qrc] Dynamic QR - calling ONZ /pix/payments/qrc directly');
+
+    // Get auth token via pix-auth
+    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+      method: 'POST',
+      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+    });
+
+    if (!authResponse.ok) {
+      const authErr = await authResponse.text();
       return new Response(
-        JSON.stringify({ error: 'Could not extract Pix key from dynamic QR Code. The QR code may be expired or invalid.' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ error: 'Failed to get auth token', details: authErr }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('[pix-pay-qrc] Dynamic QR - delegating to pix-pay-dict with key:', destKey);
-    const payResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
-      method: 'POST',
-      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
-    });
+    const authData = await authResponse.json();
+    const accessToken = authData.access_token;
 
-    const payResult = await payResponse.json();
+    // Build ONZ payload
+    const idempotencyKey = generateIdEnvio();
+    const baseUrl = config.base_url.replace(/\/+$/, '');
+    const qrcPaymentUrl = `${baseUrl}/pix/payments/qrc`;
 
-    if (!payResponse.ok) {
-      return new Response(JSON.stringify(payResult), {
-        status: payResponse.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const onzPayload: any = {
+      qrCode: qr_code,
+      description: descricao || 'Pagamento via QR Code',
+      payment: {
+        amount: paymentAmount,
+        currency: 'BRL',
+      },
+    };
+
+    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+    if (!proxyUrl || !proxyApiKey) {
+      return new Response(
+        JSON.stringify({ error: 'ONZ_PROXY_URL ou ONZ_PROXY_API_KEY não configurado.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    // Update transaction to mark as QR code type
-    if (payResult.transaction_id) {
-      const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-      await supabaseAdmin.from('transactions').update({ pix_type: 'qrcode', pix_copia_cola: qr_code, pix_txid: qrcInfo.txid || null }).eq('id', payResult.transaction_id);
+    const onzHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+      'x-idempotency-key': idempotencyKey,
+    };
+    if (config.provider_company_id) {
+      onzHeaders['X-Company-ID'] = config.provider_company_id;
+    }
+
+    console.log('[pix-pay-qrc] Sending to ONZ:', qrcPaymentUrl, 'payload:', JSON.stringify(onzPayload));
+
+    const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+      body: JSON.stringify({
+        url: qrcPaymentUrl,
+        method: 'POST',
+        headers: onzHeaders,
+        body: onzPayload,
+      }),
+    });
+
+    const proxyData = await proxyResponse.json();
+    console.log('[pix-pay-qrc] ONZ response status:', proxyResponse.status, 'data:', JSON.stringify(proxyData));
+
+    const onzResult = proxyData.data || proxyData;
+
+    if (!proxyResponse.ok && proxyResponse.status !== 202) {
+      return new Response(
+        JSON.stringify({ error: 'Falha no pagamento via QR Code', details: onzResult }),
+        { status: proxyResponse.status >= 400 ? proxyResponse.status : 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Create transaction record
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+    const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
+      company_id,
+      created_by: userId,
+      amount: paymentAmount,
+      description: descricao || 'Pagamento via QR Code dinâmico',
+      pix_type: 'qrcode',
+      pix_copia_cola: qr_code,
+      pix_txid: qrcInfo.txid || null,
+      pix_e2eid: onzResult.endToEndId || null,
+      external_id: String(onzResult.id || ''),
+      beneficiary_name: qrcInfo.merchant_name || null,
+      status: 'completed',
+      paid_at: new Date().toISOString(),
+      pix_provider_response: onzResult,
+    }).select('id').single();
+
+    if (txError) {
+      console.error('[pix-pay-qrc] Transaction insert error:', txError);
     }
 
     return new Response(
-      JSON.stringify({ ...payResult, amount: paymentAmount, qr_info: qrcInfo }),
+      JSON.stringify({
+        success: true,
+        transaction_id: transaction?.id || null,
+        end_to_end_id: onzResult.endToEndId || null,
+        amount: paymentAmount,
+        qr_info: qrcInfo,
+        provider_response: onzResult,
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
