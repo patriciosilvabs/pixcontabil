@@ -43,25 +43,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get Pix config
+    // Get Pix config - prefer cash_out (since decode is for payment), fallback to both, then cash_in
     let config: any = null;
-    const { data: cashInConfig } = await supabase
-      .from('pix_configs')
-      .select('*')
-      .eq('company_id', company_id)
-      .eq('is_active', true)
-      .eq('purpose', 'cash_in')
-      .single();
-    config = cashInConfig;
-    if (!config) {
-      const { data: bothConfig } = await supabase
+    for (const purpose of ['cash_out', 'both', 'cash_in']) {
+      const { data } = await supabase
         .from('pix_configs')
         .select('*')
         .eq('company_id', company_id)
         .eq('is_active', true)
-        .eq('purpose', 'both')
+        .eq('purpose', purpose)
         .single();
-      config = bothConfig;
+      if (data) {
+        config = data;
+        break;
+      }
     }
 
     if (!config) {
@@ -75,7 +70,7 @@ Deno.serve(async (req) => {
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST',
       headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id, purpose: 'cash_in' }),
+      body: JSON.stringify({ company_id, purpose: config.purpose === 'cash_in' ? 'cash_in' : 'cash_out' }),
     });
 
     if (!authResponse.ok) {
@@ -127,19 +122,56 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('[pix-qrc-info] QR Code decoded:', JSON.stringify(qrcInfo));
+    console.log('[pix-qrc-info] Full ONZ decode response:', JSON.stringify(qrcInfo));
+
+    // Extract amount from various possible ONZ response structures
+    function extractAmount(info: any): number | null {
+      // Direct numeric fields
+      if (typeof info.valor === 'number' && info.valor > 0) return info.valor;
+      if (typeof info.valor === 'string' && parseFloat(info.valor) > 0) return parseFloat(info.valor);
+      
+      // Nested valor object (BACEN cobv format: { valor: { original: "100.00" } })
+      if (info.valor && typeof info.valor === 'object') {
+        const orig = info.valor.original || info.valor.value || info.valor.amount;
+        if (orig) return parseFloat(String(orig));
+      }
+
+      // Other common field names
+      if (info.transactionAmount) return parseFloat(String(info.transactionAmount));
+      if (info.amount) return parseFloat(String(info.amount));
+      if (info.value) return parseFloat(String(info.value));
+      
+      // Nested payment object
+      if (info.payment?.amount) return parseFloat(String(info.payment.amount));
+      if (info.payment?.value) return parseFloat(String(info.payment.value));
+
+      // BACEN-style nested cobv
+      if (info.cobv?.valor?.original) return parseFloat(String(info.cobv.valor.original));
+      if (info.cob?.valor?.original) return parseFloat(String(info.cob.valor.original));
+
+      return null;
+    }
+
+    const extractedAmount = extractAmount(qrcInfo);
+    console.log('[pix-qrc-info] Extracted amount:', extractedAmount);
+
+    // Determine QR type
+    const qrType = qrcInfo.tipo || qrcInfo.type || 
+      (qrcInfo.cobv || qrcInfo.cob || qrcInfo.txid ? 'dynamic' : 'static');
 
     return new Response(
       JSON.stringify({
         success: true,
         provider: 'onz',
-        type: qrcInfo.tipo || qrcInfo.type,
-        merchant_name: qrcInfo.nome || qrcInfo.merchantName || qrcInfo.merchant_name,
+        type: qrType,
+        merchant_name: qrcInfo.nome || qrcInfo.merchantName || qrcInfo.merchant_name || 
+          qrcInfo.cobv?.devedor?.nome || qrcInfo.cob?.devedor?.nome || qrcInfo.creditParty?.name,
         merchant_city: qrcInfo.cidade || qrcInfo.merchantCity || qrcInfo.merchant_city,
-        amount: qrcInfo.valor ? parseFloat(qrcInfo.valor) : (qrcInfo.transactionAmount || qrcInfo.amount || qrcInfo.value),
-        pix_key: qrcInfo.chave || qrcInfo.pix_key,
-        txid: qrcInfo.txid,
-        end_to_end_id: qrcInfo.endToEndId,
+        amount: extractedAmount,
+        pix_key: qrcInfo.chave || qrcInfo.pix_key || qrcInfo.pixKey || 
+          qrcInfo.cobv?.chave || qrcInfo.cob?.chave,
+        txid: qrcInfo.txid || qrcInfo.cobv?.txid || qrcInfo.cob?.txid,
+        end_to_end_id: qrcInfo.endToEndId || qrcInfo.e2eId,
         payload: qrcInfo,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
