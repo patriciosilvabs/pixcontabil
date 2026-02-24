@@ -5,6 +5,54 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// Parse EMV QR Code TLV (Tag-Length-Value) format
+function parseEmv(emv: string): Record<string, string> {
+  const result: Record<string, string> = {};
+  let i = 0;
+  while (i + 4 <= emv.length) {
+    const tag = emv.substring(i, i + 2);
+    const len = parseInt(emv.substring(i + 2, i + 4), 10);
+    if (isNaN(len) || i + 4 + len > emv.length) break;
+    result[tag] = emv.substring(i + 4, i + 4 + len);
+    i += 4 + len;
+  }
+  return result;
+}
+
+// Extract URL from tag 26 (Merchant Account Information)
+function extractPixUrl(emv: string): string | null {
+  const tags = parseEmv(emv);
+  const tag26 = tags['26'];
+  if (!tag26) return null;
+  const innerTags = parseEmv(tag26);
+  // Tag 25 contains the URL for dynamic QR codes
+  return innerTags['25'] || null;
+}
+
+// Extract Pix key from tag 26
+function extractPixKey(emv: string): string | null {
+  const tags = parseEmv(emv);
+  const tag26 = tags['26'];
+  if (!tag26) return null;
+  const innerTags = parseEmv(tag26);
+  // Tag 01 inside tag 26 is the Pix key for static QR codes
+  return innerTags['01'] || null;
+}
+
+// Decode JWS payload (base64url)
+function decodeJwsPayload(jws: string): any {
+  const parts = jws.split('.');
+  if (parts.length !== 3) return null;
+  try {
+    const payload = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = payload + '='.repeat((4 - payload.length % 4) % 4);
+    const decoded = atob(padded);
+    return JSON.parse(decoded);
+  } catch {
+    return null;
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -43,149 +91,93 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get Pix config - prefer cash_out (since decode is for payment), fallback to both, then cash_in
-    let config: any = null;
-    for (const purpose of ['cash_out', 'both', 'cash_in']) {
-      const { data } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .eq('purpose', purpose)
-        .single();
-      if (data) {
-        config = data;
-        break;
-      }
-    }
+    // Parse EMV locally
+    const emvTags = parseEmv(qr_code);
+    console.log('[pix-qrc-info] EMV tags:', JSON.stringify(emvTags));
 
-    if (!config) {
-      return new Response(
-        JSON.stringify({ error: 'Pix configuration not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    const pointOfInitiation = emvTags['01']; // "11" = static, "12" = dynamic
+    const isDynamic = pointOfInitiation === '12';
+    const merchantName = emvTags['59'] || null;
+    const merchantCity = emvTags['60'] || null;
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST',
-      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ company_id, purpose: config.purpose === 'cash_in' ? 'cash_in' : 'cash_out' }),
-    });
+    // Extract amount from tag 54 (Transaction Amount)
+    let amount: number | null = emvTags['54'] ? parseFloat(emvTags['54']) : null;
 
-    if (!authResponse.ok) {
-      return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with provider' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // Extract pix key (static QR) or URL (dynamic QR) from tag 26
+    const pixUrl = extractPixUrl(qr_code);
+    const pixKey = extractPixKey(qr_code);
 
-    const { access_token } = await authResponse.json();
+    let txid: string | null = null;
+    let cobPayload: any = null;
 
-    // ONZ QR decode via proxy - use /api/v1/decode/emv (not available under /api/v2)
-    const baseOrigin = new URL(config.base_url).origin;
-    const infoUrl = `${baseOrigin}/api/v1/decode/emv`;
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // For dynamic QR codes, fetch the COBV payload URL to get amount and details
+    if (isDynamic && pixUrl) {
+      const fullUrl = pixUrl.startsWith('http') ? pixUrl : `https://${pixUrl}`;
+      console.log('[pix-qrc-info] Fetching dynamic payload from:', fullUrl);
 
-    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
-    let qrcInfo: any;
-    try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: infoUrl, method: 'POST', headers: fetchHeaders, body: { emv: qr_code } }),
-      });
-
-      const rawText = await proxyResponse.text();
-      console.log('[pix-qrc-info] Proxy raw response status:', proxyResponse.status, 'body:', rawText.substring(0, 500));
-
-      let proxyData: any;
       try {
-        proxyData = JSON.parse(rawText);
-      } catch {
-        return new Response(
-          JSON.stringify({ error: 'Proxy returned invalid JSON', raw: rawText.substring(0, 300) }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        const cobResponse = await fetch(fullUrl, {
+          headers: { 'Accept': 'application/json, application/jose' },
+        });
+
+        if (cobResponse.ok) {
+          const contentType = cobResponse.headers.get('content-type') || '';
+          const responseText = await cobResponse.text();
+          console.log('[pix-qrc-info] Dynamic payload response (first 500 chars):', responseText.substring(0, 500));
+
+          if (contentType.includes('jose') || responseText.startsWith('eyJ')) {
+            // JWS (signed JWT) response - decode payload
+            cobPayload = decodeJwsPayload(responseText);
+            console.log('[pix-qrc-info] Decoded JWS payload:', JSON.stringify(cobPayload));
+          } else {
+            try {
+              cobPayload = JSON.parse(responseText);
+            } catch {
+              console.log('[pix-qrc-info] Could not parse dynamic payload as JSON');
+            }
+          }
+
+          if (cobPayload) {
+            // Extract amount from COBV payload
+            if (cobPayload.valor?.original) {
+              amount = parseFloat(cobPayload.valor.original);
+            } else if (cobPayload.valor && typeof cobPayload.valor === 'string') {
+              amount = parseFloat(cobPayload.valor);
+            } else if (cobPayload.valor && typeof cobPayload.valor === 'number') {
+              amount = cobPayload.valor;
+            }
+
+            txid = cobPayload.txid || null;
+          }
+        } else {
+          console.log('[pix-qrc-info] Dynamic payload fetch failed:', cobResponse.status);
+        }
+      } catch (e) {
+        console.log('[pix-qrc-info] Error fetching dynamic payload:', e.message);
       }
-
-      const data = proxyData.data || proxyData;
-
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
-        return new Response(
-          JSON.stringify({ error: 'Failed to decode QR Code', provider_error: JSON.stringify(data) }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      qrcInfo = data;
-    } catch (e) {
-      return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
-    console.log('[pix-qrc-info] Full ONZ decode response:', JSON.stringify(qrcInfo));
-
-    // Extract amount from various possible ONZ response structures
-    function extractAmount(info: any): number | null {
-      // Direct numeric fields
-      if (typeof info.valor === 'number' && info.valor > 0) return info.valor;
-      if (typeof info.valor === 'string' && parseFloat(info.valor) > 0) return parseFloat(info.valor);
-      
-      // Nested valor object (BACEN cobv format: { valor: { original: "100.00" } })
-      if (info.valor && typeof info.valor === 'object') {
-        const orig = info.valor.original || info.valor.value || info.valor.amount;
-        if (orig) return parseFloat(String(orig));
-      }
-
-      // Other common field names
-      if (info.transactionAmount) return parseFloat(String(info.transactionAmount));
-      if (info.amount) return parseFloat(String(info.amount));
-      if (info.value) return parseFloat(String(info.value));
-      
-      // Nested payment object
-      if (info.payment?.amount) return parseFloat(String(info.payment.amount));
-      if (info.payment?.value) return parseFloat(String(info.payment.value));
-
-      // BACEN-style nested cobv
-      if (info.cobv?.valor?.original) return parseFloat(String(info.cobv.valor.original));
-      if (info.cob?.valor?.original) return parseFloat(String(info.cob.valor.original));
-
-      return null;
+    // Parse txid from tag 62 if not already set
+    if (!txid && emvTags['62']) {
+      const tag62 = parseEmv(emvTags['62']);
+      txid = tag62['05'] || null;
     }
 
-    const extractedAmount = extractAmount(qrcInfo);
-    console.log('[pix-qrc-info] Extracted amount:', extractedAmount);
-
-    // Determine QR type
-    const qrType = qrcInfo.tipo || qrcInfo.type || 
-      (qrcInfo.cobv || qrcInfo.cob || qrcInfo.txid ? 'dynamic' : 'static');
+    const qrType = isDynamic ? 'dynamic' : 'static';
+    console.log('[pix-qrc-info] Result - type:', qrType, 'amount:', amount, 'merchant:', merchantName);
 
     return new Response(
       JSON.stringify({
         success: true,
-        provider: 'onz',
+        provider: 'local',
         type: qrType,
-        merchant_name: qrcInfo.nome || qrcInfo.merchantName || qrcInfo.merchant_name || 
-          qrcInfo.cobv?.devedor?.nome || qrcInfo.cob?.devedor?.nome || qrcInfo.creditParty?.name,
-        merchant_city: qrcInfo.cidade || qrcInfo.merchantCity || qrcInfo.merchant_city,
-        amount: extractedAmount,
-        pix_key: qrcInfo.chave || qrcInfo.pix_key || qrcInfo.pixKey || 
-          qrcInfo.cobv?.chave || qrcInfo.cob?.chave,
-        txid: qrcInfo.txid || qrcInfo.cobv?.txid || qrcInfo.cob?.txid,
-        end_to_end_id: qrcInfo.endToEndId || qrcInfo.e2eId,
-        payload: qrcInfo,
+        merchant_name: cobPayload?.devedor?.nome || merchantName,
+        merchant_city: merchantCity,
+        amount: amount,
+        pix_key: cobPayload?.chave || pixKey,
+        txid: txid,
+        end_to_end_id: null,
+        payload: cobPayload || emvTags,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
