@@ -54,9 +54,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Sanitizar QR Code - remover TODOS os espaços, quebras de linha, caracteres invisíveis
-    // EMV nunca contém espaços legítimos na string copia-e-cola
-    const cleanQrCode = rawQrCode.trim().replace(/[\r\n\t\s]+/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+    // Sanitizar QR Code - remover apenas caracteres de controle e zero-width
+    // NÃO remover espaços! EMV contém espaços legítimos no nome do comerciante (tag 59)
+    // Remover espaços corrompe os campos de length e invalida o CRC16
+    const cleanQrCode = rawQrCode.trim().replace(/[\r\n\t]/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
     console.log('[pix-pay-qrc] Original QR length:', rawQrCode.length, 'Clean QR length:', cleanQrCode.length);
     console.log('[pix-pay-qrc] QR codes match:', rawQrCode === cleanQrCode);
     if (rawQrCode !== cleanQrCode) {

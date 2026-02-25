@@ -91,8 +91,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Sanitizar QR Code - remover TODOS os espaços e caracteres invisíveis
-    const qr_code = rawQrCode.trim().replace(/[\r\n\t\s]+/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+    // Sanitizar QR Code - remover apenas caracteres de controle e zero-width (NÃO espaços!)
+    // EMV contém espaços legítimos no nome do comerciante (tag 59)
+    const qr_code = rawQrCode.trim().replace(/[\r\n\t]/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
     if (rawQrCode !== qr_code) {
       console.warn('[pix-qrc-info] QR Code was cleaned. Original length:', rawQrCode.length, 'Clean length:', qr_code.length);
     }
