@@ -175,6 +175,7 @@ Deno.serve(async (req) => {
     const onzPayload: any = {
       qrCode: qr_code,
       description: descricao || 'Pagamento via QR Code',
+      paymentFlow: 'INSTANT',
       payment: {
         amount: paymentAmount,
         currency: 'BRL',
@@ -192,6 +193,7 @@ Deno.serve(async (req) => {
 
     const onzHeaders: Record<string, string> = {
       'Content-Type': 'application/json',
+      'Accept': 'application/json',
       'Authorization': `Bearer ${accessToken}`,
       'x-idempotency-key': idempotencyKey,
     };
