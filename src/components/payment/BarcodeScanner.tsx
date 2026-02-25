@@ -222,7 +222,11 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
             const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
             const result = mfReader.decode(bitmap);
             if (result) {
-              const text = result.getText().replace(/\s/g, "");
+              // For barcodes (boleto), strip all whitespace since codes are purely numeric
+              // For QR codes (EMV Pix), preserve spaces - they are part of the merchant name
+              // and stripping them corrupts the EMV structure (length fields) and CRC16 checksum
+              const rawText = result.getText();
+              const text = mode === "barcode" ? rawText.replace(/\s/g, "") : rawText.trim();
               handleResult(text);
             }
           } catch {
