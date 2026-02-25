@@ -213,37 +213,62 @@ Deno.serve(async (req) => {
       return { proxyResponse, proxyData };
     };
 
+    // Helper: call ONZ with automatic token refresh on 401/onz-0018
+    const callOnzWithTokenRetry = async (url: string, payload: Record<string, unknown>, idempKey: string, currentToken: string) => {
+      let token = currentToken;
+      let { proxyResponse, proxyData } = await callOnzViaProxy(url, payload, idempKey, token);
+      let result = proxyData.data || proxyData;
+
+      if (proxyResponse.status === 401 || result?.type === 'onz-0018') {
+        console.log('[pix-pay-qrc] Token rejected, retrying with fresh token');
+        token = await getAccessToken(true);
+        ({ proxyResponse, proxyData } = await callOnzViaProxy(url, payload, idempKey, token));
+        result = proxyData.data || proxyData;
+      }
+
+      return { proxyResponse, proxyData, result, accessToken: token };
+    };
+
     // ===== STEP 1: Consult QR via ONZ /pix/payments/qrc/info =====
     console.log('[pix-pay-qrc] Step 1: Consulting ONZ /pix/payments/qrc/info');
     let accessToken = await getAccessToken(false);
     const qrcInfoOnzUrl = `${baseUrl}/pix/payments/qrc/info`;
-    const infoIdempKey = generateIdempotencyKey();
 
-    let { proxyResponse: infoResponse, proxyData: infoData } = await callOnzViaProxy(
+    let infoQrCode = qr_code;
+    let {
+      proxyResponse: infoResponse,
+      proxyData: infoData,
+      result: infoResult,
+      accessToken: infoAccessToken,
+    } = await callOnzWithTokenRetry(
       qrcInfoOnzUrl,
-      { qrCode: qr_code },
-      infoIdempKey,
+      { qrCode: infoQrCode },
+      generateIdempotencyKey(),
       accessToken
     );
+    accessToken = infoAccessToken;
 
-    let infoResult = infoData.data || infoData;
-
-    // Retry with fresh token on 401
-    if (infoResponse.status === 401 || infoResult?.type === 'onz-0018') {
-      console.log('[pix-pay-qrc] Info: token rejected, retrying with fresh token');
-      accessToken = await getAccessToken(true);
-      ({ proxyResponse: infoResponse, proxyData: infoData } = await callOnzViaProxy(
+    // Retry /qrc/info using payload_url when EMV is rejected
+    const infoRejected = infoResult?.type === 'onz-0008' || infoResult?.type === 'onz-0010';
+    if ((!infoResponse.ok || infoRejected) && qrcInfo.payload_url && infoQrCode !== qrcInfo.payload_url) {
+      console.log('[pix-pay-qrc] /qrc/info rejected EMV, retrying with payload_url');
+      infoQrCode = qrcInfo.payload_url;
+      ({
+        proxyResponse: infoResponse,
+        proxyData: infoData,
+        result: infoResult,
+        accessToken: infoAccessToken,
+      } = await callOnzWithTokenRetry(
         qrcInfoOnzUrl,
-        { qrCode: qr_code },
-        infoIdempKey,
+        { qrCode: infoQrCode },
+        generateIdempotencyKey(),
         accessToken
       ));
-      infoResult = infoData.data || infoData;
+      accessToken = infoAccessToken;
     }
 
     console.log('[pix-pay-qrc] QRC info response:', infoResponse.status, JSON.stringify(infoData));
 
-    // If info consultation fails, log but continue with payment attempt anyway
     const onzQrcInfo = infoResponse.ok ? infoResult : null;
     if (onzQrcInfo) {
       console.log('[pix-pay-qrc] ONZ QRC info: type=', onzQrcInfo.type, 'statusCode=', onzQrcInfo.statusCode, 'chave=', onzQrcInfo.chave, 'amount=', onzQrcInfo.transactionAmount);
@@ -253,35 +278,53 @@ Deno.serve(async (req) => {
 
     // ===== STEP 2: Pay via ONZ /pix/payments/qrc =====
     console.log('[pix-pay-qrc] Step 2: Payment via /pix/payments/qrc');
-    const paymentIdempKey = generateIdempotencyKey();
     const qrcPaymentUrl = `${baseUrl}/pix/payments/qrc`;
-    const paymentPayload = {
-      qrCode: qr_code,
+
+    let paymentQrCode = qr_code;
+    let paymentPayload: Record<string, unknown> = {
+      qrCode: paymentQrCode,
       description: descricao || 'Pagamento via QR Code',
       paymentFlow: 'INSTANT',
       payment: { currency: 'BRL', amount: formattedAmount },
     };
 
-    let { proxyResponse: payResponse, proxyData: payData } = await callOnzViaProxy(
+    let {
+      proxyResponse: payResponse,
+      proxyData: payData,
+      result: payResult,
+      accessToken: payAccessToken,
+    } = await callOnzWithTokenRetry(
       qrcPaymentUrl,
       paymentPayload,
-      paymentIdempKey,
+      generateIdempotencyKey(),
       accessToken
     );
+    accessToken = payAccessToken;
 
-    let payResult = payData.data || payData;
+    // Retry payment with payload_url when ONZ rejects EMV as invalid QR
+    const paymentInvalidQr = payResult?.type === 'onz-0010' || payResult?.title === 'Invalid QrCode';
+    if ((!payResponse.ok || payResponse.status >= 400) && paymentInvalidQr && qrcInfo.payload_url && paymentQrCode !== qrcInfo.payload_url) {
+      console.log('[pix-pay-qrc] /qrc rejected EMV, retrying payment with payload_url');
+      paymentQrCode = qrcInfo.payload_url;
+      paymentPayload = {
+        qrCode: paymentQrCode,
+        description: descricao || 'Pagamento via QR Code',
+        paymentFlow: 'INSTANT',
+        payment: { currency: 'BRL', amount: formattedAmount },
+      };
 
-    // Retry with fresh token on 401
-    if (payResponse.status === 401 || payResult?.type === 'onz-0018') {
-      console.log('[pix-pay-qrc] Payment: token rejected, retrying with fresh token');
-      accessToken = await getAccessToken(true);
-      ({ proxyResponse: payResponse, proxyData: payData } = await callOnzViaProxy(
+      ({
+        proxyResponse: payResponse,
+        proxyData: payData,
+        result: payResult,
+        accessToken: payAccessToken,
+      } = await callOnzWithTokenRetry(
         qrcPaymentUrl,
         paymentPayload,
-        paymentIdempKey,
+        generateIdempotencyKey(),
         accessToken
       ));
-      payResult = payData.data || payData;
+      accessToken = payAccessToken;
     }
 
     console.log('[pix-pay-qrc] Payment response:', payResponse.status, JSON.stringify(payData));
