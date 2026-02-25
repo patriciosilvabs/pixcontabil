@@ -82,13 +82,19 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { company_id, qr_code } = body;
+    const { company_id, qr_code: rawQrCode } = body;
 
-    if (!company_id || !qr_code) {
+    if (!company_id || !rawQrCode) {
       return new Response(
         JSON.stringify({ error: 'company_id and qr_code are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Sanitizar QR Code - remover TODOS os espaços e caracteres invisíveis
+    const qr_code = rawQrCode.trim().replace(/[\r\n\t\s]+/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
+    if (rawQrCode !== qr_code) {
+      console.warn('[pix-qrc-info] QR Code was cleaned. Original length:', rawQrCode.length, 'Clean length:', qr_code.length);
     }
 
     // Parse EMV locally
@@ -166,7 +172,7 @@ Deno.serve(async (req) => {
     const qrType = isDynamic ? 'dynamic' : 'static';
     console.log('[pix-qrc-info] Result - type:', qrType, 'amount:', amount, 'merchant:', merchantName);
 
-    // Build payload URL for dynamic QR codes (needed by some providers like ONZ)
+    // Build payload URL for dynamic QR codes (needed for ONZ retry with payload_url)
     const payloadUrl = isDynamic && pixUrl
       ? (pixUrl.startsWith('http') ? pixUrl : `https://${pixUrl}`)
       : null;
