@@ -5,15 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function generateIdEnvio(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 35; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -167,23 +158,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Build ONZ payload
-    const idempotencyKey = generateIdEnvio();
+    // Use cashout-{uuid} format matching ONZ documentation
+    const idempotencyKey = `cashout-${crypto.randomUUID()}`;
     const baseUrl = config.base_url.replace(/\/+$/, '');
     const qrcPaymentUrl = `${baseUrl}/pix/payments/qrc`;
 
-    const onzPayload: any = {
-      qrCode: qr_code,
-      description: descricao || 'Pagamento via QR Code',
-      paymentFlow: 'INSTANT',
-      payment: {
-        amount: paymentAmount,
-        currency: 'BRL',
-      },
-    };
+    // Format amount with 2 decimal places to match ONZ expected format
+    const formattedAmount = Number(paymentAmount.toFixed(2));
 
-    // Helper to get token and call ONZ
-    const callOnzQrc = async (forceNewToken: boolean) => {
+    // Helper to get token and call ONZ via proxy using body_raw (single serialization)
+    const callOnzQrc = async (forceNewToken: boolean, payload: Record<string, unknown>) => {
       const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
         method: 'POST',
         headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
@@ -208,7 +192,9 @@ Deno.serve(async (req) => {
         onzHeaders['X-Company-ID'] = config.provider_company_id;
       }
 
-      console.log('[pix-pay-qrc] Sending to ONZ:', qrcPaymentUrl, 'payload:', JSON.stringify(onzPayload), 'forceNew:', forceNewToken);
+      // Serialize payload ONCE here — proxy will forward body_raw as-is (no re-stringify)
+      const rawBody = JSON.stringify(payload);
+      console.log('[pix-pay-qrc] Raw body to proxy (first 500):', rawBody.substring(0, 500), 'forceNew:', forceNewToken);
 
       const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
         method: 'POST',
@@ -217,7 +203,7 @@ Deno.serve(async (req) => {
           url: qrcPaymentUrl,
           method: 'POST',
           headers: onzHeaders,
-          body: onzPayload,
+          body_raw: rawBody,  // single serialization — proxy sends this directly
         }),
       });
 
@@ -225,27 +211,61 @@ Deno.serve(async (req) => {
       return { proxyResponse, proxyData };
     };
 
-    // First attempt with cached token
-    let { proxyResponse, proxyData } = await callOnzQrc(false);
-    
+    // Attempt 1: WITHOUT payment object (dynamic QR already has amount embedded)
+    const payloadWithoutAmount = {
+      qrCode: qr_code,
+      description: descricao || 'Pagamento via QR Code',
+      paymentFlow: 'INSTANT',
+    };
+
+    console.log('[pix-pay-qrc] Attempt 1: without payment object');
+    let { proxyResponse, proxyData } = await callOnzQrc(false, payloadWithoutAmount);
+
     // Retry with fresh token on 401
-    const firstResult = proxyData.data || proxyData;
+    let firstResult = proxyData.data || proxyData;
     if (proxyResponse.status === 401 || firstResult?.type === 'onz-0018') {
-      console.log('[pix-pay-qrc] Token rejected by ONZ, retrying with fresh token...');
-      ({ proxyResponse, proxyData } = await callOnzQrc(true));
+      console.log('[pix-pay-qrc] Token rejected, retrying with fresh token...');
+      ({ proxyResponse, proxyData } = await callOnzQrc(true, payloadWithoutAmount));
+      firstResult = proxyData.data || proxyData;
     }
 
-    console.log('[pix-pay-qrc] ONZ response status:', proxyResponse.status, 'data:', JSON.stringify(proxyData));
+    console.log('[pix-pay-qrc] Attempt 1 response:', proxyResponse.status, JSON.stringify(proxyData));
+
+    // If attempt 1 failed with onz-0010 (Invalid QrCode), try WITH payment object
+    if (!proxyResponse.ok && (firstResult?.type === 'onz-0010' || firstResult?.title === 'Invalid QrCode')) {
+      console.log('[pix-pay-qrc] Attempt 2: with payment object, amount:', formattedAmount);
+      
+      const payloadWithAmount = {
+        qrCode: qr_code,
+        description: descricao || 'Pagamento via QR Code',
+        paymentFlow: 'INSTANT',
+        payment: {
+          currency: 'BRL',
+          amount: formattedAmount,
+        },
+      };
+
+      ({ proxyResponse, proxyData } = await callOnzQrc(false, payloadWithAmount));
+
+      // Retry with fresh token on 401
+      const secondResult = proxyData.data || proxyData;
+      if (proxyResponse.status === 401 || secondResult?.type === 'onz-0018') {
+        console.log('[pix-pay-qrc] Token rejected on attempt 2, retrying with fresh token...');
+        ({ proxyResponse, proxyData } = await callOnzQrc(true, payloadWithAmount));
+      }
+
+      console.log('[pix-pay-qrc] Attempt 2 response:', proxyResponse.status, JSON.stringify(proxyData));
+    }
 
     const onzResult = proxyData.data || proxyData;
 
-    // If ONZ rejects the QR Code format, fallback to pix-pay-dict using extracted key
+    // If ONZ still rejects, fallback to pix-pay-dict using extracted key
     if (!proxyResponse.ok && proxyResponse.status !== 202) {
       const isInvalidQr = onzResult?.type === 'onz-0010' || onzResult?.title === 'Invalid QrCode';
-      
+
       if (isInvalidQr && destKey) {
-        console.log('[pix-pay-qrc] ONZ rejected QR format, falling back to pix-pay-dict with key:', destKey);
-        
+        console.log('[pix-pay-qrc] ONZ rejected QR format after both attempts, falling back to pix-pay-dict with key:', destKey);
+
         const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
           method: 'POST',
           headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
@@ -261,7 +281,6 @@ Deno.serve(async (req) => {
           });
         }
 
-        // Update transaction to mark as QR code type
         if (dictResult.transaction_id) {
           const supabaseAdmin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
           await supabaseAdmin2.from('transactions').update({ pix_type: 'qrcode', pix_copia_cola: qr_code }).eq('id', dictResult.transaction_id);
