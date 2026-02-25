@@ -46,14 +46,26 @@ Deno.serve(async (req) => {
 
     const userId = claims.claims.sub as string;
     const body = await req.json();
-    const { company_id, qr_code, valor, descricao } = body;
+    const { company_id, qr_code: rawQrCode, valor, descricao } = body;
 
-    if (!company_id || !qr_code) {
+    if (!company_id || !rawQrCode) {
       return new Response(
         JSON.stringify({ error: 'company_id and qr_code are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Sanitizar QR Code - remover espaços, quebras de linha, caracteres invisíveis
+    const cleanQrCode = rawQrCode.trim().replace(/[\r\n\t\s]+/g, '');
+    console.log('[pix-pay-qrc] Original QR length:', rawQrCode.length, 'Clean QR length:', cleanQrCode.length);
+    console.log('[pix-pay-qrc] QR codes match:', rawQrCode === cleanQrCode);
+    if (rawQrCode !== cleanQrCode) {
+      console.log('[pix-pay-qrc] WARNING: QR code was modified during cleaning!');
+      console.log('[pix-pay-qrc] Original hex start:', Array.from(rawQrCode.slice(0, 20)).map((c: string) => c.charCodeAt(0).toString(16)).join(' '));
+    }
+
+    // Usar cleanQrCode em todo o fluxo
+    const qr_code = cleanQrCode;
 
     // Get Pix config for cash-out
     let config: any = null;
@@ -249,10 +261,11 @@ Deno.serve(async (req) => {
     accessToken = infoAccessToken;
 
     // Retry /qrc/info using payload_url when EMV is rejected
+    const cleanPayloadUrl = qrcInfo.payload_url?.trim().replace(/[\r\n\t\s]+/g, '') || null;
     const infoRejected = infoResult?.type === 'onz-0008' || infoResult?.type === 'onz-0010';
-    if ((!infoResponse.ok || infoRejected) && qrcInfo.payload_url && infoQrCode !== qrcInfo.payload_url) {
+    if ((!infoResponse.ok || infoRejected) && cleanPayloadUrl && infoQrCode !== cleanPayloadUrl) {
       console.log('[pix-pay-qrc] /qrc/info rejected EMV, retrying with payload_url');
-      infoQrCode = qrcInfo.payload_url;
+      infoQrCode = cleanPayloadUrl;
       ({
         proxyResponse: infoResponse,
         proxyData: infoData,
@@ -303,9 +316,9 @@ Deno.serve(async (req) => {
 
     // Retry payment with payload_url when ONZ rejects EMV as invalid QR
     const paymentInvalidQr = payResult?.type === 'onz-0010' || payResult?.title === 'Invalid QrCode';
-    if ((!payResponse.ok || payResponse.status >= 400) && paymentInvalidQr && qrcInfo.payload_url && paymentQrCode !== qrcInfo.payload_url) {
+    if ((!payResponse.ok || payResponse.status >= 400) && paymentInvalidQr && cleanPayloadUrl && paymentQrCode !== cleanPayloadUrl) {
       console.log('[pix-pay-qrc] /qrc rejected EMV, retrying payment with payload_url');
-      paymentQrCode = qrcInfo.payload_url;
+      paymentQrCode = cleanPayloadUrl;
       paymentPayload = {
         qrCode: paymentQrCode,
         description: descricao || 'Pagamento via QR Code',
