@@ -44,6 +44,7 @@ app.post('/proxy', async (req, res) => {
   }
 
   const { url, method = 'POST', headers = {}, body, body_raw } = req.body;
+  console.log(`[proxy] typeof body_raw: ${typeof body_raw}`);
 
   if (!url || !url.startsWith('https://')) {
     return res.status(400).json({ error: 'Valid HTTPS url is required' });
@@ -82,6 +83,23 @@ app.post('/proxy', async (req, res) => {
   try {
     // Support raw string body (e.g. form-urlencoded) or JSON object body
     const requestBody = body_raw ? body_raw : (body ? JSON.stringify(body) : undefined);
+
+    // === DIAGNOSTIC LOGS: compare body_raw vs requestBody ===
+    if (body_raw) {
+      try {
+        const parsed = JSON.parse(body_raw);
+        if (parsed.qrCode) {
+          console.log(`[proxy] qrCode length: ${parsed.qrCode.length}`);
+          console.log(`[proxy] qrCode has spaces: ${parsed.qrCode.includes(' ')}`);
+          console.log(`[proxy] qrCode first 80: ${parsed.qrCode.substring(0, 80)}`);
+          console.log(`[proxy] qrCode last 20: ${parsed.qrCode.substring(parsed.qrCode.length - 20)}`);
+        }
+      } catch(e) { /* not JSON */ }
+      console.log(`[proxy] requestBody === body_raw: ${requestBody === body_raw}`);
+      console.log(`[proxy] requestBody length: ${requestBody.length}`);
+      console.log(`[proxy] body_raw length: ${body_raw.length}`);
+    }
+    // === END DIAGNOSTIC LOGS ===
 
     const fetchOptions = {
       method,
