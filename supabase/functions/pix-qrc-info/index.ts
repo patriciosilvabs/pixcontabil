@@ -166,6 +166,11 @@ Deno.serve(async (req) => {
     const qrType = isDynamic ? 'dynamic' : 'static';
     console.log('[pix-qrc-info] Result - type:', qrType, 'amount:', amount, 'merchant:', merchantName);
 
+    // Build payload URL for dynamic QR codes (needed by some providers like ONZ)
+    const payloadUrl = isDynamic && pixUrl
+      ? (pixUrl.startsWith('http') ? pixUrl : `https://${pixUrl}`)
+      : null;
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -177,6 +182,7 @@ Deno.serve(async (req) => {
         pix_key: cobPayload?.chave || pixKey,
         txid: txid,
         end_to_end_id: null,
+        payload_url: payloadUrl,
         payload: cobPayload || emvTags,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
