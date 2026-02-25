@@ -35,16 +35,15 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    if (authError || !claims?.claims) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const userId = claims.claims.sub as string;
+    const userId = user.id;
     const body = await req.json();
     const { company_id, qr_code: rawQrCode, valor, descricao } = body;
 
@@ -55,8 +54,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Sanitizar QR Code - remover espaços, quebras de linha, caracteres invisíveis
-    const cleanQrCode = rawQrCode.trim().replace(/[\r\n\t\s]+/g, '');
+    // Sanitizar QR Code - remover TODOS os espaços, quebras de linha, caracteres invisíveis
+    // EMV nunca contém espaços legítimos na string copia-e-cola
+    const cleanQrCode = rawQrCode.trim().replace(/[\r\n\t\s]+/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '');
     console.log('[pix-pay-qrc] Original QR length:', rawQrCode.length, 'Clean QR length:', cleanQrCode.length);
     console.log('[pix-pay-qrc] QR codes match:', rawQrCode === cleanQrCode);
     if (rawQrCode !== cleanQrCode) {
@@ -261,7 +261,7 @@ Deno.serve(async (req) => {
     accessToken = infoAccessToken;
 
     // Retry /qrc/info using payload_url when EMV is rejected
-    const cleanPayloadUrl = qrcInfo.payload_url?.trim().replace(/[\r\n\t\s]+/g, '') || null;
+    const cleanPayloadUrl = qrcInfo.payload_url?.trim().replace(/[\r\n\t\s]+/g, '').replace(/[\u200B-\u200D\uFEFF\u00A0]/g, '') || null;
     const infoRejected = infoResult?.type === 'onz-0008' || infoResult?.type === 'onz-0010';
     if ((!infoResponse.ok || infoRejected) && cleanPayloadUrl && infoQrCode !== cleanPayloadUrl) {
       console.log('[pix-pay-qrc] /qrc/info rejected EMV, retrying with payload_url');
