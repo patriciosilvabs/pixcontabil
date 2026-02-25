@@ -98,7 +98,16 @@ Deno.serve(async (req) => {
     }
 
     const qrcInfo = await qrcInfoResponse.json();
-    const paymentAmount = valor || qrcInfo.amount || 0;
+    const qrType = qrcInfo.type;
+
+    const qrEmbeddedAmount = Number(qrcInfo.amount || 0);
+    const hasEmbeddedAmount = Number.isFinite(qrEmbeddedAmount) && qrEmbeddedAmount > 0;
+
+    // For dynamic QR with embedded amount, honor QR amount to avoid provider rejection (onz-0010)
+    const paymentAmount = (qrType === 'dynamic' && hasEmbeddedAmount)
+      ? qrEmbeddedAmount
+      : (valor || qrEmbeddedAmount || 0);
+
     const MAX_PAYMENT_VALUE = 1_000_000;
     if (paymentAmount <= 0 || paymentAmount > MAX_PAYMENT_VALUE) {
       return new Response(
@@ -106,7 +115,7 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
-    const qrType = qrcInfo.type;
+
     const destKey = qrcInfo.pix_key;
 
     // ===== STATIC QR CODE: delegate to pix-pay-dict =====
@@ -261,6 +270,17 @@ Deno.serve(async (req) => {
         return new Response(
           JSON.stringify({ ...dictResult, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      if (isInvalidQr && !destKey) {
+        return new Response(
+          JSON.stringify({
+            error: 'QR Code dinâmico inválido ou expirado',
+            details: onzResult,
+            hint: 'Não foi possível extrair chave Pix para fallback. Gere um novo QR Code na maquininha e tente novamente.'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
