@@ -231,8 +231,12 @@ Deno.serve(async (req) => {
 
     console.log('[pix-pay-qrc] Attempt 1 response:', proxyResponse.status, JSON.stringify(proxyData));
 
-    // If attempt 1 failed with onz-0010 (Invalid QrCode), try WITH payment object
-    if (!proxyResponse.ok && (firstResult?.type === 'onz-0010' || firstResult?.title === 'Invalid QrCode')) {
+    // If attempt 1 failed (onz-0010 Invalid QrCode OR onz-0002 missing payment), try WITH payment object
+    const needsPaymentRetry = !proxyResponse.ok && (
+      firstResult?.type === 'onz-0010' || firstResult?.title === 'Invalid QrCode' ||
+      firstResult?.type === 'onz-0002' || firstResult?.title === 'Invalid params'
+    );
+    if (needsPaymentRetry) {
       console.log('[pix-pay-qrc] Attempt 2: with payment object, amount:', formattedAmount);
       
       const payloadWithAmount = {
