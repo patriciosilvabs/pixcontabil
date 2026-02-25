@@ -1,66 +1,91 @@
 
 
-## Diagnóstico confirmado e plano de correção
+## Investigacao do Proxy mTLS - Passo a Passo
 
-### O que os logs mostram
+O codigo atual do proxy ja esta correto em teoria: ele recebe `body_raw` como string e encaminha diretamente sem re-serializar (linha 84 do `index.js`). Mas precisamos confirmar que isso esta acontecendo na pratica.
 
-Analisando os logs do `pix-pay-qrc`:
+### Diagnostico em 4 etapas
 
-1. **`/qrc/info` com EMV** → `onz-0008` ("O dado informado não é um Pix copia e cola válido")
-2. **`/qrc/info` com payload_url** → `onz-0008` (mesma rejeição)
-3. **`/qrc` pagamento com EMV** → `onz-0010` ("Invalid QrCode")
-4. **`/qrc` pagamento com payload_url** → `onz-0010` (mesma rejeição)
-5. **Fallback para DICT** → funciona, mas maquininha não dá baixa
+---
 
-### Sobre o double-encoding
+### Etapa 1: Adicionar logs de diagnostico no proxy
 
-O proxy **não** faz double-encoding — ele usa `body_raw` que é enviado como string pura. Porém, o QR code pode conter caracteres invisíveis vindos do scanner do app (newlines, tabs, espaços). Isso explicaria por que **ambas** as tentativas falham (EMV e URL).
+Editar o arquivo `index.js` do proxy (no Cloud Run/Railway) adicionando logs que comparem o `body_raw` recebido vs o que e enviado para a ONZ. Especificamente:
 
-### Correções propostas
-
-**Arquivo: `supabase/functions/pix-pay-qrc/index.ts`**
-
-#### 1. Limpeza do QR Code na entrada (antes de qualquer uso)
-
-Logo após receber `qr_code` do body, sanitizar:
-
-```typescript
-// Limpar QR Code - remover espaços, quebras de linha, caracteres invisíveis
-const cleanQrCode = qr_code.trim().replace(/[\r\n\t\s]+/g, '');
-
-// Log de diagnóstico
-console.log('[pix-pay-qrc] Original QR length:', qr_code.length, 'Clean QR length:', cleanQrCode.length);
-console.log('[pix-pay-qrc] QR codes match:', qr_code === cleanQrCode);
-if (qr_code !== cleanQrCode) {
-  console.log('[pix-pay-qrc] WARNING: QR code was modified during cleaning!');
-  console.log('[pix-pay-qrc] Original hex start:', Array.from(qr_code.slice(0, 10)).map(c => c.charCodeAt(0).toString(16)).join(' '));
+```javascript
+// Após linha 84, antes de fetchOptions:
+if (body_raw) {
+  // Extrair qrCode do body_raw para comparação
+  try {
+    const parsed = JSON.parse(body_raw);
+    if (parsed.qrCode) {
+      console.log(`[proxy] qrCode length: ${parsed.qrCode.length}`);
+      console.log(`[proxy] qrCode has spaces: ${parsed.qrCode.includes(' ')}`);
+      console.log(`[proxy] qrCode first 80: ${parsed.qrCode.substring(0, 80)}`);
+      console.log(`[proxy] qrCode last 20: ${parsed.qrCode.substring(parsed.qrCode.length - 20)}`);
+    }
+  } catch(e) { /* not JSON */ }
+  console.log(`[proxy] requestBody === body_raw: ${requestBody === body_raw}`);
+  console.log(`[proxy] requestBody length: ${requestBody.length}`);
+  console.log(`[proxy] body_raw length: ${body_raw.length}`);
 }
 ```
 
-#### 2. Usar `cleanQrCode` em todos os lugares
+Fazer deploy do proxy com essas alteracoes.
 
-- Na chamada local para `pix-qrc-info`
-- No payload para ONZ `/qrc/info`
-- No payload para ONZ `/qrc`
-- Na consulta de `payload_url` (também limpar)
+---
 
-#### 3. Também limpar a `payload_url` quando usada como fallback
+### Etapa 2: Fazer um pagamento de teste
 
-```typescript
-const cleanPayloadUrl = qrcInfo.payload_url?.trim().replace(/[\r\n\t\s]+/g, '') || null;
+1. Gerar um QR Code dinamico em uma maquininha (Mercado Pago, PagSeguro, etc.)
+2. Escanear com o app e confirmar o pagamento
+3. Aguardar o resultado (sucesso ou erro onz-0010)
+
+---
+
+### Etapa 3: Verificar os logs
+
+Acessar os logs do proxy (Cloud Run Console ou Railway Logs) e procurar por:
+
+1. **`qrCode has spaces: true`** — confirma que os espacos foram preservados ate o proxy
+2. **`requestBody === body_raw: true`** — confirma que o proxy nao alterou o body
+3. **`qrCode length`** — comparar com o length que aparece nos logs do `pix-pay-qrc` (no Lovable Cloud). Devem ser iguais
+
+Se `qrCode has spaces: false`, o problema esta antes do proxy (frontend ou edge function). Se `requestBody === body_raw: false`, o proxy esta alterando o body.
+
+---
+
+### Etapa 4: Verificar se e o Express JSON parser
+
+Ha um risco sutil: o Express middleware `express.json()` parseia o body inteiro do request (que contem `body_raw` como string dentro do JSON). Isso deveria preservar a string, mas podemos verificar adicionando um log extra:
+
+```javascript
+// Logo após a linha 46: const { url, method, headers, body, body_raw } = req.body;
+console.log(`[proxy] typeof body_raw: ${typeof body_raw}`);
 ```
 
-### Resumo das mudanças
+Se `typeof body_raw` for `string`, esta correto. Se for `object`, o Express parseou o JSON dentro do JSON (nao deveria acontecer, mas vale confirmar).
 
-| Local | Antes | Depois |
-|-------|-------|--------|
-| Entrada do `qr_code` | Usado cru do frontend | Sanitizado com `.trim()` e regex |
-| `payload_url` | Usado cru | Sanitizado |
-| Logs | Sem comparação | Log de tamanho original vs limpo |
-| Todos os payloads ONZ | `qr_code` | `cleanQrCode` |
+---
+
+### Secao Tecnica: Por que o proxy poderia corromper
+
+O fluxo atual e:
+1. Edge function serializa o payload com `JSON.stringify(payload)` → `rawBody`
+2. Edge function envia para o proxy como `body_raw: rawBody` dentro de outro JSON
+3. Express parseia o JSON externo → `req.body.body_raw` e uma string
+4. Proxy usa `body_raw` diretamente como `requestBody` (linha 84)
+5. `https.request.write(requestBody)` envia para a ONZ
+
+O ponto critico e a **linha 84**: `body_raw ? body_raw : (body ? JSON.stringify(body) : undefined)`. Se `body_raw` estiver presente, o body original e preservado. Se por algum motivo `body_raw` for `undefined` e `body` existir, o Express re-serializa o objeto (o que poderia reordenar campos mas nao deveria corromper strings).
 
 ### Resultado esperado
 
-- Se o scanner adiciona caracteres invisíveis → os logs vão mostrar diferença de tamanho → bug encontrado e corrigido
-- Se tamanhos são iguais → o problema está em outro lugar (formato EMV não suportado pela ONZ para QR codes PagSeguro) e os logs vão fornecer evidência para próxima investigação
+Depois de coletar os logs, compartilhe aqui:
+- O `qrCode length` do log do proxy
+- O `qrCode length` do log do pix-pay-qrc  
+- Se `requestBody === body_raw` e `true`
+- Se o erro onz-0010 ainda apareceu
+
+Com esses dados saberemos exatamente onde esta a corrupcao.
 
