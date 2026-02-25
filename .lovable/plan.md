@@ -1,116 +1,103 @@
 
 
-## Diagnóstico: Por que o onz-0010 persiste
+## Diagnóstico: Duas Causas Raiz Identificadas
 
-### Evidência dos logs
+Analisei a documentação oficial da ONZ que você colou junto com o código atual e os logs, e identifiquei **dois problemas críticos** que explicam por que o `onz-0010` persiste em todos os QR codes dinâmicos.
 
-O log confirma que o endpoint QRC da ONZ **sempre rejeita** nossos requests, e o pagamento cai no fallback dict (P2P):
+---
 
-```text
-[pix-pay-qrc] ONZ response status: 400 data: {"detail":"Invalid QrCode"...}
-[pix-pay-qrc] ONZ rejected QR format, falling back to pix-pay-dict with key: 17f4a620...
-[pix-pay-dict] Payment initiated: {"endToEndId":"E828423...","status":"PENDING"...}
+### Problema 1: Formato do x-idempotency-key inválido
+
+A documentação ONZ especifica:
+```
+x-idempotency-key required string [a-zA-Z0-9]{1,50}
 ```
 
-O pagamento "bem-sucedido" anterior nunca foi via QRC -- foi P2P via dict, que transfere o valor mas **não dá baixa na maquininha**.
+Isto significa: **apenas caracteres alfanuméricos, máximo 50 caracteres, sem hífens**.
 
-### Causa raiz identificada: dupla serialização JSON no proxy
-
-Nosso payload passa por **duas serializações JSON**:
-
-```text
-Edge Function (Deno):  JSON.stringify({body: onzPayload})  → envia ao proxy
-Proxy (Node.js):       express.json() parse → JSON.stringify(body) → envia à ONZ
+Nosso código gera:
+```
+cashout-550e8400-e29b-41d4-a716-446655440000
 ```
 
-Essa ida-e-volta (parse → re-stringify) pode alterar sutilmente o payload:
-- **Ordem de campos JSON** pode mudar entre V8 Deno e V8 Node.js
-- **Precisão numérica**: `2.5` vs `2.50` — o COBV retorna `"2.50"` (string), mas `parseFloat("2.50")` = `2.5`, e `JSON.stringify(2.5)` = `"2.5"` (sem trailing zero)
-- **Caracteres especiais** no QR code podem ser re-escaped diferentemente
+Isso viola a regra por conter **hífens** (`-`). A ONZ pode estar rejeitando a requisição inteira por cabeçalho inválido, mas retornando um erro genérico `onz-0010`.
 
-O cURL funcional da ONZ envia o JSON **diretamente** sem intermediário.
+Curiosamente, a função `pix-pay-dict` usa `generateIdEnvio()` que gera corretamente 35 caracteres alfanuméricos — e funciona.
 
-### Plano de correção
+### Problema 2: Não estamos usando o endpoint de consulta QRC da própria ONZ
+
+A documentação ONZ mostra um endpoint dedicado:
+```
+POST /pix/payments/qrc/info
+Body: { "qrCode": "string" }
+Header: x-idempotency-key (obrigatório)
+```
+
+Este endpoint retorna dados validados pela ONZ, incluindo um **`endToEndId`** e **`statusCode`**. Atualmente decodificamos o QR localmente na `pix-qrc-info`, mas a ONZ pode exigir que o QR seja primeiro **consultado/registrado** pelo seu próprio sistema antes de poder ser pago via `/pix/payments/qrc`.
+
+---
+
+### Plano de Correção
+
+#### 1. Corrigir formato do x-idempotency-key (ambas as funções)
 
 **Arquivo: `supabase/functions/pix-pay-qrc/index.ts`**
 
-#### 1. Usar `body_raw` no proxy (eliminar dupla serialização)
-
-Em vez de enviar `body: onzPayload` (objeto que o proxy re-serializa), enviar `body_raw: JSON.stringify(onzPayload)` (string pré-serializada que o proxy envia direto):
-
-```typescript
-// ANTES (dupla serialização):
-body: JSON.stringify({
-  url: qrcPaymentUrl,
-  method: 'POST',
-  headers: onzHeaders,
-  body: onzPayload,        // objeto → proxy faz JSON.stringify(body) novamente
-})
-
-// DEPOIS (serialização única):
-body: JSON.stringify({
-  url: qrcPaymentUrl,
-  method: 'POST',
-  headers: onzHeaders,
-  body_raw: JSON.stringify(onzPayload),  // string → proxy usa direto
-})
-```
-
-O proxy já suporta isso (linha 67 do `docs/onz-proxy/index.js`):
-```javascript
-const requestBody = body_raw ? body_raw : (body ? JSON.stringify(body) : undefined);
-```
-
-#### 2. Formatar amount com 2 casas decimais
-
-Garantir que o valor no JSON tenha 2 casas decimais, compatível com o formato que a ONZ espera:
-
-```typescript
-const formattedAmount = Number(paymentAmount.toFixed(2));
-```
-
-#### 3. Formato do idempotency key compatível com ONZ
-
-O cURL funcional usa `cashout-{uuid}`. Nosso código gera 35 chars aleatórios. Alterar para usar o mesmo padrão:
-
+Substituir:
 ```typescript
 const idempotencyKey = `cashout-${crypto.randomUUID()}`;
 ```
-
-#### 4. Tentar sem o objeto `payment` para QR dinâmicos
-
-Para QR codes dinâmicos, o valor já está embutido no QR. Tentar enviar SEM o campo `payment` primeiro. Se a ONZ rejeitar, enviar com `payment` como retry:
-
+Por:
 ```typescript
-// Tentativa 1: sem payment (QR dinâmico já tem valor embutido)
-const onzPayloadNoAmount = {
-  qrCode: qr_code,
-  description: 'Pagamento via QR Code',
-  paymentFlow: 'INSTANT',
-};
-
-// Tentativa 2 (se falhar): com payment
-const onzPayloadWithAmount = {
-  ...onzPayloadNoAmount,
-  payment: { currency: 'BRL', amount: formattedAmount },
-};
+// ONZ requires [a-zA-Z0-9]{1,50} — no hyphens
+function generateIdempotencyKey(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 35; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+const idempotencyKey = generateIdempotencyKey();
 ```
 
-#### 5. Logging detalhado do raw body
+Fazer o mesmo para a `idempotencyKey2` no retry.
 
-Logar o JSON exato que será enviado ao proxy para diagnóstico:
+#### 2. Usar endpoint ONZ `/pix/payments/qrc/info` antes de pagar
+
+**Arquivo: `supabase/functions/pix-pay-qrc/index.ts`**
+
+Antes de chamar `/pix/payments/qrc`, chamar `/pix/payments/qrc/info` via proxy para:
+- Validar o QR code no sistema ONZ
+- Obter o `endToEndId` retornado pela ONZ
+- Confirmar que o QR é válido e ativo (`statusCode: 200`)
 
 ```typescript
-const rawBody = JSON.stringify(onzPayload);
-console.log('[pix-pay-qrc] Raw body to proxy (first 300):', rawBody.substring(0, 300));
+// Step 1: Consult QR via ONZ's own endpoint
+const qrcInfoUrl = `${baseUrl}/pix/payments/qrc/info`;
+const infoPayload = { qrCode: qr_code };
+const infoIdempotencyKey = generateIdempotencyKey();
+
+// Call ONZ /pix/payments/qrc/info via proxy
+const infoResult = await callOnzEndpoint(qrcInfoUrl, infoPayload, infoIdempotencyKey);
+
+// Step 2: Use returned data for payment
+// The payment may need the endToEndId from the info response
 ```
 
-### Resumo das mudanças
+#### 3. Simplificar a estratégia de retry
+
+Com a consulta prévia via ONZ e o idempotency key correto, a lógica de tentativas fica mais simples:
+- **Única tentativa** com o EMV string original + `payment` object (obrigatório pela doc)
+- Se falhar com `onz-0010`, fallback para `pix-pay-dict` com a chave extraída
+
+---
+
+### Resumo das Mudanças
 
 | Aspecto | Antes | Depois |
 |---------|-------|--------|
-| Serialização | Dupla (Deno → Node.js) | Única via `body_raw` |
-| Amount | `2.5` | `2.50` (2 casas) |
-| Idempotency key | 35 chars aleatórios | `cashout-{uuid}` |
-| Payment object | Sempre enviado | Primeiro sem, depois com (retry) |
+| Idempotency key | `cashout-{uuid}` (com hífens) | 35 chars alfanuméricos (sem hífens) |
+| Consulta QR | Decodificação local apenas | Consulta via ONZ `/qrc/info` + local |
+| Tentativas de pagamento | 2 (EMV + URL) | 1 (EMV + payment) após consulta ONZ |
 
