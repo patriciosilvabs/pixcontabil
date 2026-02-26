@@ -4,7 +4,6 @@ import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
 import { PixCopyPasteDrawer } from "@/components/pix/PixCopyPasteDrawer";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
-import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -27,6 +26,7 @@ interface MobileDashboardProps {
   recentTransactions?: RecentTransaction[];
   dataLoading?: boolean;
   canViewBalance?: boolean;
+  onOpenBarcodeScanner?: () => void;
 }
 
 const quickActions = [
@@ -42,14 +42,11 @@ const quickActions = [
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
 
-export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading, canViewBalance = true }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading, canViewBalance = true, onOpenBarcodeScanner }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
   const [qrPaymentOpen, setQrPaymentOpen] = useState(false);
-  const [barcodeScannerOpen, setBarcodeScannerOpen] = useState(false);
-  const [scannedBarcode, setScannedBarcode] = useState("");
-  const [boletoPaymentOpen, setBoletoPaymentOpen] = useState(false);
   const [copyPasteOpen, setCopyPasteOpen] = useState(false);
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
@@ -82,11 +79,6 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
     setQrPaymentOpen(true);
   };
 
-  const handleBarcodeScan = (result: string) => {
-    setBarcodeScannerOpen(false);
-    setScannedBarcode(result);
-    setBoletoPaymentOpen(true);
-  };
 
   return (
     <div className="px-4 pt-4 pb-24 space-y-6">
@@ -135,7 +127,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                   onClick={() => {
                     if (isPixKey) setPixKeyOpen(true);
                     else if (isQrCode) acquireStreamAndOpen(setQrScannerOpen);
-                    else if (isBoleto) acquireStreamAndOpen(setBarcodeScannerOpen);
+                    else if (isBoleto) onOpenBarcodeScanner?.();
                     else if (isCopyPaste) setCopyPasteOpen(true);
                   }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
@@ -180,18 +172,6 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         open={qrPaymentOpen}
         qrCode={scannedQrCode}
         onOpenChange={setQrPaymentOpen}
-      />
-      <BarcodeScanner
-        mode="barcode"
-        isOpen={barcodeScannerOpen}
-        onScan={handleBarcodeScan}
-        onClose={() => setBarcodeScannerOpen(false)}
-        preAcquiredStream={preAcquiredStreamRef.current}
-      />
-      <BoletoPaymentDrawer
-        open={boletoPaymentOpen}
-        barcode={scannedBarcode}
-        onOpenChange={setBoletoPaymentOpen}
       />
       <PixCopyPasteDrawer
         open={copyPasteOpen}
