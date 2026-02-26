@@ -1,11 +1,14 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
-import { ImageOff, Eye } from "lucide-react";
-import { batchSignedUrls } from "@/utils/storageHelpers";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ImageOff, Eye, Pencil, Trash2, Loader2 } from "lucide-react";
+import { batchSignedUrls, extractStoragePath } from "@/utils/storageHelpers";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 interface Transaction {
   id: string;
@@ -15,8 +18,9 @@ interface Transaction {
   beneficiary_name?: string | null;
   amount: number;
   status: string;
+  company_id?: string;
   categories?: { name: string; classification: string } | null;
-  receipts?: { file_url: string; file_name?: string | null }[] | null;
+  receipts?: { id?: string; file_url: string; file_name?: string | null }[] | null;
 }
 
 interface DayGroup {
@@ -29,6 +33,8 @@ interface DayGroup {
 interface Props {
   transactions: Transaction[];
   profileMap?: Record<string, string>;
+  isAdmin?: boolean;
+  onReceiptChange?: () => void;
 }
 
 const formatCurrency = (v: number) =>
@@ -41,9 +47,12 @@ const statusMap: Record<string, { label: string; className: string }> = {
   pending: { label: "Pendente", className: "text-muted-foreground" },
 };
 
-export function DailyTransactionSummary({ transactions, profileMap = {} }: Props) {
+export function DailyTransactionSummary({ transactions, profileMap = {}, isAdmin = false, onReceiptChange }: Props) {
   const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [pendingReplace, setPendingReplace] = useState<{ transactionId: string; companyId: string; receiptId: string; oldFileUrl: string } | null>(null);
 
   // Group transactions by day
   const dayGroups = useMemo<DayGroup[]>(() => {
@@ -72,6 +81,68 @@ export function DailyTransactionSummary({ transactions, profileMap = {} }: Props
     batchSignedUrls(urls).then(setSignedUrls);
   }, [transactions]);
 
+  const handleDeleteReceipt = async (receiptId: string, fileUrl: string) => {
+    setBusyId(receiptId);
+    try {
+      const path = extractStoragePath(fileUrl);
+      await supabase.storage.from("receipts").remove([path]);
+      const { error } = await supabase.from("receipts").delete().eq("id", receiptId);
+      if (error) throw error;
+      toast.success("Comprovante excluído");
+      onReceiptChange?.();
+    } catch (e: any) {
+      toast.error("Erro ao excluir: " + (e.message || "erro desconhecido"));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleReplaceClick = (t: Transaction) => {
+    const receipt = t.receipts?.[0];
+    if (!receipt?.id) return;
+    setPendingReplace({
+      transactionId: t.id,
+      companyId: t.company_id || "",
+      receiptId: receipt.id,
+      oldFileUrl: receipt.file_url,
+    });
+    fileInputRef.current?.click();
+  };
+
+  const handleFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !pendingReplace) {
+      setPendingReplace(null);
+      return;
+    }
+    const { transactionId, companyId, receiptId, oldFileUrl } = pendingReplace;
+    setBusyId(receiptId);
+    try {
+      const newPath = `${companyId}/${transactionId}/${Date.now()}_${file.name}`;
+      const { error: uploadErr } = await supabase.storage.from("receipts").upload(newPath, file);
+      if (uploadErr) throw uploadErr;
+
+      const { error: updateErr } = await supabase
+        .from("receipts")
+        .update({ file_url: newPath, file_name: file.name, file_type: file.type })
+        .eq("id", receiptId);
+      if (updateErr) throw updateErr;
+
+      // Remove old file
+      const oldPath = extractStoragePath(oldFileUrl);
+      await supabase.storage.from("receipts").remove([oldPath]);
+
+      toast.success("Comprovante substituído");
+      onReceiptChange?.();
+    } catch (e: any) {
+      toast.error("Erro ao substituir: " + (e.message || "erro desconhecido"));
+    } finally {
+      setBusyId(null);
+      setPendingReplace(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   if (dayGroups.length === 0) {
     return (
       <Card>
@@ -83,12 +154,21 @@ export function DailyTransactionSummary({ transactions, profileMap = {} }: Props
     );
   }
 
-  const defaultOpen = dayGroups.length === 1 ? [dayGroups[0].dateKey] : [dayGroups[0].dateKey];
+  const defaultOpen = [dayGroups[0].dateKey];
 
   return (
     <Card>
       <CardHeader><CardTitle className="text-base">Resumo por Dia ({transactions.length} transações)</CardTitle></CardHeader>
       <CardContent className="p-2 sm:p-6">
+        {/* Hidden file input for replace */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleFileSelected}
+        />
+
         <Dialog open={!!previewUrl} onOpenChange={(open) => !open && setPreviewUrl(null)}>
           <Accordion type="multiple" defaultValue={defaultOpen} className="space-y-2">
             {dayGroups.map((day) => (
@@ -104,37 +184,84 @@ export function DailyTransactionSummary({ transactions, profileMap = {} }: Props
                 <AccordionContent>
                   <div className="space-y-2">
                     {day.transactions.map((t) => {
-                      const receiptFileUrl = t.receipts?.[0]?.file_url || "";
+                      const receipt = t.receipts?.[0];
+                      const receiptFileUrl = receipt?.file_url || "";
+                      const receiptId = receipt?.id || "";
                       const signed = receiptFileUrl ? signedUrls[receiptFileUrl] : "";
                       const st = statusMap[t.status] || statusMap.pending;
+                      const isBusy = busyId === receiptId;
 
                       return (
                         <div
                           key={t.id}
                           className="flex items-center gap-3 p-2 rounded-md hover:bg-muted/50 transition-colors"
                         >
-                          {/* Thumbnail */}
-                          {signed ? (
-                            <DialogTrigger asChild>
-                              <button
-                                onClick={() => setPreviewUrl(signed)}
-                                className="relative shrink-0 w-14 h-14 rounded-md overflow-hidden border bg-muted cursor-pointer group"
-                              >
-                                <img
-                                  src={signed}
-                                  alt="Comprovante"
-                                  className="w-full h-full object-cover"
-                                />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <Eye className="h-4 w-4 text-white" />
-                                </div>
-                              </button>
-                            </DialogTrigger>
-                          ) : (
-                            <div className="shrink-0 w-14 h-14 rounded-md border bg-muted flex items-center justify-center">
-                              <ImageOff className="h-5 w-5 text-muted-foreground" />
-                            </div>
-                          )}
+                          {/* Thumbnail + Admin actions */}
+                          <div className="relative shrink-0">
+                            {signed ? (
+                              <DialogTrigger asChild>
+                                <button
+                                  onClick={() => setPreviewUrl(signed)}
+                                  className="relative w-14 h-14 rounded-md overflow-hidden border bg-muted cursor-pointer group"
+                                >
+                                  <img src={signed} alt="Comprovante" className="w-full h-full object-cover" />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <Eye className="h-4 w-4 text-white" />
+                                  </div>
+                                </button>
+                              </DialogTrigger>
+                            ) : (
+                              <div className="w-14 h-14 rounded-md border bg-muted flex items-center justify-center">
+                                <ImageOff className="h-5 w-5 text-muted-foreground" />
+                              </div>
+                            )}
+
+                            {/* Admin receipt actions */}
+                            {isAdmin && receiptId && (
+                              <div className="flex gap-1 mt-1 justify-center">
+                                {isBusy ? (
+                                  <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                                ) : (
+                                  <>
+                                    <button
+                                      onClick={() => handleReplaceClick(t)}
+                                      title="Trocar comprovante"
+                                      className="p-0.5 rounded hover:bg-muted transition-colors"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5 text-muted-foreground hover:text-primary" />
+                                    </button>
+                                    <AlertDialog>
+                                      <AlertDialogTrigger asChild>
+                                        <button
+                                          title="Excluir comprovante"
+                                          className="p-0.5 rounded hover:bg-muted transition-colors"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                                        </button>
+                                      </AlertDialogTrigger>
+                                      <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                          <AlertDialogTitle>Excluir comprovante?</AlertDialogTitle>
+                                          <AlertDialogDescription>
+                                            Esta ação não pode ser desfeita. O arquivo do comprovante será removido permanentemente.
+                                          </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                          <AlertDialogAction
+                                            onClick={() => handleDeleteReceipt(receiptId, receiptFileUrl)}
+                                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          >
+                                            Excluir
+                                          </AlertDialogAction>
+                                        </AlertDialogFooter>
+                                      </AlertDialogContent>
+                                    </AlertDialog>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
 
                           {/* Info */}
                           <div className="flex-1 min-w-0">

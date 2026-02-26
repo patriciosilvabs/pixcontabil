@@ -20,7 +20,7 @@ type ClassificationFilter = "all" | "cost" | "expense";
 const COLORS = ["hsl(270, 91%, 55%)", "hsl(158, 64%, 52%)", "hsl(43, 96%, 56%)", "hsl(0, 84%, 60%)", "hsl(200, 70%, 50%)"];
 
 export default function Reports() {
-  const { currentCompany } = useAuth();
+  const { currentCompany, isAdmin } = useAuth();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -39,30 +39,31 @@ export default function Reports() {
 
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
 
-  useEffect(() => {
+  const fetchData = async () => {
     if (!currentCompany) return;
-    const fetchData = async () => {
-      setIsLoading(true);
-      const [txRes, catRes, profileRes] = await Promise.all([
-        supabase
-          .from("transactions")
-          .select("*, categories(name, classification), receipts(file_url, file_name)")
-          .eq("company_id", currentCompany.id)
-          .gte("created_at", dateRange.start.toISOString())
-          .lte("created_at", dateRange.end.toISOString())
-          .order("created_at", { ascending: false }),
-        supabase.from("categories").select("*").eq("company_id", currentCompany.id),
-        supabase.from("profiles").select("user_id, full_name"),
-      ]);
-      if (txRes.data) setTransactions(txRes.data);
-      if (catRes.data) setCategories(catRes.data);
-      if (profileRes.data) {
-        const map: Record<string, string> = {};
-        profileRes.data.forEach((p: any) => { map[p.user_id] = p.full_name; });
-        setProfileMap(map);
-      }
-      setIsLoading(false);
-    };
+    setIsLoading(true);
+    const [txRes, catRes, profileRes] = await Promise.all([
+      supabase
+        .from("transactions")
+        .select("*, categories(name, classification), receipts(id, file_url, file_name)")
+        .eq("company_id", currentCompany.id)
+        .gte("created_at", dateRange.start.toISOString())
+        .lte("created_at", dateRange.end.toISOString())
+        .order("created_at", { ascending: false }),
+      supabase.from("categories").select("*").eq("company_id", currentCompany.id),
+      supabase.from("profiles").select("user_id, full_name"),
+    ]);
+    if (txRes.data) setTransactions(txRes.data);
+    if (catRes.data) setCategories(catRes.data);
+    if (profileRes.data) {
+      const map: Record<string, string> = {};
+      profileRes.data.forEach((p: any) => { map[p.user_id] = p.full_name; });
+      setProfileMap(map);
+    }
+    setIsLoading(false);
+  };
+
+  useEffect(() => {
     fetchData();
   }, [currentCompany, dateRange]);
 
@@ -239,7 +240,7 @@ export default function Reports() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
-            <DailyTransactionSummary transactions={filteredTransactions} profileMap={profileMap} />
+            <DailyTransactionSummary transactions={filteredTransactions} profileMap={profileMap} isAdmin={isAdmin} onReceiptChange={fetchData} />
           </>
         )}
       </div>
