@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileDashboard } from "@/components/dashboard/MobileDashboard";
 import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePixBalance } from "@/hooks/usePixBalance";
+import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
+import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import {
   Send,
   History,
@@ -29,23 +31,50 @@ export function OperatorDashboard() {
   const { summary, recentTransactions, isLoading: dataLoading } = useDashboardData();
   const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = usePixBalance();
 
-  if (isMobile) {
-    return (
-      <MobileDashboard
-        balanceVisible={balanceVisible}
-        onToggleBalance={() => setBalanceVisible((v) => !v)}
-        balance={balance}
-        balanceLoading={balanceLoading}
-        balanceAvailable={balanceAvailable}
-        provider={provider}
-        recentTransactions={recentTransactions}
-        dataLoading={dataLoading}
-        canViewBalance={canViewBalance}
-      />
-    );
-  }
+  const [barcodeScannerOpen, setBarcodeScannerOpen] = React.useState(false);
+  const [scannedBarcode, setScannedBarcode] = React.useState("");
+  const [boletoPaymentOpen, setBoletoPaymentOpen] = React.useState(false);
+  const preAcquiredStreamRef = useRef<MediaStream | null>(null);
 
-  return (
+  const acquireStreamAndOpenBarcode = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
+      preAcquiredStreamRef.current = stream;
+      setBarcodeScannerOpen(true);
+    } catch (err: any) {
+      console.error("[OperatorDashboard] getUserMedia failed:", err);
+      if (err?.name === "NotAllowedError") {
+        alert("Permissão da câmera negada. Habilite nas configurações do navegador.");
+      } else if (err?.name === "NotFoundError") {
+        alert("Nenhuma câmera encontrada no dispositivo.");
+      } else {
+        alert("Erro ao acessar a câmera. Tente novamente.");
+      }
+    }
+  };
+
+  const handleBarcodeScan = (result: string) => {
+    setBarcodeScannerOpen(false);
+    setScannedBarcode(result);
+    setBoletoPaymentOpen(true);
+  };
+
+  const content = isMobile ? (
+    <MobileDashboard
+      balanceVisible={balanceVisible}
+      onToggleBalance={() => setBalanceVisible((v) => !v)}
+      balance={balance}
+      balanceLoading={balanceLoading}
+      balanceAvailable={balanceAvailable}
+      provider={provider}
+      recentTransactions={recentTransactions}
+      dataLoading={dataLoading}
+      canViewBalance={canViewBalance}
+      onOpenBarcodeScanner={acquireStreamAndOpenBarcode}
+    />
+  ) : (
     <div className="p-6 lg:p-8 space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4">
@@ -250,5 +279,23 @@ export function OperatorDashboard() {
         </CardContent>
       </Card>
     </div>
+  );
+
+  return (
+    <>
+      {content}
+      <BarcodeScanner
+        mode="barcode"
+        isOpen={barcodeScannerOpen}
+        onScan={handleBarcodeScan}
+        onClose={() => setBarcodeScannerOpen(false)}
+        preAcquiredStream={preAcquiredStreamRef.current}
+      />
+      <BoletoPaymentDrawer
+        open={boletoPaymentOpen}
+        barcode={scannedBarcode}
+        onOpenChange={setBoletoPaymentOpen}
+      />
+    </>
   );
 }
