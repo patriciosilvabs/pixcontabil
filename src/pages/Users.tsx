@@ -337,7 +337,7 @@ export default function Users() {
   return (
     <MainLayout>
       <div className="p-6 lg:p-8 max-w-5xl mx-auto">
-        <div className="mb-6 flex items-center justify-between">
+        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <UsersIcon className="h-6 w-6 text-primary" /> Usuários
@@ -356,6 +356,7 @@ export default function Users() {
             ) : members.length === 0 ? (
               <div className="text-center text-muted-foreground p-8">Nenhum membro encontrado</div>
             ) : (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -417,6 +418,7 @@ export default function Users() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>

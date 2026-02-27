@@ -209,9 +209,9 @@ export default function Reports() {
             </div>
 
             {/* Filter Bar + Daily Summary */}
-            <div className="flex flex-wrap items-center gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 mb-4">
               <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
-                <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="today">Hoje</SelectItem>
                   <SelectItem value="week">Esta Semana</SelectItem>
@@ -220,7 +220,7 @@ export default function Reports() {
                 </SelectContent>
               </Select>
               <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
-                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="cost">Custos</SelectItem>

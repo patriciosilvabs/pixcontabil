@@ -272,7 +272,7 @@ function ProviderConfigForm({
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Provedor</Label>
               <Select value={config.provider} onValueChange={handleProviderChange}>
@@ -316,7 +316,7 @@ function ProviderConfigForm({
             <CardDescription>{providerConfig.credentialsDescription}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className={`grid gap-4 ${providerConfig.showClientSecret ? 'md:grid-cols-2' : 'md:grid-cols-1'}`}>
+            <div className={`grid gap-4 ${providerConfig.showClientSecret ? 'sm:grid-cols-2' : 'sm:grid-cols-1'}`}>
               <div className="space-y-2">
                 <Label>{providerConfig.clientIdLabel}</Label>
                 <Input value={config.client_id} onChange={(e) => setConfig({ ...config, client_id: e.target.value })} placeholder={providerConfig.clientIdPlaceholder} />
@@ -391,7 +391,7 @@ function ProviderConfigForm({
           <CardDescription>Chave Pix associada a este provedor</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label>Tipo de Chave</Label>
               <Select value={config.pix_key_type} onValueChange={(v) => setConfig({ ...config, pix_key_type: v as any })}>
