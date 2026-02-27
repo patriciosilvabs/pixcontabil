@@ -1,85 +1,53 @@
 
 
-## Auditoria de Responsividade - Problemas Encontrados
+## Problema Identificado
 
-Analisei todas as páginas e componentes do sistema. O Dashboard mobile, a Auth page, o MobileMenu e o BottomTabBar estão bem implementados. Porém, encontrei problemas significativos em **5 áreas**:
+Na screenshot, o drawer de confirmação de pagamento corta os textos no lado direito: nome do recebedor, chave Pix e valor ficam truncados. Isso ocorre em **todos os drawers de pagamento** que usam o padrão `flex justify-between` com `max-w-[60%] truncate` nos valores.
 
----
+## Arquivos Afetados
 
-### 1. Categorias (`src/pages/Categories.tsx`) - CRÍTICO
+### 1. `PixQrPaymentDrawer.tsx` (Step 3 - Confirmação, linhas 195-213)
+- Recebedor: `max-w-[60%] truncate` corta nomes longos
+- Chave Pix: `max-w-[60%] truncate` corta UUIDs
+- Mudar layout de horizontal para **empilhado (label em cima, valor embaixo)** com `break-all` para chaves longas
 
-**Problema**: Tabela com 5 colunas (Nome, Classificação, Keywords, Status, Ações) é cortada no mobile. Colunas "Keywords", "Status" e "Ações" ficam fora da tela.
+### 2. `PixCopyPasteDrawer.tsx` (Step 4 - Confirmação, linhas 260-279)
+- Mesmo padrão idêntico ao QrPaymentDrawer
+- Aplicar a mesma correção
 
-**Problema 2**: Header com botões "Importar em Lote" e "Nova Categoria" lado a lado com o título fica apertado.
+### 3. `PixKeyDialog.tsx` (Step 3 - Confirmação, linhas 188-196)
+- Chave Pix com `max-w-[60%] truncate`
+- Aplicar a mesma correção
 
-**Solução**: 
-- Envolver a tabela em um `overflow-x-auto` container
-- Alternativamente, no mobile usar layout de cards empilhados em vez de tabela
-- Header: empilhar título e botões verticalmente no mobile (`flex-col sm:flex-row`)
+### 4. `BoletoPaymentDrawer.tsx` (Step 2 - Confirmação, linhas ~130-155)
+- Código do boleto com `truncate ml-2 max-w-[60%]`
+- Aplicar a mesma correção
 
----
+## Solução
 
-### 2. Usuários (`src/pages/Users.tsx`) - CRÍTICO
+Trocar o layout das linhas de detalhes de:
+```
+<div class="flex justify-between items-center">
+  <span>LABEL</span>
+  <span class="truncate max-w-[60%]">VALOR LONGO...</span>
+</div>
+```
 
-**Problema**: Mesma situação da tabela de categorias - 5 colunas (Usuário, Role, Limite, Status, Ações) sendo cortadas. Os botões "Editar", "Desativar" e "Excluir" na coluna Ações ficam inacessíveis.
+Para:
+```
+<div>
+  <p class="text-xs uppercase text-muted-foreground">LABEL</p>
+  <p class="text-sm font-medium break-all">VALOR COMPLETO SEM CORTAR</p>
+</div>
+```
 
-**Solução**: 
-- Envolver a tabela em `overflow-x-auto`
-- Ou converter para cards no mobile
+Isso garante que valores longos (nomes, UUIDs, códigos de boleto) apareçam completos, quebrando linha se necessário em vez de truncar.
 
----
+### 5. Dashboard `MobileDashboard.tsx` - Transações Recentes (linhas 220-243)
+- Verificar se textos de beneficiário e valores não estão sendo cortados na borda direita
+- Já usa `truncate` no nome e `shrink-0` nos valores — funciona corretamente, sem alteração necessária
 
-### 3. Relatórios (`src/pages/Reports.tsx`) - MODERADO
-
-**Problema**: A barra de filtros (Período + Classificação + Exportar) usa `flex-wrap` mas os `SelectTrigger` têm largura fixa (`w-[160px]` e `w-[150px]`), que em telas estreitas pode não se adaptar bem. Os gráficos de barra podem ter labels de categorias cortados.
-
-**Solução**: 
-- Fazer os selects full-width no mobile (`w-full sm:w-[160px]`)
-- Adicionar `flex-col sm:flex-row` ao container de filtros
-
----
-
-### 4. Integração Pix (`src/pages/settings/PixIntegration.tsx`) - MODERADO
-
-**Problema**: A página tem tabs "Entrada", "Saída", "Ambos" e formulários densos. No mobile funciona razoavelmente pelo `max-w-4xl mx-auto`, mas os `grid md:grid-cols-2` fazem campos ficarem muito comprimidos entre 500-768px (tablet portrait).
-
-**Solução**: Ajustar breakpoint dos grids para `sm:grid-cols-2` para tablets menores.
-
----
-
-### 5. Categorias e Users - Header Actions
-
-**Problema comum**: Nas duas páginas, o header usa `flex items-center justify-between` sem quebra responsiva. Os botões de ação colidem com o título em telas menores.
-
-**Solução**: Usar `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`.
-
----
-
-### Plano de Implementação
-
-**Arquivo 1: `src/pages/Categories.tsx`**
-- Linha 137-148: Tornar header responsivo com `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`
-- Botões: empilhar em coluna no mobile com `flex-col sm:flex-row`
-- Linha 160: Adicionar `overflow-x-auto` ao container da tabela
-
-**Arquivo 2: `src/pages/Users.tsx`**
-- Linha 340-350: Tornar header responsivo com `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`
-- Linha 353: Adicionar `overflow-x-auto` ao container da tabela
-
-**Arquivo 3: `src/pages/Reports.tsx`**
-- Linha 212: Mudar container de filtros para `flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3`
-- Selects: mudar de largura fixa para `w-full sm:w-[160px]`
-
-**Arquivo 4: `src/pages/settings/PixIntegration.tsx`**
-- Verificar grids de formulário e ajustar breakpoints se necessário
-
-### Páginas que estão OK
-- Dashboard (mobile/desktop com layout dedicado)
-- Auth (split layout `lg:` com logo mobile)
-- Transactions (já usa `flex-col sm:flex-row`)
-- Companies (usa grid responsivo `md:grid-cols-2 lg:grid-cols-3`)
-- Settings (usa grids `md:grid-cols-2`)
-- MobileMenu, BottomTabBar, MobileHeader
-- NewPayment (max-w-2xl com tabs responsivas)
-- ReceiptCapture (max-w-2xl, grid `sm:grid-cols-2`)
-
+## Resumo das Alterações
+- **4 arquivos** de drawers de pagamento
+- Trocar layout horizontal truncado por layout empilhado com `break-all`
+- Manter o valor (R$) destacado e visível por completo
