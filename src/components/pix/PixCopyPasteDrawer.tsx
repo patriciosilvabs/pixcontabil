@@ -257,25 +257,25 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
               <div className="rounded-xl bg-secondary p-4 space-y-3">
                 {merchantName && (
                   <>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Recebedor</span>
-                      <span className="text-sm font-medium truncate ml-2 max-w-[60%] text-right">{merchantName}</span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Recebedor</p>
+                      <p className="text-sm font-medium break-words mt-1">{merchantName}</p>
                     </div>
                     <div className="h-px bg-border" />
                   </>
                 )}
                 {pixKey && (
                   <>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chave Pix</span>
-                      <span className="text-sm font-medium truncate ml-2 max-w-[60%] text-right">{pixKey}</span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chave Pix</p>
+                      <p className="text-sm font-medium break-all mt-1">{pixKey}</p>
                     </div>
                     <div className="h-px bg-border" />
                   </>
                 )}
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</span>
-                  <span className="text-lg font-bold text-primary">{formattedAmount()}</span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</p>
+                  <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
                 </div>
               </div>
 
