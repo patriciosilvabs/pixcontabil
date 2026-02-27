@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2 } from "lucide-react";
+import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2, KeyRound } from "lucide-react";
 
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
@@ -70,6 +70,10 @@ export default function Users() {
   const [deleteDialog, setDeleteDialog] = useState(false);
   const [deletingMember, setDeletingMember] = useState<MemberRow | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [passwordDialog, setPasswordDialog] = useState(false);
+  const [passwordMember, setPasswordMember] = useState<MemberRow | null>(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
 
   const fetchMembers = async () => {
     if (!currentCompany) return;
@@ -285,6 +289,50 @@ export default function Users() {
     }
   };
 
+  const handleResetPassword = async () => {
+    if (!passwordMember || !newPassword.trim()) return;
+    if (newPassword.length < 6) {
+      toast({ variant: "destructive", title: "Senha deve ter no mínimo 6 caracteres" });
+      return;
+    }
+    setIsResettingPassword(true);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/reset-user-password`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+            apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({
+            user_id: passwordMember.user_id,
+            new_password: newPassword,
+          }),
+        }
+      );
+
+      const result = await res.json();
+      if (!res.ok) {
+        toast({ variant: "destructive", title: "Erro", description: result.error });
+        return;
+      }
+
+      toast({ title: "Senha alterada com sucesso!", description: `A senha de ${passwordMember.profile?.full_name || "usuário"} foi atualizada.` });
+      setPasswordDialog(false);
+      setPasswordMember(null);
+      setNewPassword("");
+    } catch (error: any) {
+      toast({ variant: "destructive", title: "Erro", description: error.message });
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
   const handleAddUser = async () => {
     if (!currentCompany || !addEmail.trim() || !addName.trim() || !addPassword.trim()) return;
     if (addPassword.length < 6) {
@@ -404,14 +452,24 @@ export default function Users() {
                           {m.is_active ? "Desativar" : "Ativar"}
                         </Button>
                         {user && m.user_id !== user.id && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => { setPasswordMember(m); setNewPassword(""); setPasswordDialog(true); }}
+                              title="Nova Senha"
+                            >
+                              <KeyRound className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </>
                         )}
                       </TableCell>
                     </TableRow>
@@ -566,6 +624,33 @@ export default function Users() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        <Dialog open={passwordDialog} onOpenChange={(open) => { setPasswordDialog(open); if (!open) setNewPassword(""); }}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Nova Senha</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
+              Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
+            </p>
+            <div className="space-y-2">
+              <Label>Nova Senha</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+                autoFocus
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setPasswordDialog(false); setNewPassword(""); }}>Cancelar</Button>
+              <Button onClick={handleResetPassword} disabled={isResettingPassword || newPassword.length < 6}>
+                {isResettingPassword && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );
