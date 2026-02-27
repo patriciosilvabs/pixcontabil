@@ -1,57 +1,85 @@
 
 
-## Problema
+## Auditoria de Responsividade - Problemas Encontrados
 
-Quando o usuario rotaciona o smartphone para landscape durante a leitura de um boleto, a largura da tela ultrapassa 768px. O hook `useIsMobile()` retorna `false`, fazendo o `AdminDashboard` e `OperatorDashboard` desmontarem o `MobileDashboard` e renderizarem o layout desktop. Isso destrói o componente `BarcodeScanner` junto com sua stream de camera.
+Analisei todas as páginas e componentes do sistema. O Dashboard mobile, a Auth page, o MobileMenu e o BottomTabBar estão bem implementados. Porém, encontrei problemas significativos em **5 áreas**:
 
-## Causa raiz
+---
 
-Em `AdminDashboard.tsx` (linha 32-46) e `OperatorDashboard.tsx` (linha 32-46):
+### 1. Categorias (`src/pages/Categories.tsx`) - CRÍTICO
 
-```text
-if (isMobile) {
-  return <MobileDashboard ... />  ← contém BarcodeScanner
-}
-return <div> ... desktop layout ... </div>
-```
+**Problema**: Tabela com 5 colunas (Nome, Classificação, Keywords, Status, Ações) é cortada no mobile. Colunas "Keywords", "Status" e "Ações" ficam fora da tela.
 
-Quando `isMobile` muda de `true` para `false` (rotação), o `MobileDashboard` é desmontado, matando o scanner.
+**Problema 2**: Header com botões "Importar em Lote" e "Nova Categoria" lado a lado com o título fica apertado.
 
-## Solução
+**Solução**: 
+- Envolver a tabela em um `overflow-x-auto` container
+- Alternativamente, no mobile usar layout de cards empilhados em vez de tabela
+- Header: empilhar título e botões verticalmente no mobile (`flex-col sm:flex-row`)
 
-Elevar o estado do `BarcodeScanner` (modo barcode) e do `BoletoPaymentDrawer` para fora do condicional mobile/desktop, de modo que eles existam independentemente da mudança de layout. Ambos componentes já renderizam em fullscreen (`fixed inset-0 z-[100]`) ou como drawer, então funcionam em qualquer viewport.
+---
 
-### Arquivos alterados
+### 2. Usuários (`src/pages/Users.tsx`) - CRÍTICO
 
-**1. `src/components/dashboard/MobileDashboard.tsx`**
-- Receber callbacks do pai para abrir o scanner de boleto em vez de gerenciar o estado internamente
-- Novas props: `onOpenBarcodeScanner` (callback que dispara `acquireStreamAndOpen`)
-- Remover o `BarcodeScanner mode="barcode"` e `BoletoPaymentDrawer` deste componente
+**Problema**: Mesma situação da tabela de categorias - 5 colunas (Usuário, Role, Limite, Status, Ações) sendo cortadas. Os botões "Editar", "Desativar" e "Excluir" na coluna Ações ficam inacessíveis.
 
-**2. `src/components/dashboard/AdminDashboard.tsx`**
-- Mover os estados `barcodeScannerOpen`, `scannedBarcode`, `boletoPaymentOpen` e `preAcquiredStreamRef` para este nível
-- Renderizar `BarcodeScanner mode="barcode"` e `BoletoPaymentDrawer` fora do condicional `if (isMobile)`
-- Passar callback `onOpenBarcodeScanner` para `MobileDashboard`
+**Solução**: 
+- Envolver a tabela em `overflow-x-auto`
+- Ou converter para cards no mobile
 
-**3. `src/components/dashboard/OperatorDashboard.tsx`**
-- Mesma alteração do AdminDashboard: elevar estados do scanner de boleto e renderizar fora do condicional
+---
 
-### Fluxo resultante
+### 3. Relatórios (`src/pages/Reports.tsx`) - MODERADO
 
-```text
-AdminDashboard / OperatorDashboard
-├── if (isMobile) → MobileDashboard (botão BOLETO chama onOpenBarcodeScanner)
-├── else → Desktop layout
-├── BarcodeScanner mode="barcode"   ← sempre montado, não depende de isMobile
-└── BoletoPaymentDrawer             ← sempre montado, não depende de isMobile
-```
+**Problema**: A barra de filtros (Período + Classificação + Exportar) usa `flex-wrap` mas os `SelectTrigger` têm largura fixa (`w-[160px]` e `w-[150px]`), que em telas estreitas pode não se adaptar bem. Os gráficos de barra podem ter labels de categorias cortados.
 
-Com isso, mesmo que `isMobile` mude durante o scan, o `BarcodeScanner` permanece montado e a camera continua aberta.
+**Solução**: 
+- Fazer os selects full-width no mobile (`w-full sm:w-[160px]`)
+- Adicionar `flex-col sm:flex-row` ao container de filtros
 
-## Detalhes técnicos
+---
 
-- A função `acquireStreamAndOpen` (que faz `getUserMedia` no contexto do clique para iOS) também será elevada para o componente pai
-- O `preAcquiredStreamRef` precisa existir no pai para manter a referencia do stream
-- Os componentes QR Code e Pix Key podem continuar dentro do `MobileDashboard` pois o QR dialog fecha antes de qualquer rotação ser provável, mas se desejado podem ser elevados futuramente
-- Nenhuma alteração de banco de dados ou edge function necessária
+### 4. Integração Pix (`src/pages/settings/PixIntegration.tsx`) - MODERADO
+
+**Problema**: A página tem tabs "Entrada", "Saída", "Ambos" e formulários densos. No mobile funciona razoavelmente pelo `max-w-4xl mx-auto`, mas os `grid md:grid-cols-2` fazem campos ficarem muito comprimidos entre 500-768px (tablet portrait).
+
+**Solução**: Ajustar breakpoint dos grids para `sm:grid-cols-2` para tablets menores.
+
+---
+
+### 5. Categorias e Users - Header Actions
+
+**Problema comum**: Nas duas páginas, o header usa `flex items-center justify-between` sem quebra responsiva. Os botões de ação colidem com o título em telas menores.
+
+**Solução**: Usar `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`.
+
+---
+
+### Plano de Implementação
+
+**Arquivo 1: `src/pages/Categories.tsx`**
+- Linha 137-148: Tornar header responsivo com `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`
+- Botões: empilhar em coluna no mobile com `flex-col sm:flex-row`
+- Linha 160: Adicionar `overflow-x-auto` ao container da tabela
+
+**Arquivo 2: `src/pages/Users.tsx`**
+- Linha 340-350: Tornar header responsivo com `flex-col gap-3 sm:flex-row sm:items-center sm:justify-between`
+- Linha 353: Adicionar `overflow-x-auto` ao container da tabela
+
+**Arquivo 3: `src/pages/Reports.tsx`**
+- Linha 212: Mudar container de filtros para `flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3`
+- Selects: mudar de largura fixa para `w-full sm:w-[160px]`
+
+**Arquivo 4: `src/pages/settings/PixIntegration.tsx`**
+- Verificar grids de formulário e ajustar breakpoints se necessário
+
+### Páginas que estão OK
+- Dashboard (mobile/desktop com layout dedicado)
+- Auth (split layout `lg:` com logo mobile)
+- Transactions (já usa `flex-col sm:flex-row`)
+- Companies (usa grid responsivo `md:grid-cols-2 lg:grid-cols-3`)
+- Settings (usa grids `md:grid-cols-2`)
+- MobileMenu, BottomTabBar, MobileHeader
+- NewPayment (max-w-2xl com tabs responsivas)
+- ReceiptCapture (max-w-2xl, grid `sm:grid-cols-2`)
 
