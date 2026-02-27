@@ -163,28 +163,28 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
           {step === 2 && (
             <div className="space-y-5">
               <div className="rounded-xl bg-secondary p-4 space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tipo</span>
-                  <span className="text-sm font-medium">Boleto</span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Tipo</p>
+                  <p className="text-sm font-medium mt-1">Boleto</p>
                 </div>
                 <div className="h-px bg-border" />
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Código</span>
-                  <span className="text-xs font-mono truncate ml-2 max-w-[60%] text-right">{barcode}</span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Código</p>
+                  <p className="text-xs font-mono break-all mt-1">{barcode}</p>
                 </div>
                 <div className="h-px bg-border" />
                 {formattedDueDate() && (
                   <>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vencimento</span>
-                      <span className="text-sm font-medium">{formattedDueDate()}</span>
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Vencimento</p>
+                      <p className="text-sm font-medium mt-1">{formattedDueDate()}</p>
                     </div>
                     <div className="h-px bg-border" />
                   </>
                 )}
-                <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</span>
-                  <span className="text-lg font-bold text-primary">{formattedAmount()}</span>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</p>
+                  <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
                 </div>
               </div>
 
