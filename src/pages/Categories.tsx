@@ -134,14 +134,14 @@ export default function Categories() {
   return (
     <MainLayout>
       <div className="p-6 lg:p-8 max-w-5xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <FolderOpen className="h-6 w-6 text-primary" /> Categorias
             </h1>
             <p className="text-muted-foreground">Gerencie as categorias de custos e despesas</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => setBatchDialogOpen(true)}><FileUp className="h-4 w-4 mr-2" /> Importar em Lote</Button>
             <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Nova Categoria</Button>
           </div>
@@ -163,6 +163,7 @@ export default function Categories() {
             ) : filtered.length === 0 ? (
               <div className="text-center text-muted-foreground p-8">Nenhuma categoria encontrada</div>
             ) : (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -205,6 +206,7 @@ export default function Categories() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             )}
           </CardContent>
         </Card>
