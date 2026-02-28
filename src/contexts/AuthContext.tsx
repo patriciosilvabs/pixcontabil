@@ -38,6 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [companyMembership, setCompanyMembership] = useState<CompanyMember | null>(null);
   const [pagePermissions, setPagePermissions] = useState<string[]>([]);
   const [featurePermissions, setFeaturePermissions] = useState<string[]>([]);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const isAdmin = role === "admin";
@@ -45,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const canViewBalance = companyMembership?.can_view_balance ?? isAdmin;
 
   const fetchUserData = useCallback(async (userId: string) => {
+    setPermissionsLoaded(false);
     try {
       // Fetch profile
       const { data: profileData } = await supabase
@@ -121,9 +123,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setFeaturePermissions([]);
         }
+        setPermissionsLoaded(true);
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
+      setPermissionsLoaded(true);
     }
   }, []);
 
@@ -226,16 +230,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const hasPageAccess = useCallback((pageKey: string): boolean => {
+    if (!permissionsLoaded) return false;
     if (isAdmin) return true;
     return pagePermissions.includes(pageKey);
-  }, [isAdmin, pagePermissions]);
+  }, [isAdmin, pagePermissions, permissionsLoaded]);
 
   const hasFeatureAccess = useCallback((featureKey: string): boolean => {
+    if (!permissionsLoaded) return false;
     if (isAdmin) return true;
-    // If no permissions set yet (empty array and not loaded), default to all visible
     if (featurePermissions.length === 0) return true;
     return featurePermissions.includes(featureKey);
-  }, [isAdmin, featurePermissions]);
+  }, [isAdmin, featurePermissions, permissionsLoaded]);
 
   return (
     <AuthContext.Provider
