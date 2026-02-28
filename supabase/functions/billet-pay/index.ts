@@ -1,67 +1,15 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-/**
- * Convert 44-digit bank barcode to 47-digit linha digitável.
- * If already 47+ digits, return as-is (already linha digitável).
- */
-function convertToLinhaDigitavel(code: string): string {
-  const clean = code.replace(/[\s.\-]/g, '');
-  
-  // Already linha digitável or convênio format
-  if (clean.length !== 44 || clean[0] === '8') {
-    return clean;
-  }
-
-  // Barcode layout (44 digits):
-  // [0-3]  bank+currency
-  // [4]    general check digit
-  // [5-8]  due date factor
-  // [9-18] amount (10 digits)
-  // [19-43] free field (25 digits)
-  const bankCurrency = clean.substring(0, 4);      // 4 chars
-  const checkDigit = clean[4];                       // 1 char
-  const dueFactor = clean.substring(5, 9);           // 4 chars
-  const amount = clean.substring(9, 19);             // 10 chars
-  const freeField1 = clean.substring(19, 24);        // 5 chars
-  const freeField2 = clean.substring(24, 34);        // 10 chars
-  const freeField3 = clean.substring(34, 44);        // 10 chars
-
-  // Field 1: bankCurrency(4) + freeField1(5) + check1
-  const field1Content = bankCurrency + freeField1;
-  const check1 = mod10(field1Content);
-
-  // Field 2: freeField2(10) + check2
-  const check2 = mod10(freeField2);
-
-  // Field 3: freeField3(10) + check3
-  const check3 = mod10(freeField3);
-
-  // Linha digitável: field1(9) + check1 + field2(10) + check2 + field3(10) + check3 + checkDigit + dueFactor + amount
-  return field1Content + check1 + freeField2 + check2 + freeField3 + check3 + checkDigit + dueFactor + amount;
-}
-
-/**
- * Calculate Mod10 check digit (used in linha digitável)
- */
-function mod10(value: string): string {
-  let sum = 0;
-  let weight = 2;
-  for (let i = value.length - 1; i >= 0; i--) {
-    let product = parseInt(value[i], 10) * weight;
-    if (product >= 10) {
-      product = Math.floor(product / 10) + (product % 10);
-    }
-    sum += product;
-    weight = weight === 2 ? 1 : 2;
-  }
-  const remainder = sum % 10;
-  return remainder === 0 ? '0' : String(10 - remainder);
-}
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
+
+function getApiBaseUrl(config: any): string {
+  return config.is_sandbox
+    ? 'https://api-sandbox.transfeera.com'
+    : 'https://api.transfeera.com';
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -94,7 +42,7 @@ Deno.serve(async (req) => {
 
     const userId = userData.user.id;
     const body = await req.json();
-    const { company_id, codigo_barras, descricao, payment_flow, valor } = body;
+    const { company_id, codigo_barras, descricao, valor } = body;
 
     if (!company_id || !codigo_barras) {
       return new Response(
@@ -103,16 +51,12 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get config (cash_out or both)
+    // Get config
     let config: any = null;
     const { data: cashOutConfig } = await supabase
-      .from('pix_configs')
-      .select('*')
-      .eq('company_id', company_id)
-      .eq('is_active', true)
-      .in('purpose', ['cash_out', 'both'])
-      .limit(1)
-      .maybeSingle();
+      .from('pix_configs').select('*')
+      .eq('company_id', company_id).eq('is_active', true)
+      .in('purpose', ['cash_out', 'both']).limit(1).maybeSingle();
     config = cashOutConfig;
 
     if (!config) {
@@ -137,80 +81,87 @@ Deno.serve(async (req) => {
     }
 
     const { access_token } = await authResponse.json();
+    const apiBase = getApiBaseUrl(config);
 
-    // ONZ billet payment via proxy
-    const payUrl = `${config.base_url}/billets/payments`;
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Clean barcode
+    const cleanBarcode = codigo_barras.replace(/[\s.\-]/g, '');
+
+    // Step 1: Consult billet via Transfeera
+    console.log(`[billet-pay] Consulting billet: ${cleanBarcode}`);
+    let billetInfo: any = null;
+    try {
+      const consultResponse = await fetch(`${apiBase}/billet/consult?code=${encodeURIComponent(cleanBarcode)}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
+      });
+      if (consultResponse.ok) {
+        billetInfo = await consultResponse.json();
+        console.log('[billet-pay] Billet info:', JSON.stringify(billetInfo));
+      } else {
+        const errText = await consultResponse.text();
+        console.warn('[billet-pay] Billet consult failed:', errText);
+      }
+    } catch (e) {
+      console.warn('[billet-pay] Billet consult error:', e.message);
     }
 
-    // Convert 44-digit barcode to 47-digit linha digitável if needed
-    // ONZ expects digitableCode (linha digitável, 47 digits)
-    const digitableCode = convertToLinhaDigitavel(codigo_barras);
-    console.log(`[billet-pay] Input (${codigo_barras.length} digits): ${codigo_barras}`);
-    console.log(`[billet-pay] Sending digitableCode (${digitableCode.length} digits): ${digitableCode}`);
-
-    const idempotencyKey = crypto.randomUUID();
-    const onzPayload: any = {
-      digitableCode,
-      description: descricao || 'Pagamento de boleto',
+    // Step 2: Create batch with billet
+    const paymentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const batchPayload = {
+      name: `BOLETO_${Date.now()}`,
+      type: 'BOLETO',
+      auto_close: true,
+      billets: [{
+        barcode: cleanBarcode,
+        payment_date: paymentDate,
+        description: descricao || 'Pagamento de boleto',
+        value: valor || billetInfo?.value || undefined,
+      }],
     };
-    if (payment_flow) {
-      onzPayload.paymentFlow = payment_flow;
-    }
-    if (valor) {
-      onzPayload.payment = { currency: 'BRL', amount: valor };
-    }
-
-    const fetchHeaders: any = {
-      'Authorization': `Bearer ${access_token}`,
-      'Content-Type': 'application/json',
-      'x-idempotency-key': idempotencyKey,
-    };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
     let paymentData: any;
     try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+      const batchResponse = await fetch(`${apiBase}/batch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: payUrl, method: 'POST', headers: fetchHeaders, body: onzPayload }),
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
+        body: JSON.stringify(batchPayload),
       });
 
-      const proxyData = await proxyResponse.json();
-      const data = proxyData.data || proxyData;
+      paymentData = await batchResponse.json();
 
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
-        console.error('[billet-pay] ONZ error:', JSON.stringify(data));
+      if (!batchResponse.ok) {
+        console.error('[billet-pay] Transfeera error:', JSON.stringify(paymentData));
         return new Response(
-          JSON.stringify({ error: 'Falha ao pagar boleto via ONZ', provider_error: JSON.stringify(data) }),
+          JSON.stringify({ error: 'Falha ao pagar boleto via Transfeera', provider_error: JSON.stringify(paymentData) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-
-      paymentData = data;
     } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('[billet-pay] ONZ payment response:', JSON.stringify(paymentData));
+    console.log('[billet-pay] Batch created:', JSON.stringify(paymentData));
+
+    const batchId = paymentData.id;
+    const billetId = paymentData.billets?.[0]?.id || '';
+    const externalId = `${batchId}:${billetId}`;
+    const amount = valor || billetInfo?.value || paymentData.billets?.[0]?.value || 0;
 
     // Save transaction
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-
-    const externalId = String(paymentData.id || idempotencyKey);
-    const amount = paymentData.payment?.amount || valor || 0;
 
     const { data: newTransaction, error: insertError } = await supabaseAdmin
       .from('transactions')
@@ -242,7 +193,7 @@ Deno.serve(async (req) => {
       entity_type: 'transaction',
       entity_id: newTransaction.id,
       action: 'billet_payment_initiated',
-      new_data: { provider: 'onz', externalId, amount, status: 'pending' },
+      new_data: { provider: 'transfeera', externalId, amount, status: 'pending' },
     });
 
     return new Response(
@@ -250,7 +201,10 @@ Deno.serve(async (req) => {
         success: true,
         transaction_id: newTransaction.id,
         external_id: externalId,
+        batch_id: batchId,
+        billet_id: billetId,
         status: paymentData.status || 'PROCESSING',
+        billet_info: billetInfo,
         provider_response: paymentData,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

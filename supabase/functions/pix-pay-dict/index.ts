@@ -5,13 +5,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function generateIdEnvio(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 35; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+function getApiBaseUrl(config: any): string {
+  return config.is_sandbox
+    ? 'https://api-sandbox.transfeera.com'
+    : 'https://api.transfeera.com';
+}
+
+function mapPixKeyType(type: string): string {
+  const map: Record<string, string> = {
+    cpf: 'CPF', cnpj: 'CNPJ', email: 'EMAIL', phone: 'TELEFONE', random: 'CHAVE_ALEATORIA',
+  };
+  return map[type?.toLowerCase()] || 'CHAVE_ALEATORIA';
 }
 
 Deno.serve(async (req) => {
@@ -34,18 +38,17 @@ Deno.serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const token = authHeader.replace('Bearer ', '');
-    const { data: claims, error: authError } = await supabase.auth.getClaims(token);
-    if (authError || !claims?.claims) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
       return new Response(
         JSON.stringify({ error: 'Invalid token' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const userId = claims.claims.sub as string;
+    const userId = user.id;
     const body = await req.json();
-    const { company_id, pix_key, valor, descricao } = body;
+    const { company_id, pix_key, pix_key_type, valor, descricao } = body;
 
     if (!company_id || !pix_key || !valor) {
       return new Response(
@@ -65,21 +68,13 @@ Deno.serve(async (req) => {
     // Get Pix config for cash-out
     let config: any = null;
     const { data: cashOutConfig } = await supabase
-      .from('pix_configs')
-      .select('*')
-      .eq('company_id', company_id)
-      .eq('is_active', true)
-      .eq('purpose', 'cash_out')
-      .single();
+      .from('pix_configs').select('*')
+      .eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
     config = cashOutConfig;
     if (!config) {
       const { data: bothConfig } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .eq('purpose', 'both')
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
       config = bothConfig;
     }
 
@@ -90,7 +85,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-pay-dict] ONZ: key: ${pix_key}, valor: ${valor}`);
+    console.log(`[pix-pay-dict] Transfeera: key: ${pix_key}, valor: ${valor}`);
 
     // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
@@ -107,53 +102,41 @@ Deno.serve(async (req) => {
     }
 
     const { access_token } = await authResponse.json();
+    const apiBase = getApiBaseUrl(config);
+    const idempotencyKey = crypto.randomUUID();
 
-    // ONZ payment via proxy
-    const externalId = generateIdEnvio();
-    const payUrl = `${config.base_url}/pix/payments/dict`;
-    const onzPayload: any = {
-      pixKey: pix_key,
-      payment: {
-        amount: valor,
-        currency: 'BRL',
-      },
-      description: descricao || 'Pagamento Pix',
+    // Transfeera: create batch with auto_close and single transfer
+    const batchPayload = {
+      name: `PIX_${Date.now()}`,
+      type: 'TRANSFERENCIA',
+      auto_close: true,
+      transfers: [{
+        value: Number(valor.toFixed(2)),
+        idempotency_key: idempotencyKey,
+        pix_description: descricao || 'Pagamento Pix',
+        destination_bank_account: {
+          pix_key_type: mapPixKeyType(pix_key_type || 'random'),
+          pix_key: pix_key,
+        },
+      }],
     };
-
-    const { creditor_document, priority, payment_flow } = body;
-    if (creditor_document) onzPayload.creditorDocument = creditor_document;
-    if (priority) onzPayload.priority = priority;
-    if (payment_flow) onzPayload.paymentFlow = payment_flow;
-
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const fetchHeaders: any = {
-      'Authorization': `Bearer ${access_token}`,
-      'Content-Type': 'application/json',
-      'x-idempotency-key': externalId,
-    };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
 
     let paymentData: any;
     try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+      const batchResponse = await fetch(`${apiBase}/batch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: payUrl, method: 'POST', headers: fetchHeaders, body: onzPayload }),
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
+        body: JSON.stringify(batchPayload),
       });
 
-      const proxyData = await proxyResponse.json();
-      const data = proxyData.data || proxyData;
+      const data = await batchResponse.json();
 
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
-        console.error('[pix-pay-dict] ONZ error:', JSON.stringify(data));
+      if (!batchResponse.ok) {
+        console.error('[pix-pay-dict] Transfeera error:', JSON.stringify(data));
         return new Response(
           JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: JSON.stringify(data) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -163,20 +146,23 @@ Deno.serve(async (req) => {
       paymentData = data;
     } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('[pix-pay-dict] Payment initiated:', JSON.stringify(paymentData));
+    console.log('[pix-pay-dict] Batch created:', JSON.stringify(paymentData));
+
+    // Extract batch and transfer IDs
+    const batchId = paymentData.id;
+    const transferId = paymentData.transfers?.[0]?.id || '';
+    const externalId = `${batchId}:${transferId}`;
 
     // Save transaction
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-
-    const e2eId = paymentData.e2eId || paymentData.endToEndId || paymentData.correlationID || externalId;
 
     const { data: newTransaction, error: insertError } = await supabaseAdmin
       .from('transactions')
@@ -188,7 +174,6 @@ Deno.serve(async (req) => {
         pix_type: 'key' as const,
         pix_key,
         description: descricao,
-        pix_e2eid: e2eId,
         external_id: externalId,
         pix_provider_response: paymentData,
       })
@@ -209,14 +194,15 @@ Deno.serve(async (req) => {
       entity_type: 'transaction',
       entity_id: newTransaction.id,
       action: 'pix_payment_initiated',
-      new_data: { provider: 'onz', externalId, e2eId, valor, pix_key, status: 'pending' },
+      new_data: { provider: 'transfeera', externalId, batchId, transferId, valor, pix_key, status: 'pending' },
     });
 
     return new Response(
       JSON.stringify({
         success: true,
         transaction_id: newTransaction.id,
-        end_to_end_id: e2eId,
+        batch_id: batchId,
+        transfer_id: transferId,
         id_envio: externalId,
         status: paymentData.status || 'PROCESSING',
       }),

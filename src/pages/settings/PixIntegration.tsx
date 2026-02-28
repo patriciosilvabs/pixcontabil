@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
-  { value: "onz", label: "ONZ Infopago" },
+  { value: "transfeera", label: "Transfeera" },
 ];
 
 const PIX_KEY_TYPES = [
@@ -53,20 +53,20 @@ const PROVIDER_CONFIG: Record<string, {
   credentialsDescription: string;
   urls: { production: string; sandbox: string };
 }> = {
-  onz: {
+  transfeera: {
     clientIdLabel: 'Client ID',
-    clientIdPlaceholder: 'seu_client_id',
-    clientIdHelp: 'Obtido no painel ONZ Infopago > Integrações.',
+    clientIdPlaceholder: 'seu_client_id_transfeera',
+    clientIdHelp: 'Obtido no painel Transfeera > Configurações > API.',
     showClientSecret: true,
     clientSecretLabel: 'Client Secret',
-    clientSecretHelp: 'Obtido no painel ONZ Infopago > Integrações.',
-    showCertificate: true,
+    clientSecretHelp: 'Obtido no painel Transfeera > Configurações > API.',
+    showCertificate: false,
     showCompanyId: false,
-    credentialsTitle: 'Credenciais ONZ Infopago',
-    credentialsDescription: 'Credenciais OAuth2 (Client Credentials) + Certificado mTLS',
+    credentialsTitle: 'Credenciais Transfeera',
+    credentialsDescription: 'Credenciais OAuth2 (Client Credentials)',
     urls: {
-      production: 'https://secureapi.bancodigital.onz.software/api/v2',
-      sandbox: 'https://secureapi.bancodigital.hmg.onz.software/api/v2',
+      production: 'https://api.transfeera.com',
+      sandbox: 'https://api-sandbox.transfeera.com',
     },
   },
 };

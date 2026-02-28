@@ -5,6 +5,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function getApiBaseUrl(config: any): string {
+  return config.is_sandbox
+    ? 'https://api-sandbox.transfeera.com'
+    : 'https://api.transfeera.com';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -35,32 +41,37 @@ Deno.serve(async (req) => {
     }
 
     const url = new URL(req.url);
-    let end_to_end_id = url.searchParams.get('end_to_end_id');
+    let transfer_id = url.searchParams.get('transfer_id');
     let company_id = url.searchParams.get('company_id');
     let transaction_id = url.searchParams.get('transaction_id');
 
     if (req.method === 'POST') {
       const body = await req.json();
-      end_to_end_id = end_to_end_id || body.end_to_end_id;
+      transfer_id = transfer_id || body.transfer_id;
       company_id = company_id || body.company_id;
       transaction_id = transaction_id || body.transaction_id;
+      // Legacy support: end_to_end_id param
+      if (!transfer_id) transfer_id = body.end_to_end_id;
     }
 
-    if (transaction_id && (!end_to_end_id || !company_id)) {
+    if (transaction_id && (!transfer_id || !company_id)) {
       const { data: txData } = await supabase
         .from('transactions')
-        .select('company_id, pix_e2eid')
+        .select('company_id, external_id')
         .eq('id', transaction_id)
         .single();
       if (txData) {
         company_id = company_id || txData.company_id;
-        end_to_end_id = end_to_end_id || txData.pix_e2eid;
+        if (!transfer_id && txData.external_id) {
+          const parts = txData.external_id.split(':');
+          transfer_id = parts.length > 1 ? parts[1] : parts[0];
+        }
       }
     }
 
-    if (!company_id || !end_to_end_id) {
+    if (!company_id || !transfer_id) {
       return new Response(
-        JSON.stringify({ error: 'company_id and end_to_end_id are required' }),
+        JSON.stringify({ error: 'company_id and transfer_id are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -69,12 +80,8 @@ Deno.serve(async (req) => {
     let config: any = null;
     for (const p of ['cash_out', 'both', 'cash_in']) {
       const { data: c } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .eq('purpose', p)
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', company_id).eq('is_active', true).eq('purpose', p).single();
       if (c) { config = c; break; }
     }
 
@@ -100,45 +107,55 @@ Deno.serve(async (req) => {
     }
 
     const { access_token } = await authResponse.json();
+    const apiBase = getApiBaseUrl(config);
 
-    // ONZ receipt via proxy
-    const receiptUrl = `${config.base_url}/pix/payments/receipt/${end_to_end_id}`;
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
+    // GET /transfer/{id} to get receipt_url
     try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: receiptUrl, method: 'GET', headers: fetchHeaders }),
+      const transferResponse = await fetch(`${apiBase}/transfer/${transfer_id}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
       });
 
-      const proxyData = await proxyResponse.json();
-      const data = proxyData.data || proxyData;
+      const transferData = await transferResponse.json();
 
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+      if (!transferResponse.ok) {
         return new Response(
-          JSON.stringify({ error: 'Failed to get receipt', provider_error: JSON.stringify(data) }),
+          JSON.stringify({ error: 'Failed to get transfer data', provider_error: JSON.stringify(transferData) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
+      const receiptUrl = transferData.receipt_url || transferData.bank_receipt_url;
+
+      if (!receiptUrl) {
+        return new Response(
+          JSON.stringify({ error: 'Comprovante ainda não disponível. Tente novamente em alguns minutos.', status: transferData.status }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Download receipt PDF and return as base64
+      const pdfResponse = await fetch(receiptUrl);
+      if (!pdfResponse.ok) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to download receipt PDF' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const pdfBuffer = await pdfResponse.arrayBuffer();
+      const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+
       return new Response(
-        JSON.stringify({ success: true, end_to_end_id, provider: 'onz', pdf_base64: data.pdf, content_type: 'application/pdf' }),
+        JSON.stringify({ success: true, transfer_id, provider: 'transfeera', pdf_base64: pdfBase64, content_type: 'application/pdf' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

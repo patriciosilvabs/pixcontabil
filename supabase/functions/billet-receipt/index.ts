@@ -5,6 +5,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function getApiBaseUrl(config: any): string {
+  return config.is_sandbox
+    ? 'https://api-sandbox.transfeera.com'
+    : 'https://api.transfeera.com';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -41,13 +47,14 @@ Deno.serve(async (req) => {
 
     if (transaction_id && (!billetExternalId || !companyId)) {
       const { data: txData } = await supabase
-        .from('transactions')
-        .select('company_id, external_id')
-        .eq('id', transaction_id)
-        .single();
+        .from('transactions').select('company_id, external_id')
+        .eq('id', transaction_id).single();
       if (txData) {
         companyId = companyId || txData.company_id;
-        billetExternalId = billetExternalId || txData.external_id;
+        if (!billetExternalId && txData.external_id) {
+          const parts = txData.external_id.split(':');
+          billetExternalId = parts.length > 1 ? parts[1] : parts[0];
+        }
       }
     }
 
@@ -62,12 +69,8 @@ Deno.serve(async (req) => {
     let config: any = null;
     for (const p of ['cash_out', 'both']) {
       const { data: c } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', companyId)
-        .eq('is_active', true)
-        .eq('purpose', p)
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', companyId).eq('is_active', true).eq('purpose', p).single();
       if (c) { config = c; break; }
     }
 
@@ -93,46 +96,53 @@ Deno.serve(async (req) => {
     }
 
     const { access_token } = await authResponse.json();
+    const apiBase = getApiBaseUrl(config);
 
-    // ONZ billet receipt via proxy
-    const receiptUrl = `${config.base_url}/billets/payments/receipt/${billetExternalId}`;
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
+    // GET /billet/{id} to get receipt_url
     try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: receiptUrl, method: 'GET', headers: fetchHeaders }),
+      const billetResponse = await fetch(`${apiBase}/billet/${billetExternalId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
       });
 
-      const proxyData = await proxyResponse.json();
-      const data = proxyData.data || proxyData;
+      const billetData = await billetResponse.json();
 
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+      if (!billetResponse.ok) {
         return new Response(
-          JSON.stringify({ error: 'Failed to get billet receipt', provider_error: JSON.stringify(data) }),
+          JSON.stringify({ error: 'Failed to get billet data', provider_error: JSON.stringify(billetData) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const receiptData = data.data || data;
-      const pdfBase64 = receiptData.pdf || receiptData.receipt;
+      const receiptUrl = billetData.receipt_url || billetData.bank_receipt_url;
+
+      if (!receiptUrl) {
+        return new Response(
+          JSON.stringify({ error: 'Comprovante ainda não disponível', status: billetData.status }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Download and return as base64
+      const pdfResponse = await fetch(receiptUrl);
+      if (!pdfResponse.ok) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to download receipt PDF' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const pdfBuffer = await pdfResponse.arrayBuffer();
+      const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
 
       return new Response(
         JSON.stringify({
           success: true,
           billet_id: billetExternalId,
-          provider: 'onz',
+          provider: 'transfeera',
           pdf_base64: pdfBase64,
           content_type: 'application/pdf',
         }),
@@ -140,7 +150,7 @@ Deno.serve(async (req) => {
       );
     } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
