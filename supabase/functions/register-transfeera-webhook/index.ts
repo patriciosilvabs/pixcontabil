@@ -127,13 +127,14 @@ Deno.serve(async (req) => {
     }
 
     const objectTypes = ['Transfer', 'TransferRefund', 'CashIn', 'CashInRefund'];
-    const existingMatch = existingWebhooks.find((w: any) => w.url === webhookUrl);
+    // Match by URL first, or fall back to ANY existing webhook (to handle "1 per object_types" constraint)
+    const existingMatch = existingWebhooks.find((w: any) => w.url === webhookUrl) || existingWebhooks[0];
 
     let result: any;
 
     if (existingMatch) {
-      // 4a. Update existing webhook
-      console.log(`[register-webhook] Updating existing webhook ID: ${existingMatch.id}`);
+      // 4a. Update existing webhook (same URL or different — Transfeera only allows 1 per object_types)
+      console.log(`[register-webhook] Updating existing webhook ID: ${existingMatch.id} (current URL: ${existingMatch.url})`);
       const updateResponse = await fetch(`${apiBaseUrl}/webhook/${existingMatch.id}`, {
         method: 'PUT',
         headers: apiHeaders,
@@ -154,7 +155,7 @@ Deno.serve(async (req) => {
 
       result = { action: 'updated', webhook_id: existingMatch.id };
     } else {
-      // 4b. Create new webhook
+      // 4b. Create new webhook (no existing webhooks at all)
       console.log('[register-webhook] Creating new webhook...');
       const createResponse = await fetch(`${apiBaseUrl}/webhook`, {
         method: 'POST',
