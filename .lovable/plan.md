@@ -1,43 +1,37 @@
 
 
-## Investigacao da Transacao de R$192,80
+## Tela de Confirmação Pós-Pagamento com Verificação de Status
 
-### O que aconteceu
+### Problema Atual
+Após confirmar o pagamento, o sistema exibe apenas um toast "Pagamento iniciado!" e redireciona para `/transactions`. O usuário não tem garantia visual de que o provedor realmente processou e liquidou o pagamento.
 
-Analisei os logs do backend, banco de dados e registros de funcoes. A transacao de R$192,80 para **MARA FRIOS** (QR Code dinamico) esta registrada com status **completed** (ID: `90fd5ec5`). Ela foi criada em 28/02 as 13:29:11 e confirmada as 13:32:43.
+### Solução
+Adicionar uma **etapa final de verificação** nos drawers de pagamento (PixKeyDialog e PixQrPaymentDrawer) que faz polling do status real via `pix-check-status` e exibe um resultado visual claro.
 
-### Causa raiz do erro
+### Fluxo novo
+1. Usuário confirma → botão muda para "Processando..."
+2. Backend retorna `transaction_id` → drawer muda para **Step 4: "Aguardando confirmação"**
+3. Polling automático a cada 3s via `pix-check-status` (max 20 tentativas = ~60s)
+4. Resultado final exibido no drawer:
+   - **Sucesso** (FINALIZADO): ícone verde, valor, botão "Ver Comprovante" + "Fechar"
+   - **Falha** (FALHA): ícone vermelho, mensagem de erro, botão "Fechar"
+   - **Timeout** (ainda pending após 60s): ícone amarelo, "Pagamento em processamento. Acompanhe pelo extrato."
 
-Nos logs da funcao `pix-pay-qrc`, encontrei este erro **antes** da transacao bem-sucedida:
+### Implementação
 
-```text
-Http: connection closed before message completed
-```
+**1. Criar componente `PaymentStatusScreen`** (`src/components/pix/PaymentStatusScreen.tsx`)
+- Recebe `transactionId`, `amount`, `beneficiaryName`
+- Usa `checkStatus(transactionId, true)` com polling interno
+- 3 estados visuais: aguardando (spinner), sucesso (check verde), falha (X vermelho)
+- Botão "Ver Comprovante" chama `downloadReceipt` quando sucesso
 
-**O que isso significa**: O navegador mobile fechou a conexao HTTP antes que a funcao do backend terminasse de responder. Isso e comum em celulares quando:
-- A rede 5G/4G oscila momentaneamente
-- O Safari/Chrome mobile encerra conexoes longas
-- O telefone muda de antena ou entra em modo de economia
+**2. Atualizar `PixKeyDialog`**
+- Adicionar step 4 que renderiza `PaymentStatusScreen`
+- Após `payByKey` retornar com sucesso, ir para step 4 em vez de fechar o drawer
 
-A cadeia de chamadas da funcao (QRC Info → Auth → Transfeera API) leva ~4 segundos no total. O celular fechou a conexao durante esse tempo.
+**3. Atualizar `PixQrPaymentDrawer`**
+- Mesmo padrão: step 4 com `PaymentStatusScreen` após confirmação
 
-**Resultado**: O frontend recebeu "Failed to send a request to the Edge Function" (erro de rede, nao do servidor), exibiu o toast de erro, mas **nao e possivel saber se o pagamento ja havia sido processado no provedor antes da conexao cair**. Voce entao repetiu o pagamento e este sim foi concluido normalmente.
-
-### Risco identificado: Pagamento duplicado
-
-Se a primeira tentativa tivesse sido processada pela Transfeera antes da conexao cair, voce teria pago R$192,80 **duas vezes**. Nao ha protecao de idempotencia no frontend atualmente.
-
-### Plano de correcao
-
-**1. Adicionar timeout e retry inteligente no frontend (`usePixPayment.ts`)**
-- Configurar `AbortController` com timeout de 30s na chamada da funcao
-- Em caso de erro de rede (nao HTTP), exibir mensagem orientando o usuario a verificar o extrato antes de tentar novamente
-
-**2. Adicionar protecao de idempotencia no `pix-pay-qrc` e `pix-pay-dict`**
-- Gerar `idempotency_key` no frontend e enviar no body
-- No backend, verificar se ja existe uma transacao recente com a mesma chave antes de criar um novo batch na Transfeera
-- Evita pagamentos duplicados em caso de retry
-
-**3. Melhorar mensagem de erro de rede no frontend**
-- Em vez de "Failed to send a request to the Edge Function", exibir: "Conexao perdida durante o processamento. Verifique o extrato antes de tentar novamente."
+**4. Ajustar `pix-check-status`**
+- A edge function já retorna `is_completed` e `internal_status` — nenhuma mudança necessária no backend
 
