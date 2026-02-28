@@ -25,6 +25,7 @@ import {
   TestTube,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Webhook,
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
@@ -211,6 +212,54 @@ function ProviderConfigForm({
     }
   };
 
+  const [isRegisteringWebhook, setIsRegisteringWebhook] = useState(false);
+
+  const handleRegisterWebhook = async (silent = false) => {
+    if (!currentCompany) return;
+    setIsRegisteringWebhook(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("register-transfeera-webhook", {
+        body: { company_id: currentCompany.id },
+      });
+
+      if (error) {
+        let errorDetail = "Falha ao registrar webhook.";
+        try {
+          if (error.context && typeof error.context.json === 'function') {
+            const body = await error.context.json();
+            errorDetail = body?.error || body?.details || errorDetail;
+          } else if (error.message) {
+            errorDetail = error.message;
+          }
+        } catch { /* use default */ }
+        if (!silent) {
+          toast({ variant: "destructive", title: "Erro ao registrar webhook", description: errorDetail });
+        }
+        console.error('[webhook-register]', errorDetail);
+        return false;
+      }
+
+      if (data?.success) {
+        if (!silent) {
+          toast({ title: "Webhook registrado!", description: data.message || "Webhook configurado na Transfeera." });
+        }
+        return true;
+      } else {
+        if (!silent) {
+          toast({ variant: "destructive", title: "Erro", description: data?.error || "Resposta inesperada." });
+        }
+        return false;
+      }
+    } catch (e: any) {
+      if (!silent) {
+        toast({ variant: "destructive", title: "Erro", description: e?.message || "Falha ao registrar webhook." });
+      }
+      return false;
+    } finally {
+      setIsRegisteringWebhook(false);
+    }
+  };
+
   const handleTestConnection = async () => {
     if (!currentCompany) return;
     setIsTesting(true);
@@ -224,7 +273,6 @@ function ProviderConfigForm({
       });
 
       if (error) {
-        // Extract detailed error from FunctionsHttpError
         let errorDetail = "Não foi possível autenticar.";
         try {
           if (error.context && typeof error.context.json === 'function') {
@@ -246,7 +294,14 @@ function ProviderConfigForm({
       } else {
         setTestResult("success");
         setTestMessage(`Token obtido com sucesso via ${PIX_PROVIDERS.find(p => p.value === config.provider)?.label}.`);
-        toast({ title: "Conexão OK!", description: `Credenciais validadas com ${PIX_PROVIDERS.find(p => p.value === config.provider)?.label}.` });
+        toast({ title: "Conexão OK!", description: `Credenciais validadas. Registrando webhook...` });
+        
+        // Auto-register webhook after successful connection test
+        const webhookOk = await handleRegisterWebhook(true);
+        if (webhookOk) {
+          setTestMessage(prev => prev + ' Webhook registrado automaticamente.');
+          toast({ title: "Tudo pronto!", description: "Conexão validada e webhook registrado na Transfeera." });
+        }
       }
     } catch (e: any) {
       setTestResult("error");
@@ -419,8 +474,12 @@ function ProviderConfigForm({
           <div className="space-y-2">
             <Label>URL do Webhook (copie para configurar no provedor)</Label>
             <div className="flex gap-2">
-              <Input value={webhookUrl} readOnly />
+              <Input value={webhookUrl} readOnly className="flex-1" />
               <Button variant="outline" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast({ title: "URL copiada!" }); }}>Copiar</Button>
+              <Button variant="outline" onClick={() => handleRegisterWebhook(false)} disabled={isRegisteringWebhook || !config.provider || !config.client_id}>
+                {isRegisteringWebhook ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Webhook className="mr-2 h-4 w-4" />}
+                Registrar
+              </Button>
             </div>
           </div>
           <div className="space-y-2">
