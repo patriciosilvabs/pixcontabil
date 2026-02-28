@@ -28,8 +28,8 @@ export function PaymentStatusScreen({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
 
-  const MAX_ATTEMPTS = 20;
-  const POLL_INTERVAL = 3000;
+  const MAX_ATTEMPTS = 30;
+  const POLL_INTERVAL = 2000;
 
   const poll = useCallback(async () => {
     if (!mountedRef.current) return;
@@ -50,7 +50,7 @@ export function PaymentStatusScreen({
 
       setProviderStatus(result.internal_status || result.status);
 
-      if (result.is_liquidated || result.internal_status === "completed") {
+      if (result.is_completed || result.internal_status === "completed") {
         setStatus("completed");
         if (timerRef.current) clearInterval(timerRef.current);
         return;

@@ -132,9 +132,10 @@ Deno.serve(async (req) => {
     const rawStatus = String(statusData.status || '').toUpperCase();
     const statusMap: Record<string, string> = {
       'FINALIZADO': 'completed',
+      'TRANSFERENCIA_REALIZADA': 'completed',
+      'TRANSFERENCIA_CONFIRMADA': 'completed',
       'CRIADO': 'pending',
       'TRANSFERENCIA_CRIADA': 'pending',
-      'TRANSFERENCIA_REALIZADA': 'pending',
       'LOTE_CRIADO': 'pending',
       'FALHA': 'failed',
       'DEVOLVIDO': 'refunded',
