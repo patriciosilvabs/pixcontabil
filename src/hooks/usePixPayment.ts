@@ -392,7 +392,7 @@ export function usePixPayment() {
 
       const status = await checkStatus(endToEndId);
 
-      if (status?.is_liquidated) {
+      if (status?.is_completed || status?.is_liquidated || status?.internal_status === 'completed') {
         console.log('[usePixPayment] Payment confirmed!');
         stopPolling();
         toast({
