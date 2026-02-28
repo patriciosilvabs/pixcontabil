@@ -49,8 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const effectiveIsLoading = isLoading || (!!user && !permissionsLoaded);
 
   const fetchInProgressRef = React.useRef(false);
+  const loadedUserIdRef = React.useRef<string | null>(null);
 
-  const fetchUserData = useCallback(async (userId: string) => {
+  const fetchUserData = useCallback(async (userId: string, force = false) => {
+    // Skip if data already loaded for this user (prevents re-fetch on TOKEN_REFRESHED)
+    if (!force && loadedUserIdRef.current === userId) return;
     if (fetchInProgressRef.current) return;
     fetchInProgressRef.current = true;
     setPermissionsLoaded(false);
@@ -135,6 +138,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Error fetching user data:", error);
     } finally {
       setPermissionsLoaded(true);
+      loadedUserIdRef.current = userId;
       fetchInProgressRef.current = false;
     }
   }, []);
@@ -161,6 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (event === "SIGNED_OUT") {
           localStorage.removeItem("currentCompanyId");
+          loadedUserIdRef.current = null;
         }
 
         setIsLoading(false);
@@ -233,7 +238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = async () => {
     if (user) {
-      await fetchUserData(user.id);
+      await fetchUserData(user.id, true);
     }
   };
 
