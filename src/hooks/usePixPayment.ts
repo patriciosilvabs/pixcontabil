@@ -167,10 +167,37 @@ export function usePixPayment() {
 
       if (error) {
         console.error('[usePixPayment] Pay by key error:', error);
+        let errorMessage = "Tente novamente mais tarde.";
+
+        try {
+          if (error.context && typeof error.context === 'object') {
+            const res = error.context as Response;
+            if (res?.json) {
+              const body = await res.json();
+              let providerMessage = "";
+
+              if (typeof body?.provider_error === 'string') {
+                try {
+                  const parsedProvider = JSON.parse(body.provider_error);
+                  providerMessage = parsedProvider?.message || "";
+                } catch {
+                  providerMessage = body.provider_error;
+                }
+              } else if (body?.provider_error && typeof body.provider_error === 'object') {
+                providerMessage = body.provider_error?.message || "";
+              }
+
+              errorMessage = body?.error || providerMessage || body?.hint || errorMessage;
+            }
+          }
+        } catch {
+          // ignore parse errors
+        }
+
         toast({
           variant: "destructive",
           title: "Erro ao iniciar pagamento Pix",
-          description: error.message || "Tente novamente mais tarde.",
+          description: errorMessage,
         });
         return null;
       }

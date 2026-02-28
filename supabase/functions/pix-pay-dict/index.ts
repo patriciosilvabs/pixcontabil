@@ -11,14 +11,66 @@ function getApiBaseUrl(config: any): string {
     : 'https://api.transfeera.com';
 }
 
+function isValidCpf(cpf: string): boolean {
+  if (!/^\d{11}$/.test(cpf) || /^(\d)\1+$/.test(cpf)) return false;
+
+  let sum = 0;
+  for (let i = 0; i < 9; i++) sum += Number(cpf[i]) * (10 - i);
+  let checkDigit = (sum * 10) % 11;
+  if (checkDigit === 10) checkDigit = 0;
+  if (checkDigit !== Number(cpf[9])) return false;
+
+  sum = 0;
+  for (let i = 0; i < 10; i++) sum += Number(cpf[i]) * (11 - i);
+  checkDigit = (sum * 10) % 11;
+  if (checkDigit === 10) checkDigit = 0;
+  return checkDigit === Number(cpf[10]);
+}
+
+function isValidCnpj(cnpj: string): boolean {
+  if (!/^\d{14}$/.test(cnpj) || /^(\d)\1+$/.test(cnpj)) return false;
+
+  const calculateDigit = (base: string, weights: number[]) => {
+    const sum = base
+      .split('')
+      .reduce((acc, digit, index) => acc + Number(digit) * weights[index], 0);
+    const remainder = sum % 11;
+    return remainder < 2 ? 0 : 11 - remainder;
+  };
+
+  const firstDigit = calculateDigit(cnpj.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const secondDigit = calculateDigit(cnpj.slice(0, 13), [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+
+  return firstDigit === Number(cnpj[12]) && secondDigit === Number(cnpj[13]);
+}
+
+function normalizePhonePixKey(rawKey: string): string {
+  const trimmed = rawKey.trim();
+  const digits = trimmed.replace(/\D/g, '');
+
+  if (trimmed.startsWith('+')) return `+${digits}`;
+  if (digits.length === 10 || digits.length === 11) return `+55${digits}`;
+  if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) return `+${digits}`;
+
+  return digits.length > 0 ? `+${digits}` : trimmed;
+}
+
 function detectPixKeyType(key: string): string {
-  const cleaned = key.replace(/[\s\-\.\/]/g, '');
-  if (/^\d{11}$/.test(cleaned)) return 'CPF';
-  if (/^\d{14}$/.test(cleaned)) return 'CNPJ';
-  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key.trim())) return 'EMAIL';
-  if (/^\+?\d{10,13}$/.test(cleaned)) return 'TELEFONE';
-  // UUID format = random key
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key.trim())) return 'CHAVE_ALEATORIA';
+  const trimmed = key.trim();
+  const digitsOnly = trimmed.replace(/\D/g, '');
+  const phoneCandidate = trimmed.replace(/[^\d+]/g, '');
+
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) return 'EMAIL';
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed)) return 'CHAVE_ALEATORIA';
+
+  if (/^\d{11}$/.test(digitsOnly) && isValidCpf(digitsOnly)) return 'CPF';
+  if (/^\d{14}$/.test(digitsOnly) && isValidCnpj(digitsOnly)) return 'CNPJ';
+
+  if (/^\+?\d{10,13}$/.test(phoneCandidate)) return 'TELEFONE';
+
+  // Fallback para chaves numéricas sem dígitos verificadores válidos
+  if (/^\d{11}$/.test(digitsOnly) || /^\d{14}$/.test(digitsOnly)) return 'TELEFONE';
+
   return 'CHAVE_ALEATORIA';
 }
 
@@ -31,6 +83,11 @@ function mapPixKeyType(type: string | undefined, key: string): string {
     if (mapped) return mapped;
   }
   return detectPixKeyType(key);
+}
+
+function normalizePixKeyByType(key: string, keyType: string): string {
+  if (keyType === 'TELEFONE') return normalizePhonePixKey(key);
+  return key.trim();
 }
 
 Deno.serve(async (req) => {
@@ -100,7 +157,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-pay-dict] Transfeera: key: ${pix_key}, valor: ${valor}`);
+    
 
     // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
@@ -119,6 +176,8 @@ Deno.serve(async (req) => {
     const { access_token } = await authResponse.json();
     const apiBase = getApiBaseUrl(config);
     const idempotencyKey = crypto.randomUUID();
+    const resolvedPixKeyType = mapPixKeyType(pix_key_type, pix_key);
+    const normalizedPixKey = normalizePixKeyByType(pix_key, resolvedPixKeyType);
 
     // Transfeera: create batch with auto_close and single transfer
     const batchPayload = {
@@ -130,11 +189,13 @@ Deno.serve(async (req) => {
         idempotency_key: idempotencyKey,
         pix_description: descricao || 'Pagamento Pix',
         destination_bank_account: {
-          pix_key_type: mapPixKeyType(pix_key_type, pix_key),
-          pix_key: pix_key,
+          pix_key_type: resolvedPixKeyType,
+          pix_key: normalizedPixKey,
         },
       }],
     };
+
+    console.log(`[pix-pay-dict] Transfeera: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
     let paymentData: any;
     try {
@@ -153,7 +214,10 @@ Deno.serve(async (req) => {
       if (!batchResponse.ok) {
         console.error('[pix-pay-dict] Transfeera error:', JSON.stringify(data));
         return new Response(
-          JSON.stringify({ error: 'Failed to initiate Pix payment', provider_error: JSON.stringify(data) }),
+          JSON.stringify({
+            error: data?.message || 'Failed to initiate Pix payment',
+            provider_error: data,
+          }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
