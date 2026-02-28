@@ -126,10 +126,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           setFeaturePermissions([]);
         }
-        setPermissionsLoaded(true);
       }
     } catch (error) {
       console.error("Error fetching user data:", error);
+    } finally {
       setPermissionsLoaded(true);
     }
   }, []);
