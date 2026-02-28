@@ -51,6 +51,10 @@ const CHART_COLORS = [
   "hsl(30 90% 55%)",
 ];
 
+// Simple in-memory cache to avoid re-fetching on every navigation
+let dashboardCache: { key: string; data: any; timestamp: number } | null = null;
+const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+
 export function useDashboardData() {
   const { currentCompany, isAdmin, user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary>({
@@ -67,6 +71,17 @@ export function useDashboardData() {
 
   useEffect(() => {
     if (!currentCompany?.id) {
+      setIsLoading(false);
+      return;
+    }
+
+    const cacheKey = `${currentCompany.id}:${isAdmin}:${user?.id}`;
+
+    // Use cache if still fresh
+    if (dashboardCache && dashboardCache.key === cacheKey && (Date.now() - dashboardCache.timestamp) < CACHE_TTL) {
+      setSummary(dashboardCache.data.summary);
+      setCategoryData(dashboardCache.data.categoryData);
+      setRecentTransactions(dashboardCache.data.recentTransactions);
       setIsLoading(false);
       return;
     }
@@ -155,6 +170,13 @@ export function useDashboardData() {
           status: tx.status,
         }));
         setRecentTransactions(recent);
+
+        // Store in cache
+        dashboardCache = {
+          key: cacheKey,
+          data: { summary: { totalCosts, totalExpenses, totalToday, transactionsToday, transactionsMonth: transactions.length, pendingReceipts }, categoryData: chartData, recentTransactions: recent },
+          timestamp: Date.now(),
+        };
       } catch (error) {
         console.error("Error fetching dashboard data:", error);
       } finally {
