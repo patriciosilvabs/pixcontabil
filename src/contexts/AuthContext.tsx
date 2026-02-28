@@ -45,6 +45,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isOperator = role === "operator";
   const canViewBalance = companyMembership?.can_view_balance ?? isAdmin;
 
+  // isLoading must remain true until permissions are fully loaded for authenticated users
+  const effectiveIsLoading = isLoading || (!!user && !permissionsLoaded);
+
   const fetchUserData = useCallback(async (userId: string) => {
     setPermissionsLoaded(false);
     try {
@@ -257,7 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canViewBalance,
         isAdmin,
         isOperator,
-        isLoading,
+        isLoading: effectiveIsLoading,
         signIn,
         signUp,
         signOut,
