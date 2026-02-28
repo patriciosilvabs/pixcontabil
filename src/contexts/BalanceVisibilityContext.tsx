@@ -6,12 +6,12 @@ interface BalanceVisibilityContextType {
 }
 
 const BalanceVisibilityContext = createContext<BalanceVisibilityContextType>({
-  balanceVisible: true,
+  balanceVisible: false,
   toggleBalance: () => {},
 });
 
 export function BalanceVisibilityProvider({ children }: { children: React.ReactNode }) {
-  const [balanceVisible, setBalanceVisible] = useState(true);
+  const [balanceVisible, setBalanceVisible] = useState(false);
   return (
     <BalanceVisibilityContext.Provider value={{ balanceVisible, toggleBalance: () => setBalanceVisible(v => !v) }}>
       {children}
