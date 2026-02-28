@@ -48,7 +48,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // isLoading must remain true until permissions are fully loaded for authenticated users
   const effectiveIsLoading = isLoading || (!!user && !permissionsLoaded);
 
+  const fetchInProgressRef = React.useRef(false);
+
   const fetchUserData = useCallback(async (userId: string) => {
+    if (fetchInProgressRef.current) return;
+    fetchInProgressRef.current = true;
     setPermissionsLoaded(false);
     try {
       // Fetch profile
@@ -131,6 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Error fetching user data:", error);
     } finally {
       setPermissionsLoaded(true);
+      fetchInProgressRef.current = false;
     }
   }, []);
 
