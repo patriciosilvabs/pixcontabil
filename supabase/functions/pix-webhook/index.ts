@@ -27,11 +27,15 @@ function isRateLimited(ip: string): boolean {
 }
 
 async function verifyWebhookSecret(req: Request, supabaseAdmin: any): Promise<boolean> {
-  const webhookSecret = req.headers.get('x-webhook-secret');
+  const headerSecret = req.headers.get('x-webhook-secret');
+  const urlSecret = new URL(req.url).searchParams.get('whs');
+  const webhookSecret = headerSecret || urlSecret;
+
   if (!webhookSecret) {
-    console.warn('[pix-webhook] Webhook secret header missing');
+    console.warn(`[pix-webhook] Webhook secret header/query missing (method: ${req.method})`);
     return false;
   }
+
   const { data: matchingConfigs } = await supabaseAdmin
     .from('pix_configs').select('id').eq('webhook_secret', webhookSecret).eq('is_active', true).limit(1);
   return matchingConfigs && matchingConfigs.length > 0;
