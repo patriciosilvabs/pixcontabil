@@ -143,62 +143,85 @@ Deno.serve(async (req) => {
 
 // Handle Transfer and TransferRefund webhooks
 async function handleTransferWebhook(supabaseAdmin: any, objectType: string, data: any, ip_address: string) {
-  const transferId = data.id || data.transfer_id;
+  const transferId = String(data.transfer_id || data.id || '').trim();
+  const batchId = String(data.batch_id || '').trim();
   const status = String(data.status || '').toUpperCase();
 
   const statusMap: Record<string, string> = {
     'FINALIZADO': 'completed',
+    'TRANSFERENCIA_REALIZADA': 'completed',
+    'TRANSFERENCIA_CONFIRMADA': 'completed',
+    'RECEBIDO': 'pending',
+    'CRIADO': 'pending',
     'FALHA': 'failed',
     'DEVOLVIDO': 'refunded',
     'ESTORNADO': 'refunded',
   };
   const internalStatus = statusMap[status] || 'pending';
 
+  let transaction: any = null;
+
   if (transferId) {
-    // Find transaction by external_id containing the transfer_id
-    const { data: transactions } = await supabaseAdmin
+    const { data: txByTransfer } = await supabaseAdmin
       .from('transactions')
       .select('id, company_id, status, external_id')
       .or(`external_id.ilike.%${transferId}%`)
       .limit(1);
 
-    const transaction = transactions?.[0];
+    transaction = txByTransfer?.[0] || null;
+  }
 
-    if (transaction) {
-      const updateData: any = {
-        status: internalStatus,
-        pix_provider_response: data,
-        pix_e2eid: data.end_to_end_id || data.e2e_id || null,
-      };
-      if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+  if (!transaction && batchId) {
+    const { data: txByBatch } = await supabaseAdmin
+      .from('transactions')
+      .select('id, company_id, status, external_id')
+      .ilike('external_id', `${batchId}%`)
+      .limit(1);
 
-      await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
+    transaction = txByBatch?.[0] || null;
+  }
 
-      // Auto-generate receipt
-      if (internalStatus === 'completed') {
-        try {
-          fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-            },
-            body: JSON.stringify({ transaction_id: transaction.id, company_id: transaction.company_id }),
-          }).catch(e => console.error('[pix-webhook] Auto-receipt failed:', e));
-        } catch (e) {
-          console.error('[pix-webhook] Error triggering receipt:', e);
-        }
-      }
+  if (transaction) {
+    const updateData: any = {
+      status: internalStatus,
+      pix_provider_response: data,
+      pix_e2eid: data.end_to_end_id || data.e2e_id || data.pix_end2end_id || null,
+    };
 
-      await supabaseAdmin.from('audit_logs').insert({
-        company_id: transaction.company_id,
-        entity_type: 'transaction',
-        entity_id: transaction.id,
-        action: 'pix_webhook_received',
-        old_data: { status: transaction.status },
-        new_data: { status: internalStatus, transferId, provider: 'transfeera', objectType },
-      });
+    if (batchId && transferId) {
+      updateData.external_id = `${batchId}:${transferId}`;
     }
+
+    if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+
+    await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
+
+    // Auto-generate receipt
+    if (internalStatus === 'completed') {
+      try {
+        fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({ transaction_id: transaction.id, company_id: transaction.company_id }),
+        }).catch(e => console.error('[pix-webhook] Auto-receipt failed:', e));
+      } catch (e) {
+        console.error('[pix-webhook] Error triggering receipt:', e);
+      }
+    }
+
+    await supabaseAdmin.from('audit_logs').insert({
+      company_id: transaction.company_id,
+      entity_type: 'transaction',
+      entity_id: transaction.id,
+      action: 'pix_webhook_received',
+      old_data: { status: transaction.status },
+      new_data: { status: internalStatus, transferId, batchId, provider: 'transfeera', objectType },
+    });
+  } else {
+    console.warn('[pix-webhook] Transfer not matched to local transaction', { transferId, batchId, status });
   }
 
   // Handle TransferRefund

@@ -11,6 +11,27 @@ function getApiBaseUrl(config: any): string {
     : 'https://api.transfeera.com';
 }
 
+function parseIdsFromExternalId(externalId: string | null | undefined): { batchId: string | null; transferId: string | null } {
+  const raw = String(externalId || '').trim();
+  if (!raw) return { batchId: null, transferId: null };
+
+  const [batchPart, transferPart] = raw.split(':');
+  const batchId = batchPart?.trim() || null;
+  const transferId = transferPart?.trim() || null;
+
+  return { batchId, transferId };
+}
+
+function extractFirstTransferFromBatchPayload(payload: any): any | null {
+  if (!payload) return null;
+  if (Array.isArray(payload)) return payload[0] ?? null;
+  if (Array.isArray(payload?.transfers)) return payload.transfers[0] ?? null;
+  if (Array.isArray(payload?.data)) return payload.data[0] ?? null;
+  if (Array.isArray(payload?.items)) return payload.items[0] ?? null;
+  if (payload?.id || payload?.transfer_id) return payload;
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -43,34 +64,38 @@ Deno.serve(async (req) => {
     let transaction_id = url.searchParams.get('transaction_id');
     let company_id = url.searchParams.get('company_id');
     let transfer_id = url.searchParams.get('transfer_id');
+    let batch_id = url.searchParams.get('batch_id');
+    let transactionExternalId: string | null = null;
 
     if (req.method === 'POST') {
       const body = await req.json();
       transaction_id = transaction_id || body.transaction_id;
       company_id = company_id || body.company_id;
       transfer_id = transfer_id || body.transfer_id;
+      batch_id = batch_id || body.batch_id;
     }
 
-    // Get transfer_id from transaction external_id if not provided
-    if (transaction_id && (!transfer_id || !company_id)) {
+    // Get identifiers from transaction if not provided
+    if (transaction_id && (!company_id || !transfer_id || !batch_id)) {
       const { data: txData } = await supabase
         .from('transactions')
         .select('company_id, external_id')
         .eq('id', transaction_id)
         .single();
+
       if (txData) {
         company_id = company_id || txData.company_id;
-        // external_id format: "batchId:transferId"
-        if (!transfer_id && txData.external_id) {
-          const parts = txData.external_id.split(':');
-          transfer_id = parts.length > 1 ? parts[1] : parts[0];
-        }
+        transactionExternalId = txData.external_id || null;
+
+        const parsedIds = parseIdsFromExternalId(txData.external_id);
+        batch_id = batch_id || parsedIds.batchId;
+        transfer_id = transfer_id || parsedIds.transferId;
       }
     }
 
-    if (!company_id || !transfer_id) {
+    if (!company_id || (!transfer_id && !batch_id)) {
       return new Response(
-        JSON.stringify({ error: 'company_id and transfer_id (or transaction_id) are required' }),
+        JSON.stringify({ error: 'company_id and at least one identifier (transfer_id, batch_id, or transaction_id) are required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -108,17 +133,65 @@ Deno.serve(async (req) => {
     const { access_token } = await authResponse.json();
     const apiBase = getApiBaseUrl(config);
 
-    // Transfeera: GET /transfer/{id}
-    let statusData: any;
+    // Transfeera: prioritize transfer status; fallback to batch transfers when transfer_id is not available yet
+    let statusData: any = null;
+    let resolvedTransferId = transfer_id || null;
+    let resolvedBatchId = batch_id || null;
+
     try {
-      const statusResponse = await fetch(`${apiBase}/transfer/${transfer_id}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
-        },
-      });
-      statusData = await statusResponse.json();
+      const getTransferStatus = async (id: string) => {
+        const response = await fetch(`${apiBase}/transfer/${id}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${access_token}`,
+            'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+          },
+        });
+
+        const payload = await response.json().catch(() => null);
+        return { ok: response.ok, payload };
+      };
+
+      const getBatchTransfers = async (id: string) => {
+        const response = await fetch(`${apiBase}/batch/${id}/transfer`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${access_token}`,
+            'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+          },
+        });
+
+        const payload = await response.json().catch(() => null);
+        return { ok: response.ok, payload };
+      };
+
+      if (resolvedTransferId) {
+        const transferResult = await getTransferStatus(resolvedTransferId);
+        if (transferResult.ok && transferResult.payload) {
+          statusData = transferResult.payload;
+        }
+      }
+
+      if ((!statusData || !statusData.status) && resolvedBatchId) {
+        const batchResult = await getBatchTransfers(resolvedBatchId);
+
+        if (batchResult.ok && batchResult.payload) {
+          const transferFromBatch = extractFirstTransferFromBatchPayload(batchResult.payload);
+          if (transferFromBatch) {
+            statusData = transferFromBatch;
+            resolvedTransferId = resolvedTransferId || String(transferFromBatch.transfer_id || transferFromBatch.id || '').trim() || null;
+          } else if (batchResult.payload?.status) {
+            statusData = batchResult.payload;
+          }
+        }
+      }
+
+      if ((!statusData || !statusData.status) && resolvedTransferId) {
+        const transferResult = await getTransferStatus(resolvedTransferId);
+        if (transferResult.ok && transferResult.payload) {
+          statusData = transferResult.payload;
+        }
+      }
     } catch (e) {
       return new Response(
         JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
@@ -126,15 +199,23 @@ Deno.serve(async (req) => {
       );
     }
 
+    if (!statusData) {
+      return new Response(
+        JSON.stringify({ error: 'Não foi possível obter status da transferência' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log('[pix-check-status] Status received:', JSON.stringify(statusData));
 
     // Normalize Transfeera status
-    const rawStatus = String(statusData.status || '').toUpperCase();
+    const rawStatus = String(statusData.status || statusData.transfer_status || '').toUpperCase();
     const statusMap: Record<string, string> = {
       'FINALIZADO': 'completed',
       'TRANSFERENCIA_REALIZADA': 'completed',
       'TRANSFERENCIA_CONFIRMADA': 'completed',
       'CRIADO': 'pending',
+      'RECEBIDO': 'pending',
       'TRANSFERENCIA_CRIADA': 'pending',
       'LOTE_CRIADO': 'pending',
       'FALHA': 'failed',
@@ -146,11 +227,17 @@ Deno.serve(async (req) => {
 
     if (transaction_id) {
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const existingIds = parseIdsFromExternalId(transactionExternalId);
       const updateData: any = {
         status: internalStatus,
         pix_provider_response: statusData,
-        pix_e2eid: statusData.end_to_end_id || statusData.e2e_id || null,
+        pix_e2eid: statusData.end_to_end_id || statusData.e2e_id || statusData.pix_end2end_id || statusData.pix_e2eid || null,
       };
+
+      if (resolvedBatchId && resolvedTransferId && (!existingIds.transferId || existingIds.transferId !== resolvedTransferId)) {
+        updateData.external_id = `${resolvedBatchId}:${resolvedTransferId}`;
+      }
+
       if (isCompleted) updateData.paid_at = new Date().toISOString();
       await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
     }
@@ -158,7 +245,8 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         success: true,
-        transfer_id,
+        transfer_id: resolvedTransferId,
+        batch_id: resolvedBatchId,
         status: statusData.status,
         internal_status: internalStatus,
         is_completed: isCompleted,
