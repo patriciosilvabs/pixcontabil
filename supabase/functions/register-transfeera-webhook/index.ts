@@ -98,8 +98,12 @@ Deno.serve(async (req) => {
     const { access_token } = await tokenResponse.json();
     console.log('[register-webhook] Auth successful');
 
-    // 2. Build the webhook URL for this project
-    const webhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-webhook`;
+    // 2. Build webhook URLs for this project
+    const publicWebhookUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-webhook`;
+    const webhookSecret = config.webhook_secret;
+    const webhookUrl = webhookSecret
+      ? `${publicWebhookUrl}?whs=${encodeURIComponent(webhookSecret)}`
+      : publicWebhookUrl;
     const apiBaseUrl = isSandbox
       ? 'https://api-sandbox.transfeera.com'
       : 'https://api.transfeera.com';
@@ -179,10 +183,10 @@ Deno.serve(async (req) => {
       result = { action: 'created', webhook_id: createData.id };
     }
 
-    // 5. Save webhook_url in pix_configs
+    // 5. Save canonical webhook_url in pix_configs (without secret in query string)
     await supabaseAdmin
       .from('pix_configs')
-      .update({ webhook_url: webhookUrl })
+      .update({ webhook_url: publicWebhookUrl })
       .eq('id', config.id);
 
     console.log(`[register-webhook] Success: ${result.action} webhook ${result.webhook_id}`);
@@ -194,7 +198,7 @@ Deno.serve(async (req) => {
           ? 'Webhook atualizado com sucesso na Transfeera'
           : 'Webhook registrado com sucesso na Transfeera',
         ...result,
-        url: webhookUrl,
+        url: publicWebhookUrl,
         object_types: objectTypes,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
