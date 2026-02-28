@@ -156,43 +156,49 @@ export function usePixPayment() {
     }
 
     setIsProcessing(true);
+    const idempotencyKey = crypto.randomUUID();
 
     try {
       const { data, error } = await supabase.functions.invoke('pix-pay-dict', {
         body: {
           company_id: currentCompany.id,
+          idempotency_key: idempotencyKey,
           ...params,
         },
       });
 
       if (error) {
         console.error('[usePixPayment] Pay by key error:', error);
-        let errorMessage = "Tente novamente mais tarde.";
+        
+        // Check if it's a network error (connection lost)
+        const isNetworkError = !error.context || error.message?.includes('Failed to send') || error.message?.includes('fetch');
+        
+        if (isNetworkError) {
+          toast({
+            variant: "destructive",
+            title: "Conexão perdida",
+            description: "A conexão caiu durante o processamento. Verifique o extrato antes de tentar novamente.",
+            duration: 10000,
+          });
+          return null;
+        }
 
+        let errorMessage = "Tente novamente mais tarde.";
         try {
           if (error.context && typeof error.context === 'object') {
             const res = error.context as Response;
             if (res?.json) {
               const body = await res.json();
               let providerMessage = "";
-
               if (typeof body?.provider_error === 'string') {
-                try {
-                  const parsedProvider = JSON.parse(body.provider_error);
-                  providerMessage = parsedProvider?.message || "";
-                } catch {
-                  providerMessage = body.provider_error;
-                }
-              } else if (body?.provider_error && typeof body.provider_error === 'object') {
-                providerMessage = body.provider_error?.message || "";
+                try { providerMessage = JSON.parse(body.provider_error)?.message || ""; } catch { providerMessage = body.provider_error; }
+              } else if (body?.provider_error?.message) {
+                providerMessage = body.provider_error.message;
               }
-
               errorMessage = body?.error || providerMessage || body?.hint || errorMessage;
             }
           }
-        } catch {
-          // ignore parse errors
-        }
+        } catch { /* ignore */ }
 
         toast({
           variant: "destructive",
@@ -252,21 +258,29 @@ export function usePixPayment() {
     }
 
     setIsProcessing(true);
+    const idempotencyKey = crypto.randomUUID();
 
     try {
       const { data, error } = await supabase.functions.invoke('pix-pay-qrc', {
         body: {
           company_id: currentCompany.id,
+          idempotency_key: idempotencyKey,
           ...params,
         },
       });
 
       if (error) {
         console.error('[usePixPayment] Pay by QRC error:', error);
+        
+        const isNetworkError = !error.context || error.message?.includes('Failed to send') || error.message?.includes('fetch');
+        
         toast({
           variant: "destructive",
-          title: "Erro ao iniciar pagamento Pix",
-          description: error.message || "Tente novamente mais tarde.",
+          title: isNetworkError ? "Conexão perdida" : "Erro ao iniciar pagamento Pix",
+          description: isNetworkError 
+            ? "A conexão caiu durante o processamento. Verifique o extrato antes de tentar novamente."
+            : (error.message || "Tente novamente mais tarde."),
+          duration: isNetworkError ? 10000 : 5000,
         });
         return null;
       }

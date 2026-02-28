@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
 
     const userId = user.id;
     const body = await req.json();
-    const { company_id, pix_key, pix_key_type, valor, descricao } = body;
+    const { company_id, pix_key, pix_key_type, valor, descricao, idempotency_key } = body;
 
     if (!company_id || !pix_key || !valor) {
       return new Response(
@@ -157,7 +157,29 @@ Deno.serve(async (req) => {
       );
     }
 
-    
+    // ===== IDEMPOTENCY CHECK =====
+    if (idempotency_key) {
+      const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: existing } = await supabaseAdmin.from('transactions')
+        .select('id, status')
+        .eq('company_id', company_id)
+        .eq('pix_key', pix_key)
+        .eq('amount', valor)
+        .eq('created_by', userId)
+        .gte('created_at', fiveMinAgo)
+        .in('status', ['pending', 'completed'])
+        .limit(1)
+        .maybeSingle();
+
+      if (existing) {
+        console.log(`[pix-pay-dict] Duplicate blocked. Existing tx: ${existing.id}, status: ${existing.status}`);
+        return new Response(
+          JSON.stringify({ success: true, transaction_id: existing.id, duplicate: true, status: existing.status }),
+          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     // Get auth token
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
