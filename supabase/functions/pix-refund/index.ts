@@ -5,13 +5,10 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function generateRefundId(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 10; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+function getApiBaseUrl(config: any): string {
+  return config.is_sandbox
+    ? 'https://api-sandbox.transfeera.com'
+    : 'https://api.transfeera.com';
 }
 
 Deno.serve(async (req) => {
@@ -55,10 +52,7 @@ Deno.serve(async (req) => {
     }
 
     const { data: transaction } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('id', transaction_id)
-      .single();
+      .from('transactions').select('*').eq('id', transaction_id).single();
 
     if (!transaction) {
       return new Response(
@@ -85,10 +79,8 @@ Deno.serve(async (req) => {
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     const { data: existingRefunds } = await supabaseAdmin
-      .from('pix_refunds')
-      .select('valor, status')
-      .eq('transaction_id', transaction_id)
-      .neq('status', 'NAO_REALIZADO');
+      .from('pix_refunds').select('valor, status')
+      .eq('transaction_id', transaction_id).neq('status', 'NAO_REALIZADO');
 
     const totalRefunded = existingRefunds?.reduce((sum, r) => sum + Number(r.valor), 0) || 0;
     const availableForRefund = Number(transaction.amount) - totalRefunded;
@@ -101,12 +93,13 @@ Deno.serve(async (req) => {
     }
 
     // Get config
-    const { data: config } = await supabase
-      .from('pix_configs')
-      .select('*')
-      .eq('company_id', transaction.company_id)
-      .eq('is_active', true)
-      .single();
+    let config: any = null;
+    for (const p of ['cash_in', 'both', 'cash_out']) {
+      const { data: c } = await supabase
+        .from('pix_configs').select('*')
+        .eq('company_id', transaction.company_id).eq('is_active', true).eq('purpose', p).single();
+      if (c) { config = c; break; }
+    }
 
     if (!config) {
       return new Response(
@@ -130,48 +123,43 @@ Deno.serve(async (req) => {
     }
 
     const { access_token } = await authResponse.json();
-    const refundId = generateRefundId();
+    const apiBase = getApiBaseUrl(config);
+    const integrationId = crypto.randomUUID();
 
-    // ONZ refund via proxy
-    const refundUrl = `${config.base_url}/pix/payments/refund/${transaction.pix_e2eid}/${refundId}`;
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json' };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
+    // Transfeera: POST /pix/cashin/{end2endId}/refund
     let refundData: any;
     try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
+      const refundResponse = await fetch(`${apiBase}/pix/cashin/${transaction.pix_e2eid}/refund`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: refundUrl, method: 'PUT', headers: fetchHeaders, body: { amount: refundValue } }),
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
+        body: JSON.stringify({
+          value: refundValue,
+          integration_id: integrationId,
+        }),
       });
 
-      const proxyData = await proxyResponse.json();
-      const data = proxyData.data || proxyData;
+      refundData = await refundResponse.json();
 
-      if (!proxyResponse.ok || (proxyData.status && proxyData.status >= 400)) {
+      if (!refundResponse.ok) {
         return new Response(
-          JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(data) }),
+          JSON.stringify({ error: 'Failed to request refund', provider_error: JSON.stringify(refundData) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      refundData = data;
     } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log('[pix-refund] Refund response:', JSON.stringify(refundData));
+
+    const refundId = refundData.id || integrationId;
 
     const { data: savedRefund } = await supabaseAdmin
       .from('pix_refunds')
@@ -182,7 +170,7 @@ Deno.serve(async (req) => {
         valor: refundValue,
         motivo,
         status: refundData.status || 'EM_PROCESSAMENTO',
-        refunded_at: refundData.horario?.liquidacao,
+        refunded_at: refundData.refunded_at || null,
         created_by: userId,
       })
       .select()
@@ -194,7 +182,7 @@ Deno.serve(async (req) => {
       entity_type: 'pix_refund',
       entity_id: savedRefund?.id,
       action: 'pix_refund_requested',
-      new_data: { provider: 'onz', refund_id: refundId, valor: refundValue, status: refundData.status },
+      new_data: { provider: 'transfeera', refund_id: refundId, valor: refundValue, status: refundData.status },
     });
 
     return new Response(
@@ -203,7 +191,6 @@ Deno.serve(async (req) => {
         refund_id: refundId,
         status: refundData.status,
         valor: refundValue,
-        rtrId: refundData.rtrId,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

@@ -5,36 +5,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-secret',
 };
 
-// ========== VALIDATION HELPERS ==========
 function sanitizeString(str: unknown, maxLength = 255): string {
   if (typeof str !== 'string') return '';
   return str.replace(/[^\w\s\-.:@/]/g, '').substring(0, maxLength);
 }
 
-function isValidE2EId(str: unknown): boolean {
-  if (typeof str !== 'string') return false;
-  return /^[A-Za-z0-9]{1,64}$/.test(str);
-}
-
-// ========== WEBHOOK SECRET VERIFICATION ==========
-async function verifyWebhookSecret(req: Request, supabaseAdmin: any): Promise<boolean> {
-  const webhookSecret = req.headers.get('x-webhook-secret');
-  if (!webhookSecret) {
-    console.warn('[pix-webhook] Webhook secret header missing - rejecting request');
-    return false;
-  }
-
-  const { data: matchingConfigs } = await supabaseAdmin
-    .from('pix_configs')
-    .select('id')
-    .eq('webhook_secret', webhookSecret)
-    .eq('is_active', true)
-    .limit(1);
-
-  return matchingConfigs && matchingConfigs.length > 0;
-}
-
-// ========== RATE LIMITING ==========
+// Rate limiting
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW = 60_000;
 const RATE_LIMIT_MAX = 100;
@@ -48,6 +24,17 @@ function isRateLimited(ip: string): boolean {
   }
   entry.count++;
   return entry.count > RATE_LIMIT_MAX;
+}
+
+async function verifyWebhookSecret(req: Request, supabaseAdmin: any): Promise<boolean> {
+  const webhookSecret = req.headers.get('x-webhook-secret');
+  if (!webhookSecret) {
+    console.warn('[pix-webhook] Webhook secret header missing');
+    return false;
+  }
+  const { data: matchingConfigs } = await supabaseAdmin
+    .from('pix_configs').select('id').eq('webhook_secret', webhookSecret).eq('is_active', true).limit(1);
+  return matchingConfigs && matchingConfigs.length > 0;
 }
 
 Deno.serve(async (req) => {
@@ -102,37 +89,34 @@ Deno.serve(async (req) => {
       );
     }
 
-    if (typeof payload !== 'object' || payload === null) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid payload format' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     console.log('[pix-webhook] Received webhook from IP:', ip_address);
 
-    // ========== ONZ HANDLER ==========
-    // ONZ sends either: { evento, endToEndId, ... } or BCB standard { pix: [...] }
-    if (payload.pix && Array.isArray(payload.pix)) {
-      return await handleBcbPixWebhook(supabaseAdmin, payload, ip_address);
-    }
+    // Transfeera webhook format: { id, object, data: { ... } }
+    const objectType = payload.object || payload.type || 'UNKNOWN';
+    const eventData = payload.data || payload;
 
-    // ONZ specific format
-    if (payload.evento || payload.idPagamento || payload.endToEndId) {
-      return await handleOnzWebhook(supabaseAdmin, payload, ip_address);
-    }
-
-    // Unknown format - log and return OK
     await supabaseAdmin.from('pix_webhook_logs').insert({
-      event_type: 'UNKNOWN',
+      event_type: objectType,
       payload,
       ip_address,
       processed: false,
-      error_message: 'Unknown webhook format',
     });
 
+    if (objectType === 'Transfer' || objectType === 'TransferRefund') {
+      return await handleTransferWebhook(supabaseAdmin, objectType, eventData, ip_address);
+    }
+
+    if (objectType === 'Billet') {
+      return await handleBilletWebhook(supabaseAdmin, eventData, ip_address);
+    }
+
+    if (objectType === 'CashIn') {
+      return await handleCashInWebhook(supabaseAdmin, eventData, ip_address);
+    }
+
+    // Unknown object type - log and return OK
     return new Response(
-      JSON.stringify({ success: true, message: 'Unknown format logged' }),
+      JSON.stringify({ success: true, message: `Unknown object type: ${objectType}` }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
@@ -145,45 +129,41 @@ Deno.serve(async (req) => {
   }
 });
 
-// ========== BCB STANDARD PIX HANDLER (array format) ==========
-async function handleBcbPixWebhook(supabaseAdmin: any, payload: any, ip_address: string) {
-  for (const pixEvent of payload.pix) {
-    const endToEndId = sanitizeString(pixEvent.endToEndId, 64);
-    const txid = sanitizeString(pixEvent.txid, 64);
-    const valor = pixEvent.valor;
-    const horario = pixEvent.horario;
-    const infoPagador = sanitizeString(pixEvent.infoPagador, 255);
-    const chave = sanitizeString(pixEvent.chave, 255);
-    const devolucoes = pixEvent.devolucoes;
+// Handle Transfer and TransferRefund webhooks
+async function handleTransferWebhook(supabaseAdmin: any, objectType: string, data: any, ip_address: string) {
+  const transferId = data.id || data.transfer_id;
+  const status = String(data.status || '').toUpperCase();
 
-    await supabaseAdmin.from('pix_webhook_logs').insert({
-      event_type: devolucoes && devolucoes.length > 0 ? 'REFUND' : 'PIX',
-      payload: pixEvent,
-      ip_address,
-      processed: false,
-    });
+  const statusMap: Record<string, string> = {
+    'FINALIZADO': 'completed',
+    'FALHA': 'failed',
+    'DEVOLVIDO': 'refunded',
+    'ESTORNADO': 'refunded',
+  };
+  const internalStatus = statusMap[status] || 'pending';
 
-    if (!endToEndId || !isValidE2EId(endToEndId)) continue;
-
-    const { data: transaction } = await supabaseAdmin
+  if (transferId) {
+    // Find transaction by external_id containing the transfer_id
+    const { data: transactions } = await supabaseAdmin
       .from('transactions')
-      .select('id, company_id, status')
-      .eq('pix_e2eid', endToEndId)
-      .single();
+      .select('id, company_id, status, external_id')
+      .or(`external_id.ilike.%${transferId}%`)
+      .limit(1);
+
+    const transaction = transactions?.[0];
 
     if (transaction) {
-      const isFailed = pixEvent.status === 'NAO_REALIZADO';
-
       const updateData: any = {
-        status: isFailed ? 'failed' : 'completed',
-        pix_provider_response: pixEvent,
+        status: internalStatus,
+        pix_provider_response: data,
+        pix_e2eid: data.end_to_end_id || data.e2e_id || null,
       };
-      if (!isFailed) updateData.paid_at = horario || new Date().toISOString();
-      if (txid) updateData.pix_txid = txid;
+      if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+
       await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
 
-      // Auto-generate receipt for completed payments
-      if (!isFailed) {
+      // Auto-generate receipt
+      if (internalStatus === 'completed') {
         try {
           fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
             method: 'POST',
@@ -192,9 +172,9 @@ async function handleBcbPixWebhook(supabaseAdmin: any, payload: any, ip_address:
               'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
             },
             body: JSON.stringify({ transaction_id: transaction.id, company_id: transaction.company_id }),
-          }).catch(e => console.error('[pix-webhook] Auto-receipt generation failed:', e));
+          }).catch(e => console.error('[pix-webhook] Auto-receipt failed:', e));
         } catch (e) {
-          console.error('[pix-webhook] Error triggering receipt generation:', e);
+          console.error('[pix-webhook] Error triggering receipt:', e);
         }
       }
 
@@ -204,55 +184,22 @@ async function handleBcbPixWebhook(supabaseAdmin: any, payload: any, ip_address:
         entity_id: transaction.id,
         action: 'pix_webhook_received',
         old_data: { status: transaction.status },
-        new_data: { status: isFailed ? 'failed' : 'completed', endToEndId, valor, provider: 'onz' },
+        new_data: { status: internalStatus, transferId, provider: 'transfeera', objectType },
       });
-    } else if (chave) {
-      // Incoming payment
-      const { data: configs } = await supabaseAdmin
-        .from('pix_configs')
-        .select('company_id')
-        .eq('pix_key', chave)
-        .eq('is_active', true)
-        .limit(1);
-
-      if (configs && configs.length > 0) {
-        await supabaseAdmin.from('transactions').insert({
-          company_id: configs[0].company_id,
-          created_by: '00000000-0000-0000-0000-000000000000',
-          amount: parseFloat(valor),
-          status: 'completed',
-          pix_type: 'key',
-          pix_key: chave,
-          pix_e2eid: endToEndId,
-          pix_txid: txid,
-          description: infoPagador || 'Recebimento Pix',
-          paid_at: horario || new Date().toISOString(),
-          pix_provider_response: pixEvent,
-        });
-      }
     }
+  }
 
-    if (devolucoes && devolucoes.length > 0 && transaction) {
-      for (const dev of devolucoes) {
-        const { data: existingRefund } = await supabaseAdmin
-          .from('pix_refunds')
-          .select('id')
-          .eq('e2eid', endToEndId)
-          .eq('refund_id', dev.id || dev.rtrId)
-          .single();
+  // Handle TransferRefund
+  if (objectType === 'TransferRefund' && data.end_to_end_id) {
+    const { data: refunds } = await supabaseAdmin
+      .from('pix_refunds').select('id')
+      .eq('e2eid', data.end_to_end_id).limit(1);
 
-        if (!existingRefund) {
-          await supabaseAdmin.from('pix_refunds').insert({
-            transaction_id: transaction.id,
-            e2eid: endToEndId,
-            refund_id: dev.id || dev.rtrId || `REF_${Date.now()}`,
-            valor: parseFloat(dev.valor),
-            motivo: dev.motivo,
-            status: dev.status || 'DEVOLVIDO',
-            refunded_at: dev.horario?.liquidacao || new Date().toISOString(),
-          });
-        }
-      }
+    if (refunds?.[0]) {
+      await supabaseAdmin.from('pix_refunds').update({
+        status: data.status || 'DEVOLVIDO',
+        refunded_at: new Date().toISOString(),
+      }).eq('id', refunds[0].id);
     }
   }
 
@@ -261,47 +208,72 @@ async function handleBcbPixWebhook(supabaseAdmin: any, payload: any, ip_address:
   });
 }
 
-// ========== ONZ HANDLER ==========
-async function handleOnzWebhook(supabaseAdmin: any, payload: any, ip_address: string) {
-  const evento = payload.evento || 'PIX';
+// Handle Billet webhooks
+async function handleBilletWebhook(supabaseAdmin: any, data: any, ip_address: string) {
+  const billetId = data.id;
+  const status = String(data.status || '').toUpperCase();
 
-  await supabaseAdmin.from('pix_webhook_logs').insert({
-    event_type: evento,
-    payload,
-    ip_address,
-    processed: false,
-  });
+  const statusMap: Record<string, string> = {
+    'PAGO': 'completed',
+    'FALHA': 'failed',
+    'DEVOLVIDO': 'refunded',
+    'AGENDADO': 'pending',
+    'CRIADA': 'pending',
+  };
+  const internalStatus = statusMap[status] || 'pending';
 
-  const e2eId = payload.endToEndId || payload.e2eId || payload.idPagamento;
-
-  if (e2eId) {
-    const { data: transaction } = await supabaseAdmin
+  if (billetId) {
+    const { data: transactions } = await supabaseAdmin
       .from('transactions')
       .select('id, company_id, status')
-      .or(`pix_e2eid.eq.${e2eId},external_id.eq.${e2eId}`)
-      .single();
+      .or(`external_id.ilike.%${billetId}%`)
+      .limit(1);
+
+    const transaction = transactions?.[0];
 
     if (transaction) {
-      const status = payload.status || '';
-      const statusMap: Record<string, string> = {
-        'REALIZADO': 'completed', 'CONCLUIDO': 'completed',
-        'FALHA': 'failed', 'ERRO': 'failed',
-      };
-      const internalStatus = statusMap[status.toUpperCase()] || 'completed';
-
-      await supabaseAdmin.from('transactions').update({
-        status: internalStatus,
-        paid_at: new Date().toISOString(),
-        pix_provider_response: payload,
-      }).eq('id', transaction.id);
+      const updateData: any = { status: internalStatus, pix_provider_response: data };
+      if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+      await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
 
       await supabaseAdmin.from('audit_logs').insert({
         company_id: transaction.company_id,
         entity_type: 'transaction',
         entity_id: transaction.id,
-        action: 'pix_webhook_received',
+        action: 'billet_webhook_received',
         old_data: { status: transaction.status },
-        new_data: { status: internalStatus, provider: 'onz', evento },
+        new_data: { status: internalStatus, billetId, provider: 'transfeera' },
+      });
+    }
+  }
+
+  return new Response(JSON.stringify({ success: true }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+  });
+}
+
+// Handle CashIn webhooks (incoming Pix payments)
+async function handleCashInWebhook(supabaseAdmin: any, data: any, ip_address: string) {
+  const e2eId = data.end_to_end_id || data.e2e_id;
+  const pixKey = data.pix_key || data.key;
+
+  if (pixKey) {
+    const { data: configs } = await supabaseAdmin
+      .from('pix_configs').select('company_id')
+      .eq('pix_key', pixKey).eq('is_active', true).limit(1);
+
+    if (configs && configs.length > 0) {
+      await supabaseAdmin.from('transactions').insert({
+        company_id: configs[0].company_id,
+        created_by: '00000000-0000-0000-0000-000000000000',
+        amount: parseFloat(data.value || data.amount || 0),
+        status: 'completed',
+        pix_type: 'key',
+        pix_key: pixKey,
+        pix_e2eid: e2eId,
+        description: data.description || 'Recebimento Pix',
+        paid_at: new Date().toISOString(),
+        pix_provider_response: data,
       });
     }
   }

@@ -5,6 +5,12 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function getApiBaseUrl(config: any): string {
+  return config.is_sandbox
+    ? 'https://api-sandbox.transfeera.com'
+    : 'https://api.transfeera.com';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -39,16 +45,16 @@ Deno.serve(async (req) => {
     let billetExternalId = billet_id;
     let companyId = company_id;
 
-    // If transaction_id provided, get external_id from transaction
     if (transaction_id && (!billetExternalId || !companyId)) {
       const { data: txData } = await supabase
-        .from('transactions')
-        .select('company_id, external_id')
-        .eq('id', transaction_id)
-        .single();
+        .from('transactions').select('company_id, external_id')
+        .eq('id', transaction_id).single();
       if (txData) {
         companyId = companyId || txData.company_id;
-        billetExternalId = billetExternalId || txData.external_id;
+        if (!billetExternalId && txData.external_id) {
+          const parts = txData.external_id.split(':');
+          billetExternalId = parts.length > 1 ? parts[1] : parts[0];
+        }
       }
     }
 
@@ -63,12 +69,8 @@ Deno.serve(async (req) => {
     let config: any = null;
     for (const p of ['cash_out', 'both']) {
       const { data: c } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', companyId)
-        .eq('is_active', true)
-        .eq('purpose', p)
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', companyId).eq('is_active', true).eq('purpose', p).single();
       if (c) { config = c; break; }
     }
 
@@ -94,51 +96,38 @@ Deno.serve(async (req) => {
     }
 
     const { access_token } = await authResponse.json();
+    const apiBase = getApiBaseUrl(config);
 
-    // ONZ billet status via proxy
-    const statusUrl = `${config.base_url}/billets/${billetExternalId}`;
-    const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-    const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-    if (!proxyUrl || !proxyApiKey) {
-      return new Response(
-        JSON.stringify({ error: 'ONZ_PROXY_URL não configurado' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const fetchHeaders: any = { 'Authorization': `Bearer ${access_token}` };
-    if (config.provider_company_id) fetchHeaders['X-Company-ID'] = config.provider_company_id;
-
+    // Transfeera: GET /billet/{id}
     let statusData: any;
     try {
-      const proxyResponse = await fetch(`${proxyUrl}/proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-        body: JSON.stringify({ url: statusUrl, method: 'GET', headers: fetchHeaders }),
+      const statusResponse = await fetch(`${apiBase}/billet/${billetExternalId}`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${access_token}`,
+          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+        },
       });
-      const proxyData = await proxyResponse.json();
-      statusData = proxyData.data || proxyData;
+      statusData = await statusResponse.json();
     } catch (e) {
       return new Response(
-        JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
         { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     console.log('[billet-check-status] Status received:', JSON.stringify(statusData));
 
-    // Normalize status
-    const rawStatus = String(statusData.status || '').toUpperCase().replace(/,/g, '');
+    const rawStatus = String(statusData.status || '').toUpperCase();
     const statusMap: Record<string, string> = {
-      'LIQUIDATED': 'completed',
-      'PROCESSING': 'pending',
-      'CANCELED': 'failed',
-      'REFUNDED': 'refunded',
-      'PARTIALLY_REFUNDED': 'refunded',
+      'PAGO': 'completed',
+      'AGENDADO': 'pending',
+      'CRIADA': 'pending',
+      'FALHA': 'failed',
+      'DEVOLVIDO': 'refunded',
     };
     const internalStatus = statusMap[rawStatus] || 'pending';
 
-    // Update transaction if transaction_id provided
     if (transaction_id) {
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const updateData: any = { status: internalStatus, pix_provider_response: statusData };
@@ -153,11 +142,7 @@ Deno.serve(async (req) => {
         status: statusData.status,
         internal_status: internalStatus,
         is_completed: internalStatus === 'completed',
-        provider: 'onz',
-        billetInfo: statusData.billetInfo || null,
-        creditorAccount: statusData.creditorAccount || null,
-        debtorAccount: statusData.debtorAccount || null,
-        payment: statusData.payment || null,
+        provider: 'transfeera',
         payload: statusData,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
