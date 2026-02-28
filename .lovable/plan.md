@@ -1,46 +1,43 @@
 
 
-# Plano: Registro Automatico de Webhook via API Transfeera
+## Investigacao da Transacao de R$192,80
 
-## Problema
-O webhook precisa ser registrado manualmente na plataforma Transfeera. A API permite registro programatico via `POST /webhook`.
+### O que aconteceu
 
-## Implementacao
+Analisei os logs do backend, banco de dados e registros de funcoes. A transacao de R$192,80 para **MARA FRIOS** (QR Code dinamico) esta registrada com status **completed** (ID: `90fd5ec5`). Ela foi criada em 28/02 as 13:29:11 e confirmada as 13:32:43.
 
-### 1. Nova Edge Function: `register-transfeera-webhook`
-Criar `supabase/functions/register-transfeera-webhook/index.ts`:
-- Recebe `company_id` no body
-- Autentica com token **novo** (nunca cached) via `pix-auth` com `force_new: true`, ou autentica diretamente usando credenciais do `pix_configs`
-- Consulta webhooks existentes: `GET /webhook`
-- Se ja existe webhook com a URL do sistema, atualiza via `PUT /webhook/{id}`
-- Se nao existe, cria via `POST /webhook` com:
-  - `url`: URL do pix-webhook do projeto
-  - `object_types`: `['Transfer', 'TransferRefund', 'CashIn', 'CashInRefund']`
-- Retorna sucesso/erro
+### Causa raiz do erro
 
-### 2. Frontend: Adicionar botao "Registrar Webhook" no PixIntegration.tsx
-- Adicionar botao ao lado do campo de webhook URL
-- Ao clicar, chama a edge function `register-transfeera-webhook`
-- Exibe toast de sucesso/erro
-- Tambem chamar automaticamente apos "Testar Conexao" com sucesso
-
-### 3. Atualizar `handleTestConnection` no PixIntegration.tsx
-- Apos teste de conexao bem-sucedido, automaticamente registrar o webhook via a nova edge function
-- Exibir feedback ao usuario sobre o registro
-
-### Detalhes Tecnicos
+Nos logs da funcao `pix-pay-qrc`, encontrei este erro **antes** da transacao bem-sucedida:
 
 ```text
-Edge Function: register-transfeera-webhook
-1. Busca pix_configs da company
-2. Autentica DIRETAMENTE na Transfeera (token novo, sem cache)
-3. GET {baseUrl}/webhook -> lista webhooks existentes
-4. Se URL ja registrada -> PUT /webhook/{id} para atualizar object_types
-5. Se nao -> POST /webhook com url + object_types
-6. Retorna resultado
+Http: connection closed before message completed
 ```
 
-URLs da API (sandbox vs producao):
-- Sandbox: `https://api-sandbox.transfeera.com/webhook`
-- Producao: `https://api.transfeera.com/webhook`
+**O que isso significa**: O navegador mobile fechou a conexao HTTP antes que a funcao do backend terminasse de responder. Isso e comum em celulares quando:
+- A rede 5G/4G oscila momentaneamente
+- O Safari/Chrome mobile encerra conexoes longas
+- O telefone muda de antena ou entra em modo de economia
+
+A cadeia de chamadas da funcao (QRC Info → Auth → Transfeera API) leva ~4 segundos no total. O celular fechou a conexao durante esse tempo.
+
+**Resultado**: O frontend recebeu "Failed to send a request to the Edge Function" (erro de rede, nao do servidor), exibiu o toast de erro, mas **nao e possivel saber se o pagamento ja havia sido processado no provedor antes da conexao cair**. Voce entao repetiu o pagamento e este sim foi concluido normalmente.
+
+### Risco identificado: Pagamento duplicado
+
+Se a primeira tentativa tivesse sido processada pela Transfeera antes da conexao cair, voce teria pago R$192,80 **duas vezes**. Nao ha protecao de idempotencia no frontend atualmente.
+
+### Plano de correcao
+
+**1. Adicionar timeout e retry inteligente no frontend (`usePixPayment.ts`)**
+- Configurar `AbortController` com timeout de 30s na chamada da funcao
+- Em caso de erro de rede (nao HTTP), exibir mensagem orientando o usuario a verificar o extrato antes de tentar novamente
+
+**2. Adicionar protecao de idempotencia no `pix-pay-qrc` e `pix-pay-dict`**
+- Gerar `idempotency_key` no frontend e enviar no body
+- No backend, verificar se ja existe uma transacao recente com a mesma chave antes de criar um novo batch na Transfeera
+- Evita pagamentos duplicados em caso de retry
+
+**3. Melhorar mensagem de erro de rede no frontend**
+- Em vez de "Failed to send a request to the Edge Function", exibir: "Conexao perdida durante o processamento. Verifique o extrato antes de tentar novamente."
 
