@@ -70,7 +70,12 @@ export function usePixBalance() {
 
   useEffect(() => {
     fetchBalance();
-    const interval = setInterval(fetchBalance, 60000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        fetchBalance();
+      }
+    }, 60000);
+
     return () => clearInterval(interval);
   }, [fetchBalance]);
 
