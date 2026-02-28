@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, Search, UserCheck, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { useAuth } from "@/contexts/AuthContext";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 
 interface DictInfo {
@@ -43,6 +44,7 @@ function maskDocument(doc: string): string {
 export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, lookupKey, isProcessing, isLookingUp } = usePixPayment();
+  const { hasPageAccess } = useAuth();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
@@ -107,7 +109,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result) {
       handleClose();
-      navigate(`/transactions`);
+      const nextRoute = hasPageAccess("transactions") ? "/transactions" : "/";
+      navigate(nextRoute);
     }
   };
 
