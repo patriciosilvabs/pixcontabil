@@ -1,18 +1,7 @@
-import { useEffect, useMemo } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useMemo } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2 } from "lucide-react";
-
-const PAGE_ROUTES: { pageKey: string; path: string }[] = [
-  { pageKey: "dashboard", path: "/" },
-  { pageKey: "new_payment", path: "/pix/new" },
-  { pageKey: "transactions", path: "/transactions" },
-  { pageKey: "categories", path: "/categories" },
-  { pageKey: "reports", path: "/reports" },
-  { pageKey: "users", path: "/users" },
-  { pageKey: "companies", path: "/companies" },
-  { pageKey: "settings", path: "/settings" },
-];
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -22,31 +11,9 @@ interface AuthGuardProps {
 
 export function AuthGuard({ children, requireAdmin = false, requiredPage }: AuthGuardProps) {
   const { user, isLoading, isAdmin, hasPageAccess } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
 
-  const firstAccessibleRoute = useMemo(() => {
-    // Dashboard (/) is always accessible to all users
-    return "/";
-  }, []);
-
-  useEffect(() => {
-    if (!isLoading && !user) {
-      navigate("/auth", { state: { from: location }, replace: true });
-    }
-  }, [user, isLoading, navigate, location]);
-
-  useEffect(() => {
-    if (!isLoading && user && requireAdmin && !isAdmin) {
-      navigate(firstAccessibleRoute, { replace: true });
-    }
-  }, [user, isLoading, requireAdmin, isAdmin, navigate, firstAccessibleRoute]);
-
-  useEffect(() => {
-    if (!isLoading && user && requiredPage && !hasPageAccess(requiredPage)) {
-      navigate(firstAccessibleRoute, { replace: true });
-    }
-  }, [user, isLoading, requiredPage, hasPageAccess, navigate, firstAccessibleRoute]);
+  const firstAccessibleRoute = useMemo(() => "/", []);
 
   if (isLoading) {
     return (
@@ -59,9 +26,18 @@ export function AuthGuard({ children, requireAdmin = false, requiredPage }: Auth
     );
   }
 
-  if (!user) return null;
-  if (requireAdmin && !isAdmin) return null;
-  if (requiredPage && !hasPageAccess(requiredPage)) return null;
+  if (!user) {
+    return <Navigate to="/auth" state={{ from: location }} replace />;
+  }
+
+  if (requireAdmin && !isAdmin) {
+    return <Navigate to={firstAccessibleRoute} replace />;
+  }
+
+  if (requiredPage && !hasPageAccess(requiredPage)) {
+    return <Navigate to={firstAccessibleRoute} replace />;
+  }
 
   return <>{children}</>;
 }
+

@@ -5,6 +5,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function detectPixKeyType(key: string): string {
+  const cleaned = key.replace(/[\s\-\.\/]/g, '');
+  if (/^\d{11}$/.test(cleaned)) return 'CPF';
+  if (/^\d{14}$/.test(cleaned)) return 'CNPJ';
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key.trim())) return 'EMAIL';
+  if (/^\+?\d{10,13}$/.test(cleaned)) return 'TELEFONE';
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key.trim())) return 'CHAVE_ALEATORIA';
+  return 'CHAVE_ALEATORIA';
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -86,7 +96,8 @@ Deno.serve(async (req) => {
       : 'https://api.transfeera.com';
 
     const encodedKey = encodeURIComponent(pix_key.trim());
-    const dictUrl = `${apiBase}/pix/dict_key/${encodedKey}`;
+    const keyType = detectPixKeyType(pix_key);
+    const dictUrl = `${apiBase}/pix/dict_key/${encodedKey}?key_type=${encodeURIComponent(keyType)}`;
 
     console.log(`[pix-dict-lookup] Calling: ${dictUrl}`);
 
