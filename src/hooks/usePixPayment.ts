@@ -47,6 +47,21 @@ interface QRCInfoResult {
   end_to_end_id?: string;
 }
 
+interface DictLookupResult {
+  success: boolean;
+  name: string;
+  cpf_cnpj: string;
+  key_type: string;
+  key: string;
+  bank_name: string;
+  agency: string;
+  account: string;
+  account_type: string;
+  end2end_id: string;
+  ispb: string;
+  error?: string;
+}
+
 interface PaymentStatus {
   success: boolean;
   end_to_end_id: string;
@@ -72,9 +87,62 @@ export function usePixPayment() {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [isLookingUp, setIsLookingUp] = useState(false);
   const [paymentData, setPaymentData] = useState<PaymentResult | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Lookup Pix key in DICT
+  const lookupKey = useCallback(async (pix_key: string): Promise<DictLookupResult | null> => {
+    if (!currentCompany || !session) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Você precisa estar logado e ter uma empresa selecionada.",
+      });
+      return null;
+    }
+
+    setIsLookingUp(true);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('pix-dict-lookup', {
+        body: { company_id: currentCompany.id, pix_key },
+      });
+
+      if (error) {
+        console.error('[usePixPayment] DICT lookup error:', error);
+        toast({
+          variant: "destructive",
+          title: "Erro na consulta DICT",
+          description: error.message || "Não foi possível consultar a chave.",
+        });
+        return null;
+      }
+
+      if (!data.success) {
+        toast({
+          variant: "destructive",
+          title: "Chave não encontrada",
+          description: data.error || "A chave Pix informada não foi encontrada no DICT.",
+        });
+        return null;
+      }
+
+      return data as DictLookupResult;
+
+    } catch (error: any) {
+      console.error('[usePixPayment] DICT lookup exception:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha na comunicação com o servidor.",
+      });
+      return null;
+    } finally {
+      setIsLookingUp(false);
+    }
+  }, [currentCompany, session, toast]);
 
   // Pay via Pix key (DICT)
   const payByKey = useCallback(async (params: PayDictParams): Promise<PaymentResult | null> => {
@@ -469,8 +537,11 @@ export function usePixPayment() {
     // State
     isProcessing,
     isChecking,
+    isLookingUp,
     paymentData,
     paymentStatus,
+    // DICT lookup
+    lookupKey,
     // Payment actions
     payByKey,
     payByQRCode,
