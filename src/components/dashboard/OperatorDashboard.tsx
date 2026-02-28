@@ -11,6 +11,7 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePixBalance } from "@/hooks/usePixBalance";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
+import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import {
   Send,
   History,
@@ -27,7 +28,7 @@ import {
 export function OperatorDashboard() {
   const { profile, currentCompany, canViewBalance } = useAuth();
   const isMobile = useIsMobile();
-  const [balanceVisible, setBalanceVisible] = React.useState(true);
+  const { balanceVisible, toggleBalance } = useBalanceVisibility();
   const { summary, recentTransactions, isLoading: dataLoading } = useDashboardData();
   const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = usePixBalance();
 
@@ -64,7 +65,7 @@ export function OperatorDashboard() {
   const content = isMobile ? (
     <MobileDashboard
       balanceVisible={balanceVisible}
-      onToggleBalance={() => setBalanceVisible((v) => !v)}
+      onToggleBalance={toggleBalance}
       balance={balance}
       balanceLoading={balanceLoading}
       balanceAvailable={balanceAvailable}
