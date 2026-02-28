@@ -11,11 +11,26 @@ function getApiBaseUrl(config: any): string {
     : 'https://api.transfeera.com';
 }
 
-function mapPixKeyType(type: string): string {
-  const map: Record<string, string> = {
-    cpf: 'CPF', cnpj: 'CNPJ', email: 'EMAIL', phone: 'TELEFONE', random: 'CHAVE_ALEATORIA',
-  };
-  return map[type?.toLowerCase()] || 'CHAVE_ALEATORIA';
+function detectPixKeyType(key: string): string {
+  const cleaned = key.replace(/[\s\-\.\/]/g, '');
+  if (/^\d{11}$/.test(cleaned)) return 'CPF';
+  if (/^\d{14}$/.test(cleaned)) return 'CNPJ';
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(key.trim())) return 'EMAIL';
+  if (/^\+?\d{10,13}$/.test(cleaned)) return 'TELEFONE';
+  // UUID format = random key
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key.trim())) return 'CHAVE_ALEATORIA';
+  return 'CHAVE_ALEATORIA';
+}
+
+function mapPixKeyType(type: string | undefined, key: string): string {
+  if (type) {
+    const map: Record<string, string> = {
+      cpf: 'CPF', cnpj: 'CNPJ', email: 'EMAIL', phone: 'TELEFONE', random: 'CHAVE_ALEATORIA',
+    };
+    const mapped = map[type.toLowerCase()];
+    if (mapped) return mapped;
+  }
+  return detectPixKeyType(key);
 }
 
 Deno.serve(async (req) => {
@@ -115,7 +130,7 @@ Deno.serve(async (req) => {
         idempotency_key: idempotencyKey,
         pix_description: descricao || 'Pagamento Pix',
         destination_bank_account: {
-          pix_key_type: mapPixKeyType(pix_key_type || 'random'),
+          pix_key_type: mapPixKeyType(pix_key_type, pix_key),
           pix_key: pix_key,
         },
       }],
