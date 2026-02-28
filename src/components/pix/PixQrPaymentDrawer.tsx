@@ -5,10 +5,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Loader2, QrCode, DollarSign, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, QrCode, DollarSign, CheckCircle2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
+import { PaymentStatusScreen } from "./PaymentStatusScreen";
 
 interface PixQrPaymentDrawerProps {
   open: boolean;
@@ -19,13 +20,14 @@ interface PixQrPaymentDrawerProps {
 export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentDrawerProps) {
   const navigate = useNavigate();
   const { getQRCodeInfo, payByQRCode, isProcessing } = usePixPayment();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [isLoading, setIsLoading] = useState(true);
   const [amount, setAmount] = useState("");
   const [merchantName, setMerchantName] = useState("");
   const [merchantCity, setMerchantCity] = useState("");
   const [pixKey, setPixKey] = useState("");
   const [hasFixedAmount, setHasFixedAmount] = useState(false);
+  const [transactionId, setTransactionId] = useState("");
 
   useEffect(() => {
     if (!open || !qrCode) return;
@@ -36,6 +38,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setMerchantCity("");
     setPixKey("");
     setHasFixedAmount(false);
+    setTransactionId("");
 
     (async () => {
       const info = await getQRCodeInfo({ qr_code: qrCode });
@@ -47,7 +50,6 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
         if (info.amount && info.amount > 0) {
           setAmount(info.amount.toFixed(2).replace(".", ","));
           setHasFixedAmount(true);
-          // Skip amount step, go straight to confirmation
           setStep(3);
         } else {
           setStep(2);
@@ -63,11 +65,16 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     onOpenChange(false);
   };
 
+  const handleCloseAndNavigate = () => {
+    handleClose();
+    navigate("/transactions");
+  };
+
   const handleBack = () => {
-    if (step <= 2) {
+    if (step <= 2 || step === 4) {
       handleClose();
     } else {
-      setStep((s) => (s - 1) as 1 | 2 | 3);
+      setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
     }
   };
 
@@ -88,9 +95,9 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
       valor: value,
     });
 
-    if (result) {
-      handleClose();
-      navigate(`/transactions`);
+    if (result?.transaction_id) {
+      setTransactionId(result.transaction_id);
+      setStep(4);
     }
   };
 
@@ -100,42 +107,48 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const stepIcon = step === 1 ? QrCode : step === 2 ? DollarSign : CheckCircle2;
-  const stepTitle = step === 1 ? "Lendo QR Code" : step === 2 ? "Valor do Pagamento" : "Confirmar Pagamento";
-  const StepIcon = stepIcon;
+  const totalSteps = 4;
+  const stepIcons = [QrCode, DollarSign, CheckCircle2, ShieldCheck];
+  const stepTitles = ["Lendo QR Code", "Valor do Pagamento", "Confirmar Pagamento", "Verificando"];
+  const StepIcon = stepIcons[step - 1];
+  const stepTitle = stepTitles[step - 1];
 
   return (
-    <Drawer open={open} onOpenChange={handleClose}>
+    <Drawer open={open} onOpenChange={step === 4 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
-          <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
-            <button onClick={handleBack} className="p-1 -ml-1">
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
-                <StepIcon className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+          {step !== 4 && (
+            <>
+              <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
+                <button onClick={handleBack} className="p-1 -ml-1">
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                    <StepIcon className="h-4 w-4 text-primary-foreground" />
+                  </div>
+                  <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+                    {stepTitle}
+                  </DrawerTitle>
+                </div>
+              </DrawerHeader>
+              <DrawerDescription className="sr-only">
                 {stepTitle}
-              </DrawerTitle>
-            </div>
-          </DrawerHeader>
-          <DrawerDescription className="sr-only">
-            {stepTitle}
-          </DrawerDescription>
+              </DrawerDescription>
 
-          {/* Step indicators */}
-          <div className="flex gap-1.5 mb-5">
-            {[1, 2, 3].map((s) => (
-              <div
-                key={s}
-                className={`h-1 flex-1 rounded-full transition-colors ${
-                  s <= step ? "bg-primary" : "bg-muted"
-                }`}
-              />
-            ))}
-          </div>
+              {/* Step indicators */}
+              <div className="flex gap-1.5 mb-5">
+                {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
+                  <div
+                    key={s}
+                    className={`h-1 flex-1 rounded-full transition-colors ${
+                      s <= step ? "bg-primary" : "bg-muted"
+                    }`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Step 1: Loading QR info */}
           {step === 1 && isLoading && (
@@ -229,6 +242,16 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
                 )}
               </Button>
             </div>
+          )}
+
+          {/* Step 4: Status verification */}
+          {step === 4 && transactionId && (
+            <PaymentStatusScreen
+              transactionId={transactionId}
+              amount={parseLocalizedNumber(amount)}
+              beneficiaryName={merchantName || pixKey}
+              onClose={handleCloseAndNavigate}
+            />
           )}
         </div>
       </DrawerContent>

@@ -5,11 +5,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
+import { PaymentStatusScreen } from "./PaymentStatusScreen";
 
 interface PixKeyDialogProps {
   open: boolean;
@@ -20,24 +21,32 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, isProcessing } = usePixPayment();
   const { hasPageAccess } = useAuth();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
+  const [transactionId, setTransactionId] = useState("");
 
   const handleClose = () => {
     setPixKey("");
     setAmount("");
     setSaveFavorite(false);
     setStep(1);
+    setTransactionId("");
     onOpenChange(false);
   };
 
+  const handleCloseAndNavigate = () => {
+    handleClose();
+    const nextRoute = hasPageAccess("transactions") ? "/transactions" : "/";
+    navigate(nextRoute);
+  };
+
   const handleBack = () => {
-    if (step === 1) {
+    if (step === 1 || step === 4) {
       handleClose();
     } else {
-      setStep((s) => (s - 1) as 1 | 2 | 3);
+      setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
     }
   };
 
@@ -67,10 +76,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       valor: value,
     });
 
-    if (result) {
-      handleClose();
-      const nextRoute = hasPageAccess("transactions") ? "/transactions" : "/";
-      navigate(nextRoute);
+    if (result?.transaction_id) {
+      setTransactionId(result.transaction_id);
+      setStep(4);
     }
   };
 
@@ -80,44 +88,48 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const stepIcons = [Key, DollarSign, CheckCircle2];
-  const stepTitles = ["Pix com Chave", "Valor do Pagamento", "Confirmar Pagamento"];
-  const totalSteps = 3;
+  const stepIcons = [Key, DollarSign, CheckCircle2, ShieldCheck];
+  const stepTitles = ["Pix com Chave", "Valor do Pagamento", "Confirmar Pagamento", "Verificando"];
+  const totalSteps = 4;
   const StepIcon = stepIcons[step - 1];
   const stepTitle = stepTitles[step - 1];
 
   return (
-    <Drawer open={open} onOpenChange={handleClose}>
+    <Drawer open={open} onOpenChange={step === 4 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
-          <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
-            <button onClick={handleBack} className="p-1 -ml-1">
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
-                <StepIcon className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+          {step !== 4 && (
+            <>
+              <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
+                <button onClick={handleBack} className="p-1 -ml-1">
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                    <StepIcon className="h-4 w-4 text-primary-foreground" />
+                  </div>
+                  <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+                    {stepTitle}
+                  </DrawerTitle>
+                </div>
+              </DrawerHeader>
+              <DrawerDescription className="sr-only">
                 {stepTitle}
-              </DrawerTitle>
-            </div>
-          </DrawerHeader>
-          <DrawerDescription className="sr-only">
-            {stepTitle}
-          </DrawerDescription>
+              </DrawerDescription>
 
-          {/* Step indicators */}
-          <div className="flex gap-1.5 mb-5">
-            {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
-              <div
-                key={s}
-                className={`h-1 flex-1 rounded-full transition-colors ${
-                  s <= step ? "bg-primary" : "bg-muted"
-                }`}
-              />
-            ))}
-          </div>
+              {/* Step indicators */}
+              <div className="flex gap-1.5 mb-5">
+                {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
+                  <div
+                    key={s}
+                    className={`h-1 flex-1 rounded-full transition-colors ${
+                      s <= step ? "bg-primary" : "bg-muted"
+                    }`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Step 1: Pix Key */}
           {step === 1 && (
@@ -221,6 +233,16 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 )}
               </Button>
             </div>
+          )}
+
+          {/* Step 4: Status verification */}
+          {step === 4 && transactionId && (
+            <PaymentStatusScreen
+              transactionId={transactionId}
+              amount={parseLocalizedNumber(amount)}
+              beneficiaryName={pixKey}
+              onClose={handleCloseAndNavigate}
+            />
           )}
         </div>
       </DrawerContent>
