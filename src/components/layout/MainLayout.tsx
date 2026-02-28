@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
+import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -38,7 +39,7 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const { profile, isAdmin, currentCompany, companies, setCurrentCompany, signOut, hasPageAccess } = useAuth();
   const location = useLocation();
-  const [balanceVisible, setBalanceVisible] = React.useState(true);
+  const { balanceVisible, toggleBalance } = useBalanceVisibility();
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: Home, pageKey: "dashboard" },
@@ -66,7 +67,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       {/* Mobile header */}
       <MobileHeader
         balanceVisible={balanceVisible}
-        onToggleBalance={() => setBalanceVisible((v) => !v)}
+        onToggleBalance={toggleBalance}
       />
 
       {/* Desktop sidebar */}
