@@ -42,6 +42,14 @@ Deno.serve(async (req) => {
     return new Response('ok', { headers: corsHeaders });
   }
 
+  // Transfeera tests the webhook URL with a GET request during registration
+  if (req.method === 'GET') {
+    return new Response(
+      JSON.stringify({ status: 'ok', message: 'Webhook endpoint active' }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   const supabaseAdmin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
