@@ -42,7 +42,7 @@ const quickActions = [
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
 
-export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading, canViewBalance = true, onOpenBarcodeScanner }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading, canViewBalance = false, onOpenBarcodeScanner }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
