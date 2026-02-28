@@ -69,6 +69,7 @@ interface PaymentStatus {
   status: string;
   internal_status: string;
   is_liquidated: boolean;
+  is_completed: boolean;
   error_code?: string;
   amount?: number;
   creditor?: any;
