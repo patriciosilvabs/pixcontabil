@@ -251,6 +251,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
               amount={parseLocalizedNumber(amount)}
               beneficiaryName={merchantName || pixKey}
               onClose={handleCloseAndNavigate}
+              redirectToReceiptCapture
             />
           )}
         </div>

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePixPayment } from "@/hooks/usePixPayment";
@@ -11,6 +12,8 @@ interface PaymentStatusScreenProps {
   beneficiaryName?: string;
   onClose: () => void;
   onViewReceipt?: () => void;
+  /** When true, redirects to receipt capture page on completion instead of showing "Ver Comprovante" */
+  redirectToReceiptCapture?: boolean;
 }
 
 export function PaymentStatusScreen({
@@ -19,7 +22,9 @@ export function PaymentStatusScreen({
   beneficiaryName,
   onClose,
   onViewReceipt,
+  redirectToReceiptCapture = false,
 }: PaymentStatusScreenProps) {
+  const navigate = useNavigate();
   const { checkStatus, downloadReceipt } = usePixPayment();
   const [status, setStatus] = useState<StatusState>("polling");
   const [providerStatus, setProviderStatus] = useState("");
@@ -141,19 +146,35 @@ export function PaymentStatusScreen({
           )}
           <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
           <div className="w-full space-y-2 mt-2">
-            <Button
-              onClick={handleDownloadReceipt}
-              className="w-full h-12 text-base font-bold uppercase tracking-wider"
-            >
-              Ver Comprovante
-            </Button>
-            <Button
-              variant="outline"
-              onClick={onClose}
-              className="w-full h-12 text-base font-bold uppercase tracking-wider"
-            >
-              Fechar
-            </Button>
+            {redirectToReceiptCapture ? (
+              <>
+                <Button
+                  onClick={() => {
+                    onClose();
+                    navigate(`/receipt-capture/${transactionId}`);
+                  }}
+                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                >
+                  Anexar Comprovante
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  onClick={handleDownloadReceipt}
+                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                >
+                  Ver Comprovante
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={onClose}
+                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                >
+                  Fechar
+                </Button>
+              </>
+            )}
           </div>
         </>
       )}
