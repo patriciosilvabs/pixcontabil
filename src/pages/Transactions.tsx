@@ -84,7 +84,7 @@ export default function Transactions() {
       setIsLoading(true);
       let query = supabase
         .from("transactions")
-        .select("*, categories(name, classification), receipts(id)")
+        .select("*, categories(name, classification), receipts(id, ocr_data)")
         .eq("company_id", currentCompany.id);
 
       // Operators only see their own transactions
@@ -107,19 +107,25 @@ export default function Transactions() {
         console.error("Error fetching transactions:", txResult.error);
         setTransactions([]);
       } else {
-        const mapped: TransactionRow[] = (txResult.data || []).map((t: any) => ({
-          id: t.id,
-          beneficiary: t.beneficiary_name || (t.status === 'failed' ? 'Pagamento falhou' : t.description) || "Sem nome",
-          amount: Number(t.amount),
-          classification: t.categories?.classification || "expense",
-          category: t.categories?.name || "Sem categoria",
-          status: t.status,
-          hasReceipt: Array.isArray(t.receipts) && t.receipts.length > 0,
-          createdAt: t.created_at,
-          createdBy: t.created_by,
-          description: t.description,
-          providerError: t.status === 'failed' ? (t.pix_provider_response?.gnExtras?.erro?.motivo || t.description) : undefined,
-        }));
+        const mapped: TransactionRow[] = (txResult.data || []).map((t: any) => {
+          const receipts = Array.isArray(t.receipts) ? t.receipts : [];
+          const hasManualReceipt = receipts.some((r: any) => !r?.ocr_data?.auto_generated);
+          const hasReceipt = t.pix_type === "key" ? receipts.length > 0 : hasManualReceipt;
+
+          return {
+            id: t.id,
+            beneficiary: t.beneficiary_name || (t.status === 'failed' ? 'Pagamento falhou' : t.description) || "Sem nome",
+            amount: Number(t.amount),
+            classification: t.categories?.classification || "expense",
+            category: t.categories?.name || "Sem categoria",
+            status: t.status,
+            hasReceipt,
+            createdAt: t.created_at,
+            createdBy: t.created_by,
+            description: t.description,
+            providerError: t.status === 'failed' ? (t.pix_provider_response?.gnExtras?.erro?.motivo || t.description) : undefined,
+          };
+        });
         setTransactions(mapped);
       }
       setIsLoading(false);

@@ -14,6 +14,7 @@ interface TransactionWithCategory {
   category_name: string | null;
   classification: string | null;
   pix_type: string;
+  receipts: Array<{ ocr_data: { auto_generated?: boolean } | null }> | null;
 }
 
 export interface RecentTransaction {
@@ -108,10 +109,10 @@ export function useDashboardData() {
       const dayStart = startOfDay(now).toISOString();
 
       try {
-        // Fetch month transactions with category info
+        // Fetch month transactions with category + receipt info
         let query = supabase
           .from("transactions")
-          .select("id, amount, status, beneficiary_name, category_id, created_at, pix_type, categories(name, classification)")
+          .select("id, amount, status, beneficiary_name, category_id, created_at, pix_type, categories(name, classification), receipts(ocr_data)")
           .eq("company_id", currentCompany.id)
           .gte("created_at", monthStart)
           .order("created_at", { ascending: false });
@@ -132,31 +133,29 @@ export function useDashboardData() {
           category_name: t.categories?.name ?? null,
           classification: t.categories?.classification ?? null,
           pix_type: t.pix_type,
+          receipts: Array.isArray(t.receipts) ? t.receipts : [],
         }));
 
-        // Check for transactions missing receipts (exclude pix key type which has auto-receipt)
-        const completedNonKeyTxIds = transactions
-          .filter(t => t.pix_type !== "key" && (t.status === "completed" || t.status === "pending"))
-          .map(t => t.id);
+        // Missing receipt/classification for payment types that require manual attachment
+        const eligibleForManualReceipt = transactions.filter(
+          (t) => t.pix_type !== "key" && (t.status === "completed" || t.status === "pending")
+        );
 
-        let missingReceiptTxs: MissingReceiptTransaction[] = [];
-        if (completedNonKeyTxIds.length > 0) {
-          const { data: existingReceipts } = await supabase
-            .from("receipts")
-            .select("transaction_id")
-            .in("transaction_id", completedNonKeyTxIds);
+        const missingReceiptTxs: MissingReceiptTransaction[] = eligibleForManualReceipt
+          .filter((t) => {
+            const hasManualReceipt = (t.receipts || []).some((r) => !r?.ocr_data?.auto_generated);
+            const missingManualReceipt = !hasManualReceipt;
+            const missingClassification = !t.category_id;
+            return missingManualReceipt || missingClassification;
+          })
+          .map((t) => ({
+            id: t.id,
+            beneficiary: t.beneficiary_name || "Sem beneficiário",
+            amount: Number(t.amount),
+            pix_type: t.pix_type,
+            created_at: t.created_at,
+          }));
 
-          const txIdsWithReceipts = new Set((existingReceipts || []).map(r => r.transaction_id));
-          missingReceiptTxs = transactions
-            .filter(t => completedNonKeyTxIds.includes(t.id) && !txIdsWithReceipts.has(t.id))
-            .map(t => ({
-              id: t.id,
-              beneficiary: t.beneficiary_name || "Sem beneficiário",
-              amount: Number(t.amount),
-              pix_type: t.pix_type,
-              created_at: t.created_at,
-            }));
-        }
         setMissingReceipts(missingReceiptTxs);
 
         // Calculate summary
