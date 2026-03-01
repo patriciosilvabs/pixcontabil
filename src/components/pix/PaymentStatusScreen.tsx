@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 
 type StatusState = "polling" | "completed" | "failed" | "timeout";
 
@@ -57,6 +58,7 @@ export function PaymentStatusScreen({
 
       if (result.is_completed || result.internal_status === "completed") {
         setStatus("completed");
+        invalidateDashboardCache();
         if (timerRef.current) clearInterval(timerRef.current);
         return;
       }
