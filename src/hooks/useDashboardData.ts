@@ -13,6 +13,7 @@ interface TransactionWithCategory {
   created_at: string;
   category_name: string | null;
   classification: string | null;
+  pix_type: string;
 }
 
 export interface RecentTransaction {
@@ -23,6 +24,14 @@ export interface RecentTransaction {
   classification: string | null;
   time: string;
   status: string;
+}
+
+export interface MissingReceiptTransaction {
+  id: string;
+  beneficiary: string;
+  amount: number;
+  pix_type: string;
+  created_at: string;
 }
 
 export interface CategoryChartData {
@@ -67,6 +76,7 @@ export function useDashboardData() {
   });
   const [categoryData, setCategoryData] = useState<CategoryChartData[]>([]);
   const [recentTransactions, setRecentTransactions] = useState<RecentTransaction[]>([]);
+  const [missingReceipts, setMissingReceipts] = useState<MissingReceiptTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -82,6 +92,7 @@ export function useDashboardData() {
       setSummary(dashboardCache.data.summary);
       setCategoryData(dashboardCache.data.categoryData);
       setRecentTransactions(dashboardCache.data.recentTransactions);
+      setMissingReceipts(dashboardCache.data.missingReceipts || []);
       setIsLoading(false);
       return;
     }
@@ -96,7 +107,7 @@ export function useDashboardData() {
         // Fetch month transactions with category info
         let query = supabase
           .from("transactions")
-          .select("id, amount, status, beneficiary_name, category_id, created_at, categories(name, classification)")
+          .select("id, amount, status, beneficiary_name, category_id, created_at, pix_type, categories(name, classification)")
           .eq("company_id", currentCompany.id)
           .gte("created_at", monthStart)
           .order("created_at", { ascending: false });
@@ -116,7 +127,33 @@ export function useDashboardData() {
           created_at: t.created_at,
           category_name: t.categories?.name ?? null,
           classification: t.categories?.classification ?? null,
+          pix_type: t.pix_type,
         }));
+
+        // Check for transactions missing receipts (exclude pix key type which has auto-receipt)
+        const completedNonKeyTxIds = transactions
+          .filter(t => t.pix_type !== "key" && (t.status === "completed" || t.status === "pending"))
+          .map(t => t.id);
+
+        let missingReceiptTxs: MissingReceiptTransaction[] = [];
+        if (completedNonKeyTxIds.length > 0) {
+          const { data: existingReceipts } = await supabase
+            .from("receipts")
+            .select("transaction_id")
+            .in("transaction_id", completedNonKeyTxIds);
+
+          const txIdsWithReceipts = new Set((existingReceipts || []).map(r => r.transaction_id));
+          missingReceiptTxs = transactions
+            .filter(t => completedNonKeyTxIds.includes(t.id) && !txIdsWithReceipts.has(t.id))
+            .map(t => ({
+              id: t.id,
+              beneficiary: t.beneficiary_name || "Sem beneficiário",
+              amount: Number(t.amount),
+              pix_type: t.pix_type,
+              created_at: t.created_at,
+            }));
+        }
+        setMissingReceipts(missingReceiptTxs);
 
         // Calculate summary
         let totalCosts = 0;
@@ -174,7 +211,7 @@ export function useDashboardData() {
         // Store in cache
         dashboardCache = {
           key: cacheKey,
-          data: { summary: { totalCosts, totalExpenses, totalToday, transactionsToday, transactionsMonth: transactions.length, pendingReceipts }, categoryData: chartData, recentTransactions: recent },
+          data: { summary: { totalCosts, totalExpenses, totalToday, transactionsToday, transactionsMonth: transactions.length, pendingReceipts }, categoryData: chartData, recentTransactions: recent, missingReceipts: missingReceiptTxs },
           timestamp: Date.now(),
         };
       } catch (error) {
@@ -187,5 +224,5 @@ export function useDashboardData() {
     fetchData();
   }, [currentCompany?.id, isAdmin, user?.id]);
 
-  return { summary, categoryData, recentTransactions, isLoading };
+  return { summary, categoryData, recentTransactions, missingReceipts, isLoading };
 }
