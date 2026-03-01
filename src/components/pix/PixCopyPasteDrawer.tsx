@@ -10,6 +10,7 @@ import { ArrowLeft, Loader2, ClipboardPaste, DollarSign, CheckCircle2, Clipboard
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
+import { PaymentStatusScreen } from "./PaymentStatusScreen";
 
 interface PixCopyPasteDrawerProps {
   open: boolean;
@@ -19,7 +20,7 @@ interface PixCopyPasteDrawerProps {
 export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerProps) {
   const navigate = useNavigate();
   const { getQRCodeInfo, payByQRCode, isProcessing } = usePixPayment();
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [emvCode, setEmvCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [amount, setAmount] = useState("");
@@ -27,6 +28,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   const [merchantCity, setMerchantCity] = useState("");
   const [pixKey, setPixKey] = useState("");
   const [hasFixedAmount, setHasFixedAmount] = useState(false);
+  const [transactionId, setTransactionId] = useState("");
 
   const reset = () => {
     setStep(1);
@@ -37,6 +39,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     setMerchantCity("");
     setPixKey("");
     setHasFixedAmount(false);
+    setTransactionId("");
   };
 
   const handleClose = () => {
@@ -117,10 +120,15 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
       valor: value,
     });
 
-    if (result) {
-      handleClose();
-      navigate("/transactions");
+    if (result?.transaction_id) {
+      setTransactionId(result.transaction_id);
+      setStep(5);
     }
+  };
+
+  const handleCloseAndNavigate = () => {
+    handleClose();
+    navigate("/transactions");
   };
 
   const formattedAmount = () => {
@@ -135,37 +143,41 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   const StepIcon = stepIcon;
 
   return (
-    <Drawer open={open} onOpenChange={handleClose}>
+    <Drawer open={open} onOpenChange={step === 5 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
-          <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
-            <button onClick={handleBack} className="p-1 -ml-1">
-              <ArrowLeft className="h-5 w-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
-                <StepIcon className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+          {step !== 5 && (
+            <>
+              <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
+                <button onClick={handleBack} className="p-1 -ml-1">
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div className="flex items-center gap-2">
+                  <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                    <StepIcon className="h-4 w-4 text-primary-foreground" />
+                  </div>
+                  <DrawerTitle className="text-base font-bold uppercase tracking-wide">
+                    {stepTitle}
+                  </DrawerTitle>
+                </div>
+              </DrawerHeader>
+              <DrawerDescription className="sr-only">
                 {stepTitle}
-              </DrawerTitle>
-            </div>
-          </DrawerHeader>
-          <DrawerDescription className="sr-only">
-            {stepTitle}
-          </DrawerDescription>
+              </DrawerDescription>
 
-          {/* Step indicators */}
-          <div className="flex gap-1.5 mb-5">
-            {[1, 2, 3, 4].map((s) => (
-              <div
-                key={s}
-                className={`h-1 flex-1 rounded-full transition-colors ${
-                  s <= step ? "bg-primary" : "bg-muted"
-                }`}
-              />
-            ))}
-          </div>
+              {/* Step indicators */}
+              <div className="flex gap-1.5 mb-5">
+                {[1, 2, 3, 4].map((s) => (
+                  <div
+                    key={s}
+                    className={`h-1 flex-1 rounded-full transition-colors ${
+                      s <= step ? "bg-primary" : "bg-muted"
+                    }`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
 
           {/* Step 1: Paste EMV code */}
           {step === 1 && (
@@ -294,6 +306,17 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
                 )}
               </Button>
             </div>
+          )}
+
+          {/* Step 5: Status verification */}
+          {step === 5 && transactionId && (
+            <PaymentStatusScreen
+              transactionId={transactionId}
+              amount={parseLocalizedNumber(amount)}
+              beneficiaryName={merchantName || pixKey}
+              onClose={handleCloseAndNavigate}
+              redirectToReceiptCapture
+            />
           )}
         </div>
       </DrawerContent>
