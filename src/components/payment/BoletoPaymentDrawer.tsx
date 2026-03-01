@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { ArrowLeft, Loader2, FileText, DollarSign, CheckCircle2 } from "lucide-react";
+import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 import { toast } from "sonner";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { parseBoleto } from "@/utils/boletoParser";
@@ -71,6 +72,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     });
 
     if (result) {
+      invalidateDashboardCache();
       handleClose();
       // Redirect to receipt capture for manual attachment + classification
       const txId = (result as any).transaction_id || (result as any).id;

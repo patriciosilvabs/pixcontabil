@@ -64,6 +64,10 @@ const CHART_COLORS = [
 let dashboardCache: { key: string; data: any; timestamp: number } | null = null;
 const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
 
+export function invalidateDashboardCache() {
+  dashboardCache = null;
+}
+
 export function useDashboardData() {
   const { currentCompany, isAdmin, user } = useAuth();
   const [summary, setSummary] = useState<DashboardSummary>({
