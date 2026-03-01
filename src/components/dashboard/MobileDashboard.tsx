@@ -1,19 +1,19 @@
 import React, { useState, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
 import { PixCopyPasteDrawer } from "@/components/pix/PixCopyPasteDrawer";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
-import { Link } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import type { RecentTransaction } from "@/hooks/useDashboardData";
+import type { RecentTransaction, MissingReceiptTransaction } from "@/hooks/useDashboardData";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface MobileDashboardProps {
@@ -24,6 +24,7 @@ interface MobileDashboardProps {
   balanceAvailable?: boolean;
   provider?: string | null;
   recentTransactions?: RecentTransaction[];
+  missingReceipts?: MissingReceiptTransaction[];
   dataLoading?: boolean;
   canViewBalance?: boolean;
   onOpenBarcodeScanner?: () => void;
@@ -42,7 +43,7 @@ const quickActions = [
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
 
-export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], dataLoading, canViewBalance = false, onOpenBarcodeScanner }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], missingReceipts = [], dataLoading, canViewBalance = false, onOpenBarcodeScanner }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
@@ -104,6 +105,36 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
               <p className="text-xs text-muted-foreground mt-1">Provedor: {provider}</p>
             )}
             <Progress value={0} className="mt-4 h-2.5 [&>div]:bg-primary" />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Missing receipts notification */}
+      {missingReceipts.length > 0 && (
+        <Card className="border-warning/50 bg-warning/5 shadow-sm">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-warning/20 flex items-center justify-center shrink-0">
+                <AlertTriangle className="h-4.5 w-4.5 text-warning" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-warning">
+                  {missingReceipts.length} comprovante{missingReceipts.length > 1 ? "s" : ""} pendente{missingReceipts.length > 1 ? "s" : ""}
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
+                  {missingReceipts[0].beneficiary}
+                  {missingReceipts.length > 1 ? ` e mais ${missingReceipts.length - 1}` : ""}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 h-8 text-xs font-bold border-warning/50 text-warning hover:bg-warning/10"
+                onClick={() => navigate(`/receipt-capture/${missingReceipts[0].id}`)}
+              >
+                Anexar
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}
