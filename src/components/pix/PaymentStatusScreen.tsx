@@ -153,7 +153,7 @@ export function PaymentStatusScreen({
                 <Button
                   onClick={() => {
                     onClose();
-                    navigate(`/receipt-capture/${transactionId}`);
+                    navigate(`/pix/receipt/${transactionId}`);
                   }}
                   className="w-full h-12 text-base font-bold uppercase tracking-wider"
                 >

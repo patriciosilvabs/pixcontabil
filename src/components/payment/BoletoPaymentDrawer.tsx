@@ -77,7 +77,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       // Redirect to receipt capture for manual attachment + classification
       const txId = (result as any).transaction_id || (result as any).id;
       if (txId) {
-        navigate(`/receipt-capture/${txId}`);
+        navigate(`/pix/receipt/${txId}`);
       } else {
         navigate("/transactions");
       }
