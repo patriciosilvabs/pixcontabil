@@ -256,7 +256,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
       cancelled = true;
       stopScanner();
     };
-  }, [isOpen, mode]);
+  }, [isOpen, mode, preAcquiredStream]);
 
   const handleClose = () => {
     stopScanner();
