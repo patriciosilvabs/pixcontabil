@@ -11,6 +11,11 @@ function getApiBaseUrl(config: any): string {
     : 'https://api.transfeera.com';
 }
 
+function toNumber(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -102,25 +107,44 @@ Deno.serve(async (req) => {
     const billetInfo = await consultResponse.json();
     console.log('[billet-consult] Result:', JSON.stringify(billetInfo));
 
-    // Transfeera returns fields like:
-    // value, total_updated_value, due_date, fine_value, interest_value, discount_value,
-    // recipient_name, recipient_document, type, digitable_line, barcode, status, etc.
+    const paymentInfo = billetInfo?.payment_info ?? {};
+    const barcodeDetails = billetInfo?.barcode_details ?? {};
 
+    const originalValue = toNumber(
+      paymentInfo.original_value ?? barcodeDetails.value ?? billetInfo?.value
+    );
+
+    const updatedValue = toNumber(
+      paymentInfo.total_updated_value ?? billetInfo?.total_updated_value ?? originalValue
+    );
+
+    const fineValue = toNumber(paymentInfo.fine_value ?? billetInfo?.fine_value);
+    const interestValue = toNumber(paymentInfo.interest_value ?? billetInfo?.interest_value);
+    const discountValue = toNumber(
+      paymentInfo.total_discount_value ?? paymentInfo.discount_value ?? billetInfo?.discount_value
+    );
+
+    const dueDate = paymentInfo.due_date ?? barcodeDetails.due_date ?? billetInfo?.due_date;
+    const recipientName = paymentInfo.recipient_name ?? billetInfo?.recipient_name;
+    const recipientDocument = paymentInfo.recipient_document ?? billetInfo?.recipient_document;
+
+    // Transfeera can return nested fields in payment_info/barcode_details.
+    // Normalize the payload for frontend compatibility.
     return new Response(
       JSON.stringify({
         success: true,
-        value: billetInfo.value,
-        total_updated_value: billetInfo.total_updated_value,
-        due_date: billetInfo.due_date,
-        fine_value: billetInfo.fine_value,
-        interest_value: billetInfo.interest_value,
-        discount_value: billetInfo.discount_value,
-        recipient_name: billetInfo.recipient_name,
-        recipient_document: billetInfo.recipient_document,
-        type: billetInfo.type,
-        status: billetInfo.status,
-        digitable_line: billetInfo.digitable_line,
-        barcode: billetInfo.barcode,
+        value: originalValue,
+        total_updated_value: updatedValue,
+        due_date: dueDate,
+        fine_value: fineValue,
+        interest_value: interestValue,
+        discount_value: discountValue,
+        recipient_name: recipientName,
+        recipient_document: recipientDocument,
+        type: barcodeDetails.type ?? billetInfo?.type,
+        status: billetInfo?.status,
+        digitable_line: barcodeDetails.digitable_line ?? billetInfo?.digitable_line,
+        barcode: barcodeDetails.barcode ?? billetInfo?.barcode ?? cleanBarcode,
         raw: billetInfo,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
