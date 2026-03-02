@@ -162,7 +162,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                   onClick={() => {
                     if (isPixKey) setPixKeyOpen(true);
                     else if (isQrCode) acquireStreamAndOpen(setQrScannerOpen);
-                    else if (isBoleto) onOpenBarcodeScanner?.();
+                    else if (isBoleto) navigate("/pix/new?tab=boleto&openCamera=1");
                     else if (isCopyPaste) setCopyPasteOpen(true);
                     else if (isCash) setCashDrawerOpen(true);
                   }}
