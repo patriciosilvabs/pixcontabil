@@ -112,7 +112,7 @@ export default function NewPayment() {
   const { toast } = useToast();
   const { currentCompany, user } = useAuth();
   const { payByKey, payByQRCode, getQRCodeInfo, isProcessing: isPixProcessing } = usePixPayment();
-  const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing } = useBilletPayment();
+  const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
 
   const handleNext = () => {
     // Validate current step
@@ -462,22 +462,86 @@ export default function NewPayment() {
                       placeholder="00000.00000 00000.000000 00000.000000 0 00000000000000"
                       className="font-mono text-sm"
                       value={pixData.boletoCode || ""}
-                      onChange={(e) => {
+                      onChange={async (e) => {
                         const code = e.target.value;
                         const clean = code.replace(/[\s.\-]/g, '');
                         const newData: Partial<PaymentData> = { boletoCode: code };
                         
-                        // Auto-extract value when code length is valid
+                        // Auto-extract value from barcode first (fallback)
                         if (clean.length === 44 || clean.length === 47 || clean.length === 48) {
                           const info = parseBoleto(clean);
                           if (info && info.amount > 0) {
                             newData.amount = info.amount.toFixed(2).replace(".", ",");
                           }
+                          setPixData(prev => ({ ...prev, ...newData }));
+
+                          // Consult Transfeera for updated value with interest/fines
+                          const consultResult = await consultBillet(clean);
+                          if (consultResult) {
+                            const updatedAmount = consultResult.total_updated_value || consultResult.value;
+                            if (updatedAmount && updatedAmount > 0) {
+                              setPixData(prev => ({
+                                ...prev,
+                                amount: updatedAmount.toFixed(2).replace(".", ","),
+                                beneficiaryName: consultResult.recipient_name || prev.beneficiaryName,
+                              }));
+                            }
+                          }
+                        } else {
+                          setPixData(prev => ({ ...prev, ...newData }));
                         }
-                        
-                        setPixData({ ...pixData, ...newData });
                       }}
                     />
+                    {isConsultingBillet && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Consultando boleto na CIP...
+                      </div>
+                    )}
+                    {billetConsultData && (
+                      <div className="rounded-lg bg-secondary p-3 space-y-2 text-sm">
+                        {billetConsultData.recipient_name && (
+                          <div>
+                            <span className="text-xs font-bold uppercase text-muted-foreground">Beneficiário: </span>
+                            <span className="font-medium">{billetConsultData.recipient_name}</span>
+                          </div>
+                        )}
+                        {billetConsultData.fine_value && billetConsultData.fine_value > 0 && (
+                          <div className="flex items-center gap-1.5 text-amber-600">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            <span className="text-xs font-bold uppercase">Multa:</span>
+                            <span className="font-medium">
+                              {billetConsultData.fine_value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </div>
+                        )}
+                        {billetConsultData.interest_value && billetConsultData.interest_value > 0 && (
+                          <div className="flex items-center gap-1.5 text-amber-600">
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            <span className="text-xs font-bold uppercase">Juros:</span>
+                            <span className="font-medium">
+                              {billetConsultData.interest_value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </div>
+                        )}
+                        {billetConsultData.discount_value && billetConsultData.discount_value > 0 && (
+                          <div className="text-emerald-600">
+                            <span className="text-xs font-bold uppercase">Desconto:</span>
+                            <span className="font-medium ml-1">
+                              - {billetConsultData.discount_value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </div>
+                        )}
+                        {billetConsultData.total_updated_value && billetConsultData.total_updated_value > 0 && (
+                          <div>
+                            <span className="text-xs font-bold uppercase text-muted-foreground">Valor Atualizado: </span>
+                            <span className="font-bold text-primary">
+                              {billetConsultData.total_updated_value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs text-muted-foreground">
                       Digite ou cole a linha digitável do código de barras (47 ou 48 dígitos)
                     </p>
