@@ -36,6 +36,7 @@ const FEATURE_OPTIONS = [
   { key: "favorecidos", label: "FAVORECIDOS" },
   { key: "agendadas", label: "AGENDADAS" },
   { key: "boleto", label: "BOLETO" },
+  { key: "dinheiro", label: "DINHEIRO" },
   { key: "transferir", label: "TRANSFERIR" },
 ];
 
