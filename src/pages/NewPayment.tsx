@@ -475,11 +475,11 @@ export default function NewPayment() {
                           }
                           setPixData(prev => ({ ...prev, ...newData }));
 
-                          // Consult Transfeera for updated value with interest/fines
+                          // Consult backend for updated value with interest/fines
                           const consultResult = await consultBillet(clean);
                           if (consultResult) {
-                            const updatedAmount = consultResult.total_updated_value || consultResult.value;
-                            if (updatedAmount && updatedAmount > 0) {
+                            const updatedAmount = Number(consultResult.total_updated_value ?? consultResult.value ?? 0);
+                            if (updatedAmount > 0) {
                               setPixData(prev => ({
                                 ...prev,
                                 amount: updatedAmount.toFixed(2).replace(".", ","),
@@ -717,7 +717,7 @@ export default function NewPayment() {
               step === 1 && "w-full"
             )}
             onClick={handleNext}
-            disabled={isLoading || isPixProcessing || isBilletProcessing || isConsultingPaste}
+            disabled={isLoading || isPixProcessing || isBilletProcessing || isConsultingPaste || isConsultingBillet}
           >
             {isLoading ? (
               <>
@@ -776,24 +776,46 @@ export default function NewPayment() {
               });
             }
           } else {
-            // Parse boleto to extract amount
+            // Parse boleto to extract amount (fallback)
             const boletoInfo = parseBoleto(result);
             const extractedAmount = boletoInfo && boletoInfo.amount > 0
               ? boletoInfo.amount.toFixed(2).replace(".", ",")
               : "";
-            
-            setPixData({ 
-              ...pixData, 
+
+            setPixData((prev) => ({
+              ...prev,
+              type: "boleto",
               boletoCode: result,
-              amount: extractedAmount || pixData.amount,
-            });
+              amount: extractedAmount || prev.amount,
+            }));
+
+            // Consult updated billet amount (interest/fines/discount)
+            const clean = result.replace(/[\s.\-]/g, '');
+            const consultResult = await consultBillet(clean);
+            const updatedAmount = Number(consultResult?.total_updated_value ?? consultResult?.value ?? 0);
+
+            if (updatedAmount > 0) {
+              setPixData((prev) => ({
+                ...prev,
+                type: "boleto",
+                boletoCode: result,
+                amount: updatedAmount.toFixed(2).replace(".", ","),
+                beneficiaryName: consultResult?.recipient_name || prev.beneficiaryName,
+              }));
+
+              toast({
+                title: "Boleto consultado!",
+                description: `Valor atualizado: R$ ${updatedAmount.toFixed(2).replace(".", ",")}`,
+              });
+              setStep(2);
+              return;
+            }
 
             if (boletoInfo && boletoInfo.amount > 0) {
               toast({
                 title: "Boleto identificado!",
                 description: `Valor: R$ ${boletoInfo.amount.toFixed(2).replace(".", ",")}${boletoInfo.dueDate ? ` • Venc: ${new Date(boletoInfo.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}` : ''}`,
               });
-              // Skip to step 2 since we have the code
               setStep(2);
             } else {
               toast({
