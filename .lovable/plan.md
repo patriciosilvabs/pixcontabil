@@ -1,37 +1,39 @@
 
 
-## Tela de Confirmação Pós-Pagamento com Verificação de Status
+## Registro de Pagamento em Dinheiro
 
-### Problema Atual
-Após confirmar o pagamento, o sistema exibe apenas um toast "Pagamento iniciado!" e redireciona para `/transactions`. O usuário não tem garantia visual de que o provedor realmente processou e liquidou o pagamento.
+O objetivo é adicionar um novo tipo de pagamento "Dinheiro" que permite registrar pagamentos realizados em espécie, com obrigatoriedade de anexar o comprovante (foto do recibo/cupom) e classificar contabilmente.
 
-### Solução
-Adicionar uma **etapa final de verificação** nos drawers de pagamento (PixKeyDialog e PixQrPaymentDrawer) que faz polling do status real via `pix-check-status` e exibe um resultado visual claro.
+### Como funciona
 
-### Fluxo novo
-1. Usuário confirma → botão muda para "Processando..."
-2. Backend retorna `transaction_id` → drawer muda para **Step 4: "Aguardando confirmação"**
-3. Polling automático a cada 3s via `pix-check-status` (max 20 tentativas = ~60s)
-4. Resultado final exibido no drawer:
-   - **Sucesso** (FINALIZADO): ícone verde, valor, botão "Ver Comprovante" + "Fechar"
-   - **Falha** (FALHA): ícone vermelho, mensagem de erro, botão "Fechar"
-   - **Timeout** (ainda pending após 60s): ícone amarelo, "Pagamento em processamento. Acompanhe pelo extrato."
+Diferente dos demais tipos (Pix, Boleto), o pagamento em dinheiro nao chama nenhuma API externa. Ele apenas cria o registro da transacao no banco de dados com `pix_type = 'cash'` e `status = 'completed'`, e redireciona imediatamente para a tela de anexar comprovante (`/pix/receipt/:id`).
 
-### Implementação
+### Alteracoes necessarias
 
-**1. Criar componente `PaymentStatusScreen`** (`src/components/pix/PaymentStatusScreen.tsx`)
-- Recebe `transactionId`, `amount`, `beneficiaryName`
-- Usa `checkStatus(transactionId, true)` com polling interno
-- 3 estados visuais: aguardando (spinner), sucesso (check verde), falha (X vermelho)
-- Botão "Ver Comprovante" chama `downloadReceipt` quando sucesso
+**1. Banco de dados** -- Adicionar `'cash'` ao enum `pix_type`
+- Executar migration: `ALTER TYPE pix_type ADD VALUE 'cash';`
 
-**2. Atualizar `PixKeyDialog`**
-- Adicionar step 4 que renderiza `PaymentStatusScreen`
-- Após `payByKey` retornar com sucesso, ir para step 4 em vez de fechar o drawer
+**2. Novo Drawer `CashPaymentDrawer`**
+- Formulario simples com: valor, nome do favorecido (quem recebeu o dinheiro), descricao opcional
+- Ao confirmar, cria a transacao via `supabase.from("transactions").insert(...)` com `pix_type: 'cash'`, `status: 'completed'`, `paid_at: now()`
+- Redireciona para `/pix/receipt/:transactionId` para anexar foto do recibo
 
-**3. Atualizar `PixQrPaymentDrawer`**
-- Mesmo padrão: step 4 com `PaymentStatusScreen` após confirmação
+**3. Dashboard Mobile** -- Adicionar botao "DINHEIRO" nas acoes rapidas
+- Novo item no array `quickActions` com icone `Banknote` (lucide)
+- Abre o `CashPaymentDrawer` ao clicar
+- Feature key `dinheiro` para controle de permissoes
 
-**4. Ajustar `pix-check-status`**
-- A edge function já retorna `is_completed` e `internal_status` — nenhuma mudança necessária no backend
+**4. Pagina NewPayment** -- Adicionar aba "Dinheiro"
+- Nova tab no `TabsList` com o mesmo formulario simplificado (valor + favorecido)
+
+**5. Ajustes no fluxo de comprovantes pendentes**
+- `useDashboardData.ts`: incluir `pix_type = 'cash'` na lista de tipos que exigem comprovante manual (junto com qrcode, copy_paste, boleto)
+- `Transactions.tsx`: tratar o tipo `cash` na lista de transacoes (icone de notas/dinheiro, label "Dinheiro")
+
+### Secao tecnica
+
+- O enum `pix_type` precisa da migration SQL antes de poder inserir `'cash'`
+- O `CashPaymentDrawer` sera um Drawer (bottom-sheet) com 2 campos: valor obrigatorio e favorecido obrigatorio, seguido de botao "Registrar Pagamento"
+- A transacao ja nasce como `completed` pois o dinheiro ja foi entregue fisicamente
+- O sistema de comprovantes pendentes tratara `cash` igual a `qrcode`/`boleto` -- sem foto anexada = notificacao no dashboard
 
