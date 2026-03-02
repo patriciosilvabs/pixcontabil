@@ -36,12 +36,21 @@ interface TransactionRow {
   classification: string;
   category: string;
   status: string;
+  pixType: string;
   hasReceipt: boolean;
   createdAt: string;
   createdBy?: string;
   description?: string;
   providerError?: string;
 }
+
+const pixTypeLabels: Record<string, string> = {
+  key: "Chave Pix",
+  qrcode: "QR Code",
+  copy_paste: "Copia e Cola",
+  boleto: "Boleto",
+  cash: "Dinheiro",
+};
 
 const statusConfig = {
   completed: {
@@ -119,6 +128,7 @@ export default function Transactions() {
             classification: t.categories?.classification || "expense",
             category: t.categories?.name || "Sem categoria",
             status: t.status,
+            pixType: t.pix_type,
             hasReceipt,
             createdAt: t.created_at,
             createdBy: t.created_by,
@@ -245,6 +255,10 @@ export default function Transactions() {
                             </Badge>
                             <span>•</span>
                             <span>{transaction.category}</span>
+                            <span>•</span>
+                            <Badge variant="secondary" className="text-xs">
+                              {pixTypeLabels[transaction.pixType] || transaction.pixType}
+                            </Badge>
                             <span className="hidden sm:inline">•</span>
                             <span className="hidden sm:inline">
                               {transaction.createdBy && profileMap[transaction.createdBy]
