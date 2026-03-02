@@ -79,9 +79,16 @@ export default function NewPayment() {
 
   useEffect(() => {
     const tab = searchParams.get("tab");
+    const autoOpenCamera = searchParams.get("openCamera") === "1";
     const validTabs: PaymentType[] = ["key", "copy_paste", "qrcode", "boleto"];
+
     if (tab && validTabs.includes(tab as PaymentType)) {
       setPixData((prev) => ({ ...prev, type: tab as PaymentType }));
+    }
+
+    if (tab === "boleto" && autoOpenCamera) {
+      setScannerMode("barcode");
+      setScannerOpen(true);
     }
 
     // Handle QR code from dashboard scanner
