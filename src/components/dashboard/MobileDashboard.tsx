@@ -8,13 +8,14 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle } from "lucide-react";
+import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle, Banknote } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import type { RecentTransaction, MissingReceiptTransaction } from "@/hooks/useDashboardData";
 import { useAuth } from "@/contexts/AuthContext";
+import { CashPaymentDrawer } from "@/components/payment/CashPaymentDrawer";
 
 interface MobileDashboardProps {
   balanceVisible: boolean;
@@ -35,6 +36,7 @@ const quickActions = [
   { label: "PAGAR QR CODE", icon: QrCode, href: "/pix/new?tab=qrcode", featureKey: "pagar_qrcode" },
   { label: "COPIA E COLA", icon: ClipboardPaste, href: "/pix/new?tab=copy_paste", featureKey: "copia_cola" },
   { label: "COM CHAVE", icon: Key, href: "/pix/new?tab=key", featureKey: "com_chave" },
+  { label: "DINHEIRO", icon: Banknote, href: "#cash", featureKey: "dinheiro" },
   { label: "FAVORECIDOS", icon: Star, href: "/transactions?filter=favorites", featureKey: "favorecidos" },
   { label: "AGENDADAS", icon: CalendarClock, href: "/transactions?status=pending", featureKey: "agendadas" },
   { label: "BOLETO", icon: FileText, href: "/pix/new?tab=boleto", featureKey: "boleto" },
@@ -49,6 +51,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const [scannedQrCode, setScannedQrCode] = useState("");
   const [qrPaymentOpen, setQrPaymentOpen] = useState(false);
   const [copyPasteOpen, setCopyPasteOpen] = useState(false);
+  const [cashDrawerOpen, setCashDrawerOpen] = useState(false);
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
@@ -150,8 +153,9 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
             const isQrCode = action.label === "PAGAR QR CODE";
             const isBoleto = action.label === "BOLETO";
             const isCopyPaste = action.label === "COPIA E COLA";
+            const isCash = action.label === "DINHEIRO";
 
-            if (isPixKey || isQrCode || isBoleto || isCopyPaste) {
+            if (isPixKey || isQrCode || isBoleto || isCopyPaste || isCash) {
               return (
                 <button
                   key={action.label}
@@ -160,6 +164,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                     else if (isQrCode) acquireStreamAndOpen(setQrScannerOpen);
                     else if (isBoleto) onOpenBarcodeScanner?.();
                     else if (isCopyPaste) setCopyPasteOpen(true);
+                    else if (isCash) setCashDrawerOpen(true);
                   }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
                 >
@@ -207,6 +212,10 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
       <PixCopyPasteDrawer
         open={copyPasteOpen}
         onOpenChange={setCopyPasteOpen}
+      />
+      <CashPaymentDrawer
+        open={cashDrawerOpen}
+        onOpenChange={setCashDrawerOpen}
       />
 
       {/* Recent Transactions */}

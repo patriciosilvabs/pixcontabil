@@ -13,6 +13,7 @@ import { usePixPayment } from "@/hooks/usePixPayment";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Key,
@@ -25,12 +26,13 @@ import {
   Loader2,
   Check,
   AlertCircle,
+  Banknote,
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { parseBoleto } from "@/utils/boletoParser";
 
-type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto";
+type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto" | "cash";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
 
 interface PaymentData {
@@ -39,6 +41,7 @@ interface PaymentData {
   key?: string;
   copyPaste?: string;
   boletoCode?: string;
+  beneficiaryName?: string;
   amount: string;
   description?: string;
   classification?: "cost" | "expense";
@@ -107,13 +110,27 @@ export default function NewPayment() {
     }
   }, [searchParams]);
   const { toast } = useToast();
-  const { currentCompany } = useAuth();
+  const { currentCompany, user } = useAuth();
   const { payByKey, payByQRCode, getQRCodeInfo, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing } = useBilletPayment();
 
   const handleNext = () => {
     // Validate current step
     if (step === 1) {
+      if (pixData.type === "cash") {
+        // Cash validates all fields in step 1 then submits directly
+        const parsedAmount = parseFloat((pixData.amount || "").replace(",", "."));
+        if (!parsedAmount || parsedAmount <= 0) {
+          toast({ variant: "destructive", title: "Erro", description: "Informe um valor válido." });
+          return;
+        }
+        if (!pixData.beneficiaryName?.trim()) {
+          toast({ variant: "destructive", title: "Erro", description: "Informe o nome do favorecido." });
+          return;
+        }
+        handleConfirmPayment();
+        return;
+      }
       if (pixData.type === "key" && !pixData.key) {
         toast({
           variant: "destructive",
@@ -164,7 +181,23 @@ export default function NewPayment() {
     try {
       const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
 
-      if (pixData.type === 'boleto') {
+      if (pixData.type === 'cash') {
+        if (!currentCompany?.id || !user?.id) throw new Error("Empresa ou usuário não identificado.");
+        const { data, error } = await supabase.from("transactions").insert({
+          company_id: currentCompany.id,
+          created_by: user.id,
+          amount,
+          beneficiary_name: pixData.beneficiaryName?.trim() || "",
+          description: pixData.description?.trim() || "Pagamento em dinheiro",
+          pix_type: "cash" as any,
+          status: "completed",
+          paid_at: new Date().toISOString(),
+        }).select("id").single();
+        if (error) throw error;
+        invalidateDashboardCache();
+        toast({ title: "Pagamento registrado!", description: "Agora anexe o comprovante." });
+        navigate(`/pix/receipt/${data.id}`);
+      } else if (pixData.type === 'boleto') {
         const result = await payBillet({
           digitable_code: pixData.boletoCode || '',
           description: 'Pagamento de boleto',
@@ -262,7 +295,7 @@ export default function NewPayment() {
                 value={pixData.type}
                 onValueChange={(v) => setPixData({ ...pixData, type: v as PaymentType })}
               >
-                <TabsList className="grid grid-cols-4 w-full">
+                <TabsList className="grid grid-cols-5 w-full">
                   <TabsTrigger value="key" className="gap-2">
                     <Key className="h-4 w-4" />
                     <span className="hidden sm:inline">Chave</span>
@@ -278,6 +311,10 @@ export default function NewPayment() {
                   <TabsTrigger value="boleto" className="gap-2">
                     <FileText className="h-4 w-4" />
                     <span className="hidden sm:inline">Boleto</span>
+                  </TabsTrigger>
+                  <TabsTrigger value="cash" className="gap-2">
+                    <Banknote className="h-4 w-4" />
+                    <span className="hidden sm:inline">Dinheiro</span>
                   </TabsTrigger>
                 </TabsList>
 
@@ -446,6 +483,36 @@ export default function NewPayment() {
                     </p>
                   </div>
                 </TabsContent>
+
+                <TabsContent value="cash" className="space-y-4 mt-6">
+                  <div className="space-y-2">
+                    <Label>Valor (R$) *</Label>
+                    <Input
+                      placeholder="0,00"
+                      inputMode="decimal"
+                      className="text-lg font-mono-numbers"
+                      value={pixData.amount || ""}
+                      onChange={(e) => setPixData({ ...pixData, amount: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Favorecido *</Label>
+                    <Input
+                      placeholder="Nome de quem recebeu o dinheiro"
+                      value={pixData.beneficiaryName || ""}
+                      onChange={(e) => setPixData({ ...pixData, beneficiaryName: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Descrição (opcional)</Label>
+                    <Textarea
+                      placeholder="Observações do pagamento..."
+                      value={pixData.description || ""}
+                      onChange={(e) => setPixData({ ...pixData, description: e.target.value })}
+                      className="min-h-[80px]"
+                    />
+                  </div>
+                </TabsContent>
               </Tabs>
             </CardContent>
           </Card>
@@ -592,6 +659,11 @@ export default function NewPayment() {
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Processando...
+              </>
+            ) : pixData.type === "cash" && step === 1 ? (
+              <>
+                <Check className="mr-2 h-4 w-4" />
+                Registrar Pagamento
               </>
             ) : step === 3 ? (
               <>

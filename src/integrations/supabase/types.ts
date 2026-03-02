@@ -866,7 +866,7 @@ export type Database = {
       classification_type: "cost" | "expense"
       pix_config_purpose: "cash_in" | "cash_out" | "both"
       pix_key_type: "cpf" | "cnpj" | "email" | "phone" | "random"
-      pix_type: "key" | "copy_paste" | "qrcode" | "boleto"
+      pix_type: "key" | "copy_paste" | "qrcode" | "boleto" | "cash"
       receipt_status: "pending" | "processing" | "completed" | "failed"
       transaction_status: "pending" | "completed" | "failed" | "cancelled"
     }
@@ -1000,7 +1000,7 @@ export const Constants = {
       classification_type: ["cost", "expense"],
       pix_config_purpose: ["cash_in", "cash_out", "both"],
       pix_key_type: ["cpf", "cnpj", "email", "phone", "random"],
-      pix_type: ["key", "copy_paste", "qrcode", "boleto"],
+      pix_type: ["key", "copy_paste", "qrcode", "boleto", "cash"],
       receipt_status: ["pending", "processing", "completed", "failed"],
       transaction_status: ["pending", "completed", "failed", "cancelled"],
     },
