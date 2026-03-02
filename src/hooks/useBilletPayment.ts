@@ -3,6 +3,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 
+export interface BilletConsultResult {
+  success: boolean;
+  value?: number;
+  total_updated_value?: number;
+  due_date?: string;
+  fine_value?: number;
+  interest_value?: number;
+  discount_value?: number;
+  recipient_name?: string;
+  recipient_document?: string;
+  type?: string;
+  status?: string;
+  digitable_line?: string;
+  barcode?: string;
+  raw?: any;
+}
+
 interface PayBilletParams {
   digitable_code: string;
   description: string;
@@ -48,9 +65,41 @@ export function useBilletPayment() {
   const { toast } = useToast();
   const [isProcessing, setIsProcessing] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [isConsulting, setIsConsulting] = useState(false);
   const [paymentData, setPaymentData] = useState<BilletPaymentResult | null>(null);
   const [billetStatus, setBilletStatus] = useState<BilletStatus | null>(null);
+  const [consultData, setConsultData] = useState<BilletConsultResult | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  const consultBillet = useCallback(async (codigo_barras: string): Promise<BilletConsultResult | null> => {
+    if (!currentCompany || !session) return null;
+
+    setIsConsulting(true);
+    setConsultData(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('billet-consult', {
+        body: {
+          company_id: currentCompany.id,
+          codigo_barras,
+        },
+      });
+
+      if (error || !data?.success) {
+        console.error('[useBilletPayment] Consult error:', error || data?.error);
+        // Non-blocking: return null, let the user proceed with manual amount
+        return null;
+      }
+
+      setConsultData(data);
+      return data;
+    } catch (error: any) {
+      console.error('[useBilletPayment] Consult exception:', error);
+      return null;
+    } finally {
+      setIsConsulting(false);
+    }
+  }, [currentCompany, session]);
 
   const payBillet = useCallback(async (params: PayBilletParams): Promise<BilletPaymentResult | null> => {
     if (!currentCompany || !session) {
@@ -289,9 +338,12 @@ export function useBilletPayment() {
   return {
     isProcessing,
     isChecking,
+    isConsulting,
     paymentData,
     billetStatus,
+    consultData,
     payBillet,
+    consultBillet,
     checkBilletStatus,
     startPolling,
     stopPolling,
