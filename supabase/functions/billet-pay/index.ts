@@ -11,6 +11,11 @@ function getApiBaseUrl(config: any): string {
     : 'https://api.transfeera.com';
 }
 
+function parsePositiveAmount(value: unknown): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -108,6 +113,20 @@ Deno.serve(async (req) => {
       console.warn('[billet-pay] Billet consult error:', e.message);
     }
 
+    const consultPaymentInfo = billetInfo?.payment_info ?? {};
+    const consultBarcodeDetails = billetInfo?.barcode_details ?? {};
+
+    const originalConsultValue = parsePositiveAmount(
+      consultPaymentInfo.original_value ?? consultBarcodeDetails.value ?? billetInfo?.value
+    );
+
+    const updatedConsultValue = parsePositiveAmount(
+      consultPaymentInfo.total_updated_value ?? billetInfo?.total_updated_value ?? originalConsultValue
+    );
+
+    const informedValue = parsePositiveAmount(valor);
+    const billetAmount = informedValue ?? updatedConsultValue ?? originalConsultValue;
+
     // Step 2: Create batch with billet
     const paymentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
     const batchPayload = {
@@ -118,7 +137,7 @@ Deno.serve(async (req) => {
         barcode: cleanBarcode,
         payment_date: paymentDate,
         description: descricao || 'Pagamento de boleto',
-        value: valor || billetInfo?.value || undefined,
+        value: billetAmount,
       }],
     };
 
@@ -155,7 +174,7 @@ Deno.serve(async (req) => {
     const batchId = paymentData.id;
     const billetId = paymentData.billets?.[0]?.id || '';
     const externalId = `${batchId}:${billetId}`;
-    const amount = valor || billetInfo?.value || paymentData.billets?.[0]?.value || 0;
+    const amount = billetAmount ?? parsePositiveAmount(paymentData.billets?.[0]?.value) ?? 0;
 
     // Save transaction
     const supabaseAdmin = createClient(
