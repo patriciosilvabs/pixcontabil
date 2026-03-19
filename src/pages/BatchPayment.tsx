@@ -169,7 +169,7 @@ export default function BatchPayment() {
             </Card>
             <Card>
               <CardContent className="p-4 text-center">
-                <p className="text-2xl font-bold text-green-600">{summary.success_count}</p>
+                <p className="text-2xl font-bold text-primary">{summary.success_count}</p>
                 <p className="text-xs text-muted-foreground">Sucesso</p>
               </CardContent>
             </Card>
