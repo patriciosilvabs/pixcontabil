@@ -221,6 +221,14 @@ export function PaymentStatusScreen({
           >
             Fechar
           </Button>
+          <Button
+            variant="ghost"
+            onClick={() => { onClose(); navigate("/"); }}
+            className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+          >
+            <Home className="mr-2 h-5 w-5" />
+            Voltar ao Início
+          </Button>
         </>
       )}
 
