@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, CheckCircle2, XCircle, Clock, Share2, Download } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Clock, Share2, Download, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
@@ -163,6 +163,14 @@ export function PaymentStatusScreen({
                 >
                   Anexar Comprovante
                 </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => { onClose(); navigate("/"); }}
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+                >
+                  <Home className="mr-2 h-5 w-5" />
+                  Voltar ao Início
+                </Button>
               </>
             ) : (
               <>
@@ -183,10 +191,11 @@ export function PaymentStatusScreen({
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={onClose}
+                  onClick={() => { onClose(); navigate("/"); }}
                   className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
-                  Fechar
+                  <Home className="mr-2 h-5 w-5" />
+                  Voltar ao Início
                 </Button>
               </>
             )}
@@ -212,6 +221,14 @@ export function PaymentStatusScreen({
           >
             Fechar
           </Button>
+          <Button
+            variant="ghost"
+            onClick={() => { onClose(); navigate("/"); }}
+            className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+          >
+            <Home className="mr-2 h-5 w-5" />
+            Voltar ao Início
+          </Button>
         </>
       )}
 
@@ -234,6 +251,14 @@ export function PaymentStatusScreen({
             className="w-full h-11 text-sm font-bold uppercase tracking-wider mt-1"
           >
             Fechar
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => { onClose(); navigate("/"); }}
+            className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+          >
+            <Home className="mr-2 h-5 w-5" />
+            Voltar ao Início
           </Button>
         </>
       )}
