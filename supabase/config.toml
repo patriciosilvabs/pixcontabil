@@ -92,3 +92,6 @@ verify_jwt = false
 
 [functions.batch-pay]
 verify_jwt = false
+
+[functions.pix-webhook-gateway]
+verify_jwt = false

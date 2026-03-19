@@ -69,6 +69,7 @@ const App = () => (
             <Route path="/settings/pix-integration" element={<AuthGuard requireAdmin><PixIntegration /></AuthGuard>} />
             <Route path="/batch-payment" element={<AuthGuard requiredPage="new_payment"><BatchPayment /></AuthGuard>} />
             <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
+            <Route path="/webhook-events" element={<AuthGuard requireAdmin><WebhookEvents /></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
