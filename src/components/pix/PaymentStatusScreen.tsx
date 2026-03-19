@@ -131,7 +131,7 @@ export function PaymentStatusScreen({
           {beneficiaryName && (
             <p className="text-sm text-muted-foreground">{beneficiaryName}</p>
           )}
-          <p className="text-2xl font-bold text-primary">{formattedAmount}</p>
+          <p className="text-xl font-bold text-primary">{formattedAmount}</p>
         </>
       )}
 
