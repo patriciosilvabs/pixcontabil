@@ -1,41 +1,70 @@
 
-## Diagnóstico
+Diagnóstico atual:
 
-A transação fica "aguardando confirmação" porque existem **dois problemas encadeados**:
+- O webhook da ONZ já está chegando corretamente. Há evidência clara disso:
+  - `pix_webhook_logs` registrou `TRANSFER` com `data.status = LIQUIDATED`
+  - `pix-webhook` logou: `Updated tx d512d4fd...: pending → completed`
+- Então o problema não é mais o cadastro da URL/header na ONZ.
 
-### Problema 1: Webhook rejeitado (UNAUTHORIZED)
-O campo `webhook_secret` está **NULL** na tabela `pix_configs`. Quando a ONZ envia o webhook de confirmação, a função `pix-webhook` rejeita a requisição porque não consegue validar o segredo. O log confirma:
-- 20:28:06 → `event_type: UNAUTHORIZED` — "Webhook secret verification failed"
+Causa raiz:
 
-### Problema 2: Polling retorna "pending"
-O `pix-check-status` está sendo chamado a cada 2s e retorna 200, mas a ONZ pode retornar o status como `PROCESSING` enquanto a liquidação não é finalizada. Sem o webhook funcionar, a transação nunca atualiza para `completed`.
+- O erro agora está no polling de `pix-check-status`.
+- A resposta da ONZ vem aninhada assim:
+  ```text
+  { "data": { "status": "LIQUIDATED", ... } }
+  ```
+- Mas o código atual em `supabase/functions/pix-check-status/index.ts` usa `result.data.status` em vez de ler `result.data.data.status`.
+- Resultado:
+  - o status é interpretado como vazio
+  - o mapeamento cai em `pending`
+  - a tela continua em “Aguardando confirmação”
+  - e em alguns momentos o registro pode voltar para `pending`
 
----
+Plano de correção:
 
-## Plano de Correção
+1. Corrigir o parser da resposta ONZ em `supabase/functions/pix-check-status/index.ts`
+   - Normalizar a resposta com algo como:
+     ```text
+     onzPayload = result.data?.data ?? result.data
+     ```
+   - Ler `onzPayload.status`, `onzPayload.id`, `onzPayload.endToEndId` e salvar o payload normalizado.
 
-### Passo 1: Configurar webhook_secret no banco
-- Gerar um valor aleatório seguro para `webhook_secret` na `pix_configs`
-- Atualizar diretamente via migration SQL
+2. Fortalecer a regra de não-downgrade no fluxo ONZ
+   - Se a transação já estiver em estado final (`completed`, `failed`, `cancelled`, `refunded`) e o polling calcular um estado inferior, não atualizar o banco.
+   - Além disso, retornar o status final real ao frontend, não o `pending` calculado erroneamente.
+   - Hoje isso já foi feito no ramo Transfeera, mas o ramo ONZ ainda precisa do mesmo comportamento de retorno.
 
-### Passo 2: Atualizar webhook_url na ONZ
-- O `webhook_url` já está configurado: `https://ntvgthwqxixkoemyxhqo.supabase.co/functions/v1/pix-webhook`
-- Você precisa adicionar o header `x-webhook-secret` no painel da ONZ com o valor gerado no passo 1
-- **Alternativa:** registrar a URL com query param: `?whs=VALOR_DO_SECRET` (a função já aceita ambos)
+3. Ajustar a persistência do status ONZ
+   - Quando a ONZ retornar `LIQUIDATED`, garantir:
+     - `status = completed`
+     - `paid_at` preenchido
+     - `pix_provider_response` com payload normalizado
+   - Isso deixa o estado consistente mesmo sem depender do webhook.
 
-### Passo 3: Melhorar o pix-check-status para ONZ
-- Adicionar logs de debug para ver a resposta exata da API ONZ durante o polling
-- Garantir que o status `LIQUIDATED` da ONZ seja corretamente mapeado para `completed` (já está no código)
+4. Revisar o `pix-webhook` apenas para consistência
+   - Confirmar que ele continua atualizando por `endToEndId` / `external_id`
+   - Opcionalmente marcar `pix_webhook_logs.processed = true` quando reconciliar a transação, para facilitar auditoria futura
 
-### Passo 4: Corrigir transação pendente atual
-- Atualizar manualmente a transação `bd37c41b` para `completed` (já que o pagamento foi confirmado na conta do destinatário)
+5. Reconciliar a transação já afetada
+   - Após o ajuste, atualizar a transação `d512d4fd-7dc1-4e96-99da-44131212d422` para `completed`, porque os logs mostram que ela foi liquidada e já tem `paid_at`
 
----
+Validação planejada:
 
-## Ação necessária do usuário
+- Fazer uma nova transação Pix
+- Confirmar esta sequência:
+  ```text
+  ONZ -> webhook recebido
+      -> transação marcada completed
+      -> polling retorna internal_status = completed
+      -> PaymentStatusScreen mostra "Pagamento confirmado"
+  ```
+- Conferir que a transação não volta mais para `pending`
+- Confirmar geração automática do comprovante
 
-Após eu gerar o `webhook_secret`, você precisará atualizar o painel da ONZ Infopago adicionando o header:
-```
-x-webhook-secret: <valor_gerado>
-```
-Ou alterar a URL do webhook para incluir `?whs=<valor_gerado>`.
+Detalhes técnicos:
+
+- Arquivo principal a ajustar: `supabase/functions/pix-check-status/index.ts`
+- Possível ajuste secundário: `supabase/functions/pix-webhook/index.ts`
+- Não precisa migration de banco
+- Não parece ser problema de RLS, autenticação, URL do webhook ou segredo da ONZ
+- O bug está na interpretação da resposta ONZ e na reconciliação do status retornado ao frontend
