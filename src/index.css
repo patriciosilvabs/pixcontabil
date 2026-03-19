@@ -168,9 +168,29 @@
     @apply border-border;
   }
 
+  html {
+    /* Prevent pull-to-refresh and overscroll bounce (native feel) */
+    overscroll-behavior: none;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    /* Prevent text selection on interactive elements (native feel) */
+    -webkit-user-select: none;
+    user-select: none;
+    /* Remove tap highlight on mobile */
+    -webkit-tap-highlight-color: transparent;
+    /* Prevent rubber-band scrolling */
+    overscroll-behavior-y: none;
+    /* Smooth momentum scrolling */
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Allow text selection in inputs and textareas */
+  input, textarea, [contenteditable="true"], pre, code {
+    -webkit-user-select: text;
+    user-select: text;
   }
   
   /* Scrollbar styling */
