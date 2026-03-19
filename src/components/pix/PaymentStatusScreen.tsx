@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, CheckCircle2, XCircle, Clock } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Clock, Share2, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
@@ -26,7 +26,7 @@ export function PaymentStatusScreen({
   redirectToReceiptCapture = false,
 }: PaymentStatusScreenProps) {
   const navigate = useNavigate();
-  const { checkStatus, downloadReceipt } = usePixPayment();
+  const { checkStatus, downloadReceipt, shareReceipt, saveReceiptAsFile } = usePixPayment();
   const [status, setStatus] = useState<StatusState>("polling");
   const [providerStatus, setProviderStatus] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -106,8 +106,12 @@ export function PaymentStatusScreen({
     currency: "BRL",
   });
 
-  const handleDownloadReceipt = async () => {
-    await downloadReceipt(transactionId, true);
+  const handleShareReceipt = async () => {
+    await shareReceipt(transactionId, true);
+  };
+
+  const handleSaveReceipt = async () => {
+    await saveReceiptAsFile(transactionId, true);
   };
 
   return (
@@ -163,13 +167,22 @@ export function PaymentStatusScreen({
             ) : (
               <>
                 <Button
-                  onClick={handleDownloadReceipt}
+                  onClick={handleShareReceipt}
                   className="w-full h-12 text-base font-bold uppercase tracking-wider"
                 >
-                  Ver Comprovante
+                  <Share2 className="mr-2 h-5 w-5" />
+                  Compartilhar
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={handleSaveReceipt}
+                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                >
+                  <Download className="mr-2 h-5 w-5" />
+                  Salvar no Aparelho
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={onClose}
                   className="w-full h-12 text-base font-bold uppercase tracking-wider"
                 >
