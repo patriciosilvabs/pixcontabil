@@ -204,7 +204,7 @@ export function PaymentStatusScreen({
             <p className="text-base font-bold">Pagamento não concluído</p>
             <p className="text-sm text-muted-foreground">{errorMessage}</p>
           </div>
-          <p className="text-2xl font-bold text-destructive">{formattedAmount}</p>
+          <p className="text-xl font-bold text-destructive">{formattedAmount}</p>
           <Button
             variant="outline"
             onClick={onClose}
