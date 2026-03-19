@@ -218,7 +218,7 @@ export function PaymentStatusScreen({
       {/* Timeout */}
       {status === "timeout" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-amber-500/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-amber-500/10 flex items-center justify-center">
             <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
           </div>
           <div className="text-center space-y-1">
