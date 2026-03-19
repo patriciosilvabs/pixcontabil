@@ -26,7 +26,7 @@ export function PaymentStatusScreen({
   redirectToReceiptCapture = false,
 }: PaymentStatusScreenProps) {
   const navigate = useNavigate();
-  const { checkStatus, downloadReceipt } = usePixPayment();
+  const { checkStatus, downloadReceipt, shareReceipt, saveReceiptAsFile } = usePixPayment();
   const [status, setStatus] = useState<StatusState>("polling");
   const [providerStatus, setProviderStatus] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
