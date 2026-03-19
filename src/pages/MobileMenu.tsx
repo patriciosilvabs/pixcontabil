@@ -34,7 +34,10 @@ export default function MobileMenu() {
     { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },
   ];
 
-  const menuItems = allMenuItems.filter((item) => hasPageAccess(item.pageKey));
+  const menuItems = allMenuItems.filter((item) => {
+    if ('adminOnly' in item && item.adminOnly && !isAdmin) return false;
+    return !item.pageKey || hasPageAccess(item.pageKey);
+  });
 
   return (
     <MainLayout>
