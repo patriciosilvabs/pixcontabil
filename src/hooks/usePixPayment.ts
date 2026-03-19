@@ -656,6 +656,8 @@ export function usePixPayment() {
     // Receipt actions
     getReceipt,
     downloadReceipt,
+    shareReceipt,
+    saveReceiptAsFile,
     // Refund
     requestRefund,
   };
