@@ -143,7 +143,12 @@ Deno.serve(async (req) => {
 
       console.log(`[pix-auth] ONZ proxy response - proxyStatus: ${result.proxyStatus}, status: ${result.status}, data:`, JSON.stringify(result.data));
 
-      if (result.status >= 400 || !result.data?.accessToken) {
+      const onzTokenData = result.data ?? {};
+      const normalizedAccessToken = onzTokenData.access_token ?? onzTokenData.accessToken;
+      const normalizedExpiresAt = onzTokenData.expires_at ?? onzTokenData.expiresAt;
+      const normalizedExpiresIn = onzTokenData.expires_in ?? onzTokenData.expiresIn;
+
+      if (result.status >= 400 || !normalizedAccessToken) {
         const errorDetail = JSON.stringify(result.data);
         console.error('[pix-auth] ONZ auth error:', errorDetail);
         return new Response(
@@ -152,10 +157,18 @@ Deno.serve(async (req) => {
         );
       }
 
-      accessToken = result.data.accessToken;
-      // ONZ returns expiresAt as epoch seconds
-      const expiresAt = result.data.expiresAt;
-      expiresInSeconds = expiresAt ? Math.max(0, expiresAt - Math.floor(Date.now() / 1000)) : 1800;
+      accessToken = normalizedAccessToken;
+      if (typeof normalizedExpiresAt === 'number') {
+        expiresInSeconds = Math.max(0, normalizedExpiresAt - Math.floor(Date.now() / 1000));
+      } else if (typeof normalizedExpiresAt === 'string' && /^\d+$/.test(normalizedExpiresAt)) {
+        expiresInSeconds = Math.max(0, parseInt(normalizedExpiresAt, 10) - Math.floor(Date.now() / 1000));
+      } else if (typeof normalizedExpiresIn === 'number') {
+        expiresInSeconds = normalizedExpiresIn;
+      } else if (typeof normalizedExpiresIn === 'string' && /^\d+$/.test(normalizedExpiresIn)) {
+        expiresInSeconds = parseInt(normalizedExpiresIn, 10);
+      } else {
+        expiresInSeconds = 1800;
+      }
       console.log('[pix-auth] ONZ token received successfully');
     } else {
       // ========== TRANSFEERA AUTH ==========
