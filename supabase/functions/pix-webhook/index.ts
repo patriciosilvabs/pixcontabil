@@ -155,13 +155,20 @@ async function handleOnzWebhook(supabaseAdmin: any, type: string, data: any, ip_
     }
 
     if (transaction) {
-      const updateData: any = {
-        status: internalStatus,
-        pix_provider_response: data,
-        pix_e2eid: endToEndId || transaction.pix_e2eid,
-      };
-      if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
-      await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
+      // Don't overwrite a final status with a non-final one
+      const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
+      if (finalStatuses.includes(transaction.status) && !finalStatuses.includes(internalStatus)) {
+        console.log(`[pix-webhook] Skipping: tx ${transaction.id} already ${transaction.status}`);
+      } else {
+        const updateData: any = {
+          status: internalStatus,
+          pix_provider_response: data,
+          pix_e2eid: endToEndId || transaction.pix_e2eid,
+        };
+        if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+        await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
+        console.log(`[pix-webhook] Updated tx ${transaction.id}: ${transaction.status} → ${internalStatus}`);
+      }
 
       // Auto-generate receipt on completion
       if (internalStatus === 'completed') {
