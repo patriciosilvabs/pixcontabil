@@ -317,7 +317,7 @@ function ProviderConfigForm({
         const webhookOk = await handleRegisterWebhook(true);
         if (webhookOk) {
           setTestMessage(prev => prev + ' Webhook registrado automaticamente.');
-          toast({ title: "Tudo pronto!", description: "Conexão validada e webhook registrado na Transfeera." });
+          toast({ title: "Tudo pronto!", description: `Conexão validada e webhook registrado.` });
         }
       }
     } catch (e: any) {
