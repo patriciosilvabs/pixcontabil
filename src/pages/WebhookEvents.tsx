@@ -181,7 +181,7 @@ export default function WebhookEvents() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <AlertTriangle className="h-8 w-8 text-yellow-500" />
+              <AlertTriangle className="h-8 w-8 text-accent-foreground" />
               <div>
                 <p className="text-2xl font-bold">{stats.unknown}</p>
                 <p className="text-xs text-muted-foreground">Sem Origem</p>
