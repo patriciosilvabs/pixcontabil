@@ -77,10 +77,16 @@ Deno.serve(async (req) => {
 
         console.log('[pix-balance] ONZ response:', JSON.stringify(result.data));
 
-        // ONZ returns array: [{ balanceAmount: { available: "12345.67" } }]
-        const balances = Array.isArray(result.data) ? result.data : [result.data];
-        const balanceObj = balances[0]?.balanceAmount || balances[0];
-        const balance = parseFloat(balanceObj?.available ?? balanceObj?.amount ?? '0');
+        // ONZ may return either an array or an object wrapped in { data: [...] }
+        const rawBalances = Array.isArray(result.data)
+          ? result.data
+          : Array.isArray(result.data?.data)
+            ? result.data.data
+            : [result.data];
+        const firstBalance = rawBalances[0] ?? null;
+        const balanceObj = firstBalance?.balanceAmount ?? firstBalance;
+        const normalizedBalance = balanceObj?.available ?? balanceObj?.amount ?? balanceObj?.value ?? 0;
+        const balance = Number(normalizedBalance) || 0;
 
         return new Response(JSON.stringify({ success: true, balance, available: true, provider: 'onz' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       } else {
