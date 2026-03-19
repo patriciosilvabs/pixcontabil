@@ -163,7 +163,7 @@ export default function WebhookEvents() {
           </Card>
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
-              <CheckCircle2 className="h-8 w-8 text-green-500" />
+              <CheckCircle2 className="h-8 w-8 text-primary" />
               <div>
                 <p className="text-2xl font-bold">{stats.processed}</p>
                 <p className="text-xs text-muted-foreground">Processados</p>
