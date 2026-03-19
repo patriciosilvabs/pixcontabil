@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
       'CRIADO': 'pending', 'RECEBIDO': 'pending', 'TRANSFERENCIA_CRIADA': 'pending', 'LOTE_CRIADO': 'pending',
       'FALHA': 'failed', 'DEVOLVIDO': 'refunded', 'ESTORNADO': 'refunded',
     };
-    const internalStatus = statusMap[rawStatus] || 'pending';
+    let internalStatus = statusMap[rawStatus] || 'pending';
 
     if (transaction_id) {
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
