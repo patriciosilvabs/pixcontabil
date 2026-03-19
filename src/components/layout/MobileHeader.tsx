@@ -21,7 +21,7 @@ interface MobileHeaderProps {
   onToggleBalance: () => void;
 }
 
-export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderProps) {
+export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderProps) {
   const { profile, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -102,4 +102,4 @@ export function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderPr
       </div>
     </header>
   );
-}
+});

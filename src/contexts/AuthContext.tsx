@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { User, Session } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import { AppRole, Profile, Company, CompanyMember } from "@/types/database";
@@ -187,15 +187,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, [fetchUserData]);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
     return { error };
-  };
+  }, []);
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = useCallback(async (email: string, password: string, fullName: string) => {
     const redirectUrl = `${window.location.origin}/`;
     
     const { error } = await supabase.auth.signUp({
@@ -209,11 +209,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     });
     return { error };
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     await supabase.auth.signOut();
-  };
+  }, []);
 
   const setCurrentCompany = (company: Company) => {
     setCurrentCompanyState(company);
@@ -255,31 +255,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return featurePermissions.includes(featureKey);
   }, [isAdmin, featurePermissions, permissionsLoaded]);
 
+  const contextValue = useMemo(() => ({
+    user,
+    session,
+    profile,
+    role,
+    companies,
+    currentCompany,
+    companyMembership,
+    pagePermissions,
+    featurePermissions,
+    canViewBalance,
+    isAdmin,
+    isOperator,
+    isLoading: effectiveIsLoading,
+    signIn,
+    signUp,
+    signOut,
+    setCurrentCompany,
+    refreshProfile,
+    hasPageAccess,
+    hasFeatureAccess,
+  }), [
+    user, session, profile, role, companies, currentCompany,
+    companyMembership, pagePermissions, featurePermissions,
+    canViewBalance, isAdmin, isOperator, effectiveIsLoading,
+    signIn, signUp, setCurrentCompany, hasPageAccess, hasFeatureAccess,
+  ]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        profile,
-        role,
-        companies,
-        currentCompany,
-        companyMembership,
-        pagePermissions,
-        featurePermissions,
-        canViewBalance,
-        isAdmin,
-        isOperator,
-        isLoading: effectiveIsLoading,
-        signIn,
-        signUp,
-        signOut,
-        setCurrentCompany,
-        refreshProfile,
-        hasPageAccess,
-        hasFeatureAccess,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,3 +1,4 @@
+import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Home, LayoutGrid, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -9,7 +10,7 @@ const allTabs = [
   { name: "Transações", href: "/transactions", icon: ArrowLeftRight, position: "right", pageKey: "transactions" },
 ];
 
-export function BottomTabBar() {
+export const BottomTabBar = React.memo(function BottomTabBar() {
   const { hasPageAccess } = useAuth();
   const location = useLocation();
   const tabs = allTabs.filter(t => !t.pageKey || hasPageAccess(t.pageKey));
@@ -62,4 +63,4 @@ export function BottomTabBar() {
       </div>
     </nav>
   );
-}
+});
