@@ -56,11 +56,15 @@ Deno.serve(async (req) => {
       const { access_token } = await authResponse.json();
 
       if (config.provider === 'onz') {
-        // ONZ: GET /accounts/balances/
+        // ONZ: GET /api/v2/accounts/balances/
         const onzHeaders: Record<string, string> = { 'Authorization': `Bearer ${access_token}` };
         if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
 
-        const result = await callOnzViaProxy(`${config.base_url}/accounts/balances/`, 'GET', onzHeaders);
+        const normalizedBaseUrl = config.base_url.replace(/\/+$/, '').endsWith('/api/v2')
+          ? config.base_url.replace(/\/+$/, '')
+          : `${config.base_url.replace(/\/+$/, '')}/api/v2`;
+
+        const result = await callOnzViaProxy(`${normalizedBaseUrl}/accounts/balances/`, 'GET', onzHeaders);
 
         if (result.status === 401 && !forceNewToken) {
           console.log('[pix-balance] ONZ token rejected, retrying...');
