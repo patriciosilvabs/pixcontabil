@@ -138,7 +138,7 @@ export function PaymentStatusScreen({
       {/* Completed */}
       {status === "completed" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-emerald-500/10 flex items-center justify-center">
             <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-center space-y-1">
