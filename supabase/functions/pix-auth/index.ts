@@ -5,6 +5,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
+  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
+
+  const proxyBody: any = { url, method, headers };
+  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
+
+  const resp = await fetch(`${proxyUrl}/proxy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+    body: JSON.stringify(proxyBody),
+  });
+
+  const data = await resp.json();
+  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -49,32 +67,20 @@ Deno.serve(async (req) => {
     let config: any = null;
     if (purpose) {
       const { data: specificConfig } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .eq('purpose', purpose)
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', company_id).eq('is_active', true).eq('purpose', purpose).single();
       config = specificConfig;
     }
     if (!config) {
       const { data: bothConfig } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .eq('purpose', 'both')
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
       config = bothConfig;
     }
     if (!config) {
       const { data: anyConfig } = await supabase
-        .from('pix_configs')
-        .select('*')
-        .eq('company_id', company_id)
-        .eq('is_active', true)
-        .limit(1)
-        .single();
+        .from('pix_configs').select('*')
+        .eq('company_id', company_id).eq('is_active', true).limit(1).single();
       config = anyConfig;
     }
 
@@ -85,20 +91,16 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`[pix-auth] Provider: transfeera`);
+    console.log(`[pix-auth] Provider: ${config.provider}`);
 
     // Check cached token (skip if force_new)
     if (!force_new) {
       let cachedTokenQuery = supabase
-        .from('pix_tokens')
-        .select('*')
+        .from('pix_tokens').select('*')
         .eq('company_id', company_id)
         .gt('expires_at', new Date().toISOString())
-        .order('created_at', { ascending: false })
-        .limit(1);
-      if (config.id) {
-        cachedTokenQuery = cachedTokenQuery.eq('pix_config_id', config.id);
-      }
+        .order('created_at', { ascending: false }).limit(1);
+      if (config.id) cachedTokenQuery = cachedTokenQuery.eq('pix_config_id', config.id);
       const { data: cachedToken } = await cachedTokenQuery.single();
 
       if (cachedToken) {
@@ -107,7 +109,7 @@ Deno.serve(async (req) => {
           JSON.stringify({
             access_token: cachedToken.access_token,
             token_type: cachedToken.token_type,
-            provider: 'transfeera',
+            provider: config.provider,
             cached: true,
           }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -117,54 +119,81 @@ Deno.serve(async (req) => {
       console.log('[pix-auth] force_new=true, skipping cache');
     }
 
-    // ========== TRANSFEERA AUTH ==========
-    // Determine auth URL based on sandbox vs production
-    const isSandbox = config.is_sandbox;
-    const authUrl = isSandbox
-      ? 'https://login-api-sandbox.transfeera.com/authorization'
-      : 'https://login-api.transfeera.com/authorization';
-
-    console.log(`[pix-auth] Transfeera: requesting token from ${authUrl} (sandbox: ${isSandbox})`);
-
     let accessToken: string;
-    const expiresInSeconds = 1800; // 30 minutes
+    let expiresInSeconds: number;
 
-    try {
-      const tokenResponse = await fetch(authUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
-        },
-        body: JSON.stringify({
-          grant_type: 'client_credentials',
-          client_id: config.client_id,
-          client_secret: config.client_secret_encrypted,
-        }),
-      });
+    if (config.provider === 'onz') {
+      // ========== ONZ AUTH via proxy (x-www-form-urlencoded) ==========
+      const authUrl = `${config.base_url}/oauth/token`;
+      const formBody = `client_id=${encodeURIComponent(config.client_id)}&client_secret=${encodeURIComponent(config.client_secret_encrypted)}&grant_type=client_credentials`;
 
-      if (!tokenResponse.ok) {
-        const errorText = await tokenResponse.text();
-        console.error('[pix-auth] Transfeera auth error:', errorText);
+      console.log(`[pix-auth] ONZ: requesting token from ${authUrl}`);
+
+      const result = await callOnzViaProxy(authUrl, 'POST', {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      }, formBody);
+
+      if (result.status >= 400 || !result.data?.accessToken) {
+        const errorDetail = JSON.stringify(result.data);
+        console.error('[pix-auth] ONZ auth error:', errorDetail);
         return new Response(
-          JSON.stringify({ error: 'Falha ao autenticar com Transfeera', details: errorText }),
+          JSON.stringify({ error: 'Falha ao autenticar com ONZ', details: errorDetail }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
-      const tokenData = await tokenResponse.json();
-      console.log('[pix-auth] Transfeera token received successfully');
-      accessToken = tokenData.access_token;
-    } catch (e) {
-      console.error('[pix-auth] Transfeera fetch error:', e);
-      return new Response(
-        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      accessToken = result.data.accessToken;
+      // ONZ returns expiresAt as epoch seconds
+      const expiresAt = result.data.expiresAt;
+      expiresInSeconds = expiresAt ? Math.max(0, expiresAt - Math.floor(Date.now() / 1000)) : 1800;
+      console.log('[pix-auth] ONZ token received successfully');
+    } else {
+      // ========== TRANSFEERA AUTH ==========
+      const isSandbox = config.is_sandbox;
+      const authUrl = isSandbox
+        ? 'https://login-api-sandbox.transfeera.com/authorization'
+        : 'https://login-api.transfeera.com/authorization';
+
+      console.log(`[pix-auth] Transfeera: requesting token from ${authUrl} (sandbox: ${isSandbox})`);
+      expiresInSeconds = 1800;
+
+      try {
+        const tokenResponse = await fetch(authUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
+          },
+          body: JSON.stringify({
+            grant_type: 'client_credentials',
+            client_id: config.client_id,
+            client_secret: config.client_secret_encrypted,
+          }),
+        });
+
+        if (!tokenResponse.ok) {
+          const errorText = await tokenResponse.text();
+          console.error('[pix-auth] Transfeera auth error:', errorText);
+          return new Response(
+            JSON.stringify({ error: 'Falha ao autenticar com Transfeera', details: errorText }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const tokenData = await tokenResponse.json();
+        console.log('[pix-auth] Transfeera token received successfully');
+        accessToken = tokenData.access_token;
+      } catch (e) {
+        console.error('[pix-auth] Transfeera fetch error:', e);
+        return new Response(
+          JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
     }
 
-    // Cache token (with 2 min margin)
-    const expiresAt = new Date(Date.now() + (expiresInSeconds - 120) * 1000);
+    // Cache token (with 60s margin)
+    const expiresAt = new Date(Date.now() + (expiresInSeconds - 60) * 1000);
 
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -190,7 +219,7 @@ Deno.serve(async (req) => {
         access_token: accessToken!,
         token_type: 'Bearer',
         expires_at: expiresAt.toISOString(),
-        provider: 'transfeera',
+        provider: config.provider,
         cached: false,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
