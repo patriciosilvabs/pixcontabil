@@ -27,6 +27,7 @@ import {
   ChevronDown,
   DollarSign,
   Link2,
+  Activity,
 } from "lucide-react";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
@@ -50,6 +51,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     { name: "Usuários", href: "/users", icon: Users, adminOnly: true, pageKey: "users" },
     { name: "Empresas", href: "/companies", icon: Building2, adminOnly: true, pageKey: "companies" },
     { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, adminOnly: true },
+    { name: "Webhook Gateway", href: "/webhook-events", icon: Activity, adminOnly: true },
     { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },
   ];
 

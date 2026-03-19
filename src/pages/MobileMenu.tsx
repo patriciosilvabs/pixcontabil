@@ -14,6 +14,7 @@ import {
   LogOut,
   ChevronRight,
   Layers,
+  Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -29,10 +30,14 @@ export default function MobileMenu() {
     { name: "Usuários", href: "/users", icon: Users, pageKey: "users" },
     { name: "Empresas", href: "/companies", icon: Building2, pageKey: "companies" },
     { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, pageKey: "pix_integration" },
+    { name: "Webhook Gateway", href: "/webhook-events", icon: Activity, adminOnly: true },
     { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },
   ];
 
-  const menuItems = allMenuItems.filter((item) => hasPageAccess(item.pageKey));
+  const menuItems = allMenuItems.filter((item) => {
+    if ('adminOnly' in item && item.adminOnly && !isAdmin) return false;
+    return !item.pageKey || hasPageAccess(item.pageKey);
+  });
 
   return (
     <MainLayout>
