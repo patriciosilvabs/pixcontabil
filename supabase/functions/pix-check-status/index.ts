@@ -126,9 +126,16 @@ Deno.serve(async (req) => {
 
       if (transaction_id) {
         const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-        const updateData: any = { status: internalStatus, pix_provider_response: statusData, pix_e2eid: e2eId };
-        if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
-        await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
+        // Check current status to avoid overwriting completed/failed with pending
+        const { data: currentTx } = await supabaseAdmin.from('transactions').select('status').eq('id', transaction_id).single();
+        const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
+        if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
+          console.log(`[pix-check-status] Skipping update: tx ${transaction_id} already ${currentTx.status}, not overwriting with ${internalStatus}`);
+        } else {
+          const updateData: any = { status: internalStatus, pix_provider_response: statusData, pix_e2eid: e2eId };
+          if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+          await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
+        }
       }
 
       return new Response(JSON.stringify({
