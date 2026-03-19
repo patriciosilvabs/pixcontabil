@@ -208,7 +208,7 @@ export function PaymentStatusScreen({
           <Button
             variant="outline"
             onClick={onClose}
-            className="w-full h-12 text-base font-bold uppercase tracking-wider mt-2"
+            className="w-full h-11 text-sm font-bold uppercase tracking-wider mt-1"
           >
             Fechar
           </Button>
