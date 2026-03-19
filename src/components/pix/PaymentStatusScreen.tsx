@@ -163,6 +163,14 @@ export function PaymentStatusScreen({
                 >
                   Anexar Comprovante
                 </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => { onClose(); navigate("/"); }}
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+                >
+                  <Home className="mr-2 h-5 w-5" />
+                  Voltar ao Início
+                </Button>
               </>
             ) : (
               <>
@@ -183,10 +191,11 @@ export function PaymentStatusScreen({
                 </Button>
                 <Button
                   variant="ghost"
-                  onClick={onClose}
+                  onClick={() => { onClose(); navigate("/"); }}
                   className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
-                  Fechar
+                  <Home className="mr-2 h-5 w-5" />
+                  Voltar ao Início
                 </Button>
               </>
             )}
