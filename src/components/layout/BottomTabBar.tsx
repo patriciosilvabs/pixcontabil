@@ -63,4 +63,4 @@ export const BottomTabBar = React.memo(function BottomTabBar() {
       </div>
     </nav>
   );
-}
+});

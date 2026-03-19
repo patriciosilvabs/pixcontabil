@@ -102,4 +102,4 @@ export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, o
       </div>
     </header>
   );
-}
+});
