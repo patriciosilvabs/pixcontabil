@@ -1,3 +1,4 @@
+import { lazy, Suspense } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -6,19 +7,22 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { BalanceVisibilityProvider } from "@/contexts/BalanceVisibilityContext";
 import { AuthGuard } from "@/components/auth/AuthGuard";
-import Auth from "./pages/Auth";
-import Dashboard from "./pages/Dashboard";
-import NewPayment from "./pages/NewPayment";
-import ReceiptCapture from "./pages/ReceiptCapture";
-import Transactions from "./pages/Transactions";
-import Categories from "./pages/Categories";
-import Reports from "./pages/Reports";
-import Users from "./pages/Users";
-import Companies from "./pages/Companies";
-import Settings from "./pages/Settings";
-import PixIntegration from "./pages/settings/PixIntegration";
-import MobileMenu from "./pages/MobileMenu";
-import NotFound from "./pages/NotFound";
+import { Loader2 } from "lucide-react";
+
+// Lazy-loaded pages for code splitting — reduces initial bundle
+const Auth = lazy(() => import("./pages/Auth"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const NewPayment = lazy(() => import("./pages/NewPayment"));
+const ReceiptCapture = lazy(() => import("./pages/ReceiptCapture"));
+const Transactions = lazy(() => import("./pages/Transactions"));
+const Categories = lazy(() => import("./pages/Categories"));
+const Reports = lazy(() => import("./pages/Reports"));
+const Users = lazy(() => import("./pages/Users"));
+const Companies = lazy(() => import("./pages/Companies"));
+const Settings = lazy(() => import("./pages/Settings"));
+const PixIntegration = lazy(() => import("./pages/settings/PixIntegration"));
+const MobileMenu = lazy(() => import("./pages/MobileMenu"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +35,14 @@ const queryClient = new QueryClient({
   },
 });
 
+function PageFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -39,6 +51,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <BalanceVisibilityProvider>
+          <Suspense fallback={<PageFallback />}>
           <Routes>
             <Route path="/auth" element={<Auth />} />
 
@@ -56,6 +69,7 @@ const App = () => (
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </Suspense>
           </BalanceVisibilityProvider>
         </AuthProvider>
       </BrowserRouter>

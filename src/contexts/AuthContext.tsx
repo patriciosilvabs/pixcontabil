@@ -255,31 +255,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return featurePermissions.includes(featureKey);
   }, [isAdmin, featurePermissions, permissionsLoaded]);
 
+  const contextValue = useMemo(() => ({
+    user,
+    session,
+    profile,
+    role,
+    companies,
+    currentCompany,
+    companyMembership,
+    pagePermissions,
+    featurePermissions,
+    canViewBalance,
+    isAdmin,
+    isOperator,
+    isLoading: effectiveIsLoading,
+    signIn,
+    signUp,
+    signOut,
+    setCurrentCompany,
+    refreshProfile,
+    hasPageAccess,
+    hasFeatureAccess,
+  }), [
+    user, session, profile, role, companies, currentCompany,
+    companyMembership, pagePermissions, featurePermissions,
+    canViewBalance, isAdmin, isOperator, effectiveIsLoading,
+    signIn, signUp, setCurrentCompany, hasPageAccess, hasFeatureAccess,
+  ]);
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        session,
-        profile,
-        role,
-        companies,
-        currentCompany,
-        companyMembership,
-        pagePermissions,
-        featurePermissions,
-        canViewBalance,
-        isAdmin,
-        isOperator,
-        isLoading: effectiveIsLoading,
-        signIn,
-        signUp,
-        signOut,
-        setCurrentCompany,
-        refreshProfile,
-        hasPageAccess,
-        hasFeatureAccess,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
     </AuthContext.Provider>
   );

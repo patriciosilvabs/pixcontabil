@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useState, useCallback, useMemo } from "react";
 
 interface BalanceVisibilityContextType {
   balanceVisible: boolean;
@@ -12,8 +12,11 @@ const BalanceVisibilityContext = createContext<BalanceVisibilityContextType>({
 
 export function BalanceVisibilityProvider({ children }: { children: React.ReactNode }) {
   const [balanceVisible, setBalanceVisible] = useState(false);
+  const toggleBalance = useCallback(() => setBalanceVisible(v => !v), []);
+  const value = useMemo(() => ({ balanceVisible, toggleBalance }), [balanceVisible, toggleBalance]);
+
   return (
-    <BalanceVisibilityContext.Provider value={{ balanceVisible, toggleBalance: () => setBalanceVisible(v => !v) }}>
+    <BalanceVisibilityContext.Provider value={value}>
       {children}
     </BalanceVisibilityContext.Provider>
   );
