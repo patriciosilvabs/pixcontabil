@@ -248,6 +248,50 @@ export type Database = {
           },
         ]
       }
+      payment_registry: {
+        Row: {
+          app_origin: string
+          company_id: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          provider: string
+          reference_id: string | null
+          tenant_id: string | null
+          transaction_id: string
+        }
+        Insert: {
+          app_origin: string
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          provider?: string
+          reference_id?: string | null
+          tenant_id?: string | null
+          transaction_id: string
+        }
+        Update: {
+          app_origin?: string
+          company_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          provider?: string
+          reference_id?: string | null
+          tenant_id?: string | null
+          transaction_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payment_registry_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pix_configs: {
         Row: {
           base_url: string
@@ -786,6 +830,116 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      webhook_destinations: {
+        Row: {
+          app_name: string
+          callback_url: string | null
+          created_at: string
+          display_name: string
+          id: string
+          is_active: boolean
+          secret_key: string | null
+          updated_at: string
+        }
+        Insert: {
+          app_name: string
+          callback_url?: string | null
+          created_at?: string
+          display_name: string
+          id?: string
+          is_active?: boolean
+          secret_key?: string | null
+          updated_at?: string
+        }
+        Update: {
+          app_name?: string
+          callback_url?: string | null
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_active?: boolean
+          secret_key?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      webhook_events: {
+        Row: {
+          app_origin: string | null
+          company_id: string | null
+          created_at: string
+          dispatch_attempts: number
+          dispatch_response: Json | null
+          dispatch_status: string | null
+          error_message: string | null
+          event_type: string
+          id: string
+          idempotency_key: string
+          ip_address: string | null
+          max_retries: number
+          next_retry_at: string | null
+          normalized_payload: Json | null
+          payload: Json
+          processed_at: string | null
+          provider: string
+          status: string
+          tenant_id: string | null
+          transaction_id: string | null
+        }
+        Insert: {
+          app_origin?: string | null
+          company_id?: string | null
+          created_at?: string
+          dispatch_attempts?: number
+          dispatch_response?: Json | null
+          dispatch_status?: string | null
+          error_message?: string | null
+          event_type: string
+          id?: string
+          idempotency_key: string
+          ip_address?: string | null
+          max_retries?: number
+          next_retry_at?: string | null
+          normalized_payload?: Json | null
+          payload: Json
+          processed_at?: string | null
+          provider?: string
+          status?: string
+          tenant_id?: string | null
+          transaction_id?: string | null
+        }
+        Update: {
+          app_origin?: string | null
+          company_id?: string | null
+          created_at?: string
+          dispatch_attempts?: number
+          dispatch_response?: Json | null
+          dispatch_status?: string | null
+          error_message?: string | null
+          event_type?: string
+          id?: string
+          idempotency_key?: string
+          ip_address?: string | null
+          max_retries?: number
+          next_retry_at?: string | null
+          normalized_payload?: Json | null
+          payload?: Json
+          processed_at?: string | null
+          provider?: string
+          status?: string
+          tenant_id?: string | null
+          transaction_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

@@ -23,6 +23,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const PixIntegration = lazy(() => import("./pages/settings/PixIntegration"));
 const BatchPayment = lazy(() => import("./pages/BatchPayment"));
 const MobileMenu = lazy(() => import("./pages/MobileMenu"));
+const WebhookEvents = lazy(() => import("./pages/WebhookEvents"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
@@ -68,6 +69,7 @@ const App = () => (
             <Route path="/settings/pix-integration" element={<AuthGuard requireAdmin><PixIntegration /></AuthGuard>} />
             <Route path="/batch-payment" element={<AuthGuard requiredPage="new_payment"><BatchPayment /></AuthGuard>} />
             <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
+            <Route path="/webhook-events" element={<AuthGuard requireAdmin><WebhookEvents /></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
