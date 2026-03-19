@@ -1,32 +1,67 @@
 
 
-## Plano: Compartilhar comprovante no WhatsApp ou salvar como imagem
+## Plano: Pagamento em Lote
 
-### Contexto
-Hoje o `downloadReceipt` baixa o comprovante como PDF via `pix-receipt` (que retorna `pdf_base64`). O usuário quer duas ações novas: **compartilhar no WhatsApp** e **salvar como imagem no aparelho**.
+### Análise da API ONZ
 
-### Abordagem
+A API da ONZ **não possui endpoint nativo de pagamento em lote**. Os endpoints disponíveis são todos unitários:
+- `POST /pix/payments/dict` — Pix por chave (unitário)
+- `POST /pix/payments/qrc` — Pix por QR Code (unitário)
+- `POST /billets/payments` — Boleto (unitário)
 
-1. **Adicionar funções `shareReceipt` e `saveReceiptAsImage` no `usePixPayment.ts`**
-   - `saveReceiptAsImage`: converte o PDF base64 em blob, cria URL temporária, e dispara download como arquivo (fallback para dispositivos sem Web Share API)
-   - `shareReceipt`: usa a **Web Share API** (`navigator.share`) com o PDF como arquivo compartilhável. No WhatsApp e outros apps, o sistema operacional abre o seletor nativo de compartilhamento. Se a Web Share API não estiver disponível, faz fallback para `whatsapp://send` com link ou salva o arquivo
+A Transfeera já suporta batch via `POST /batch`, que o sistema já utiliza.
 
-2. **Atualizar `PaymentStatusScreen.tsx`**
-   - Na tela de "Pagamento confirmado", substituir o botão único "Ver Comprovante" por dois botões:
-     - **Compartilhar** (ícone Share2) — chama `navigator.share` com o arquivo PDF
-     - **Salvar no Aparelho** (ícone Download) — baixa o PDF como arquivo
-   - Manter botão "Fechar" abaixo
+**Conclusão:** Para ONZ, o pagamento em lote será orquestrado no backend — uma Edge Function que recebe um array de pagamentos e os executa sequencialmente (com idempotency key individual), salvando cada transação e retornando o resultado consolidado.
 
-3. **Considerar também o comprovante gerado internamente**
-   - O sistema já gera comprovantes PNG via `generate-pix-receipt`. Se o provider retornar PDF, usa o PDF. Se não, busca o PNG do storage como fallback para compartilhamento.
+---
+
+### Arquitetura
+
+```text
+┌─────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+│  Nova página     │────▶│  Edge Function         │────▶│  ONZ (unitário)  │
+│  /batch-payment │     │  batch-pay             │     │  N chamadas      │
+│  Upload CSV/     │     │  Loop sequencial com   │     │  sequenciais     │
+│  entrada manual  │     │  idempotency por item  │     └──────────────────┘
+└─────────────────┘     └──────────────────────┘
+```
+
+### O que será construído
+
+#### 1. Edge Function `batch-pay`
+- Recebe array de pagamentos `{ items: [{ type: 'pix_key'|'boleto', pix_key?, pix_key_type?, codigo_barras?, valor, descricao }] }`
+- Limite de 50 itens por lote
+- Para cada item: autentica (reusa token), executa pagamento unitário via proxy ONZ, salva transação no banco
+- Retorna resultado consolidado: `{ results: [{ index, success, transaction_id, error? }], summary: { total, success_count, failed_count } }`
+- Cada item tem sua própria idempotency key
+
+#### 2. Nova página `/batch-payment`
+- **Modo 1 — Upload CSV**: Importar arquivo CSV com colunas (tipo, chave/código, valor, descrição)
+- **Modo 2 — Entrada manual**: Tabela editável para adicionar linhas de pagamento uma a uma
+- Preview/validação antes de confirmar: mostra tabela com todos os pagamentos, valores totais
+- Botão "Executar Lote" com confirmação
+- Progress bar em tempo real mostrando X de N processados
+- Resultado final: tabela com status de cada pagamento (sucesso/falha)
+
+#### 3. Rota e navegação
+- Adicionar rota `/batch-payment` no App.tsx
+- Adicionar link no menu/dashboard para "Pagamento em Lote"
+
+### Arquivos a criar/alterar
+
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/batch-pay/index.ts` | Criar — Edge Function de lote |
+| `src/pages/BatchPayment.tsx` | Criar — Página principal |
+| `src/hooks/useBatchPayment.ts` | Criar — Hook para orquestrar chamadas |
+| `src/App.tsx` | Alterar — Adicionar rota |
+| `src/components/layout/BottomTabBar.tsx` | Alterar — Adicionar atalho (se couber) |
+| `supabase/config.toml` | Alterar — Adicionar `verify_jwt = false` para batch-pay |
 
 ### Detalhes técnicos
 
-- **Web Share API**: suportada em Chrome Android, Safari iOS, e Edge — cobre a maioria dos dispositivos mobile. Permite compartilhar arquivos diretamente no WhatsApp, Telegram, etc.
-- **Fallback**: se `navigator.canShare` retornar false, abre `https://wa.me/?text=...` com mensagem e faz download normal do arquivo
-- Nenhuma alteração de backend necessária — os endpoints `pix-receipt` e `generate-pix-receipt` já fornecem os dados necessários
-
-### Arquivos a alterar
-- `src/hooks/usePixPayment.ts` — adicionar `shareReceipt` e exportar
-- `src/components/pix/PaymentStatusScreen.tsx` — novos botões de compartilhar/salvar
+- A Edge Function processará itens **sequencialmente** (não em paralelo) para evitar rate limiting da ONZ e manter controle de erros
+- Timeout da Edge Function: ~150s no Supabase. Com ~2s por pagamento, suporta ~50 itens
+- Se um item falhar, os demais continuam (fail-safe por item)
+- CSV esperado: `tipo;chave;valor;descricao` com separador `;` (padrão BR) ou `,`
 
