@@ -21,6 +21,7 @@ const Users = lazy(() => import("./pages/Users"));
 const Companies = lazy(() => import("./pages/Companies"));
 const Settings = lazy(() => import("./pages/Settings"));
 const PixIntegration = lazy(() => import("./pages/settings/PixIntegration"));
+const BatchPayment = lazy(() => import("./pages/BatchPayment"));
 const MobileMenu = lazy(() => import("./pages/MobileMenu"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
