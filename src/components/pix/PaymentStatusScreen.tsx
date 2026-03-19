@@ -150,8 +150,8 @@ export function PaymentStatusScreen({
           {beneficiaryName && (
             <p className="text-sm text-muted-foreground">{beneficiaryName}</p>
           )}
-          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
-          <div className="w-full space-y-2 mt-2">
+          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
+          <div className="w-full space-y-2 mt-1">
             {redirectToReceiptCapture ? (
               <>
                 <Button
