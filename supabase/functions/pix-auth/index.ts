@@ -130,15 +130,20 @@ Deno.serve(async (req) => {
     let expiresInSeconds: number;
 
     if (config.provider === 'onz') {
-      // ========== ONZ AUTH via proxy (x-www-form-urlencoded) ==========
-      const authUrl = `${config.base_url}/oauth/token`;
-      const formBody = `client_id=${encodeURIComponent(config.client_id)}&client_secret=${encodeURIComponent(config.client_secret_encrypted)}&grant_type=client_credentials`;
+      // ========== ONZ AUTH via proxy ==========
+      const authUrl = `${config.base_url}/api/v2/oauth/token`;
+      const authBody = JSON.stringify({
+        clientId: config.client_id,
+        clientSecret: config.client_secret_encrypted,
+        grantType: 'client_credentials',
+        scope: 'pix.read pix.write billets.read billets.write',
+      });
 
       console.log(`[pix-auth] ONZ: requesting token from ${authUrl}`);
 
       const result = await callOnzViaProxy(authUrl, 'POST', {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      }, formBody);
+        'Content-Type': 'application/json',
+      }, authBody);
 
       if (result.status >= 400 || !result.data?.accessToken) {
         const errorDetail = JSON.stringify(result.data);
