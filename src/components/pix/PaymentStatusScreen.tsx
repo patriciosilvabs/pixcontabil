@@ -227,7 +227,7 @@ export function PaymentStatusScreen({
               O pagamento ainda está sendo processado. Acompanhe pelo extrato.
             </p>
           </div>
-          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{formattedAmount}</p>
+          <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{formattedAmount}</p>
           <Button
             variant="outline"
             onClick={onClose}
