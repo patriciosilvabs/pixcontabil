@@ -115,7 +115,7 @@ export function PaymentStatusScreen({
   };
 
   return (
-    <div className="flex flex-col items-center gap-5 py-4">
+    <div className="flex flex-col items-center gap-4 py-3 pb-[env(safe-area-inset-bottom,16px)]">
       {/* Polling */}
       {status === "polling" && (
         <>
