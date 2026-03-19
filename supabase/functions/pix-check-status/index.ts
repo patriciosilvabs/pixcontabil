@@ -110,6 +110,7 @@ Deno.serve(async (req) => {
       if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
 
       const result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/${e2eId}`, 'GET', onzHeaders);
+      console.log(`[pix-check-status] ONZ response for e2e ${e2eId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
