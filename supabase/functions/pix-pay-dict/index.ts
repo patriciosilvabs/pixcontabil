@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
         });
         const { access_token: newToken } = await retryAuth.json();
         onzHeaders['Authorization'] = `Bearer ${newToken}`;
-        result = await callOnzViaProxy(`${config.base_url}/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+        result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
       }
 
       if (result.status >= 400) {

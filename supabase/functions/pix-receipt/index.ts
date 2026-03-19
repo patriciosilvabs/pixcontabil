@@ -79,7 +79,7 @@ Deno.serve(async (req) => {
       const onzHeaders: Record<string, string> = { 'Authorization': `Bearer ${access_token}` };
       if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
 
-      const result = await callOnzViaProxy(`${config.base_url}/pix/payments/receipt/${transfer_id}`, 'GET', onzHeaders);
+      const result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/receipt/${transfer_id}`, 'GET', onzHeaders);
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível. Tente novamente em alguns minutos.' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
