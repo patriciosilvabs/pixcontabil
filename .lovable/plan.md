@@ -1,29 +1,70 @@
 
+Objetivo: eliminar os erros `406 (Not Acceptable)` ao salvar permissões de funcionalidades na tela `/users` e reduzir o ruído no console sem mudar a regra de negócio.
 
-## Plano: Adicionar botão "Voltar ao Início" em todas as telas de resultado
+1. Diagnóstico confirmado
+- O problema está em `src/pages/Users.tsx`, no fluxo de salvar permissões.
+- Hoje o código faz consultas com `.single()` para verificar se já existe um registro em:
+  - `user_page_permissions`
+  - `user_feature_permissions`
+- Quando não existe linha, a API responde `406` com `PGRST116` (“0 rows”), e depois o código faz `insert`, então a operação funciona, mas gera erro no console.
+- Isso aparece principalmente em `user_feature_permissions` porque essa tabela não foi pré-populada por migration, diferente de `user_page_permissions`.
 
-### Problema
-Na tela de confirmação de pagamento (e em outras telas de resultado/final), não há botão para retornar à página inicial, obrigando o usuário a usar a navegação do dispositivo.
+2. Ajuste principal
+- Trocar a estratégia “buscar com `.single()` e depois decidir entre update/insert” por uma destas abordagens:
+  - Preferencial: `upsert` com conflito em `(user_id, company_id, feature_key)` e `(user_id, company_id, page_key)`.
+  - Alternativa segura: usar `.maybeSingle()` em vez de `.single()`.
+- Minha recomendação é `upsert`, porque:
+  - elimina os `406`
+  - reduz o número de requests
+  - simplifica bastante o `handleSave`
 
-### Alterações
+3. Refactor no fluxo de salvamento
+- Em `handleSave`, substituir os loops com `select -> update/insert` por:
+  - um `upsert` em lote para `user_page_permissions`
+  - um `upsert` em lote para `user_feature_permissions`
+- Manter a montagem atual de `permRows` e `featureRows`, apenas mudando a forma de persistir.
 
-#### 1. `src/components/pix/PaymentStatusScreen.tsx`
-Adicionar um botão "Voltar ao Início" (`Home` icon) em todos os estados finais:
-- **completed** (com `redirectToReceiptCapture`): após "Anexar Comprovante"
-- **completed** (sem redirect): após "Fechar"
-- **failed**: após "Fechar"
-- **timeout**: após "Fechar"
+4. Compatibilidade com o banco
+- As duas tabelas já têm `UNIQUE` nos campos corretos:
+  - `user_page_permissions (user_id, company_id, page_key)`
+  - `user_feature_permissions (user_id, company_id, feature_key)`
+- Então não deve ser necessária mudança estrutural no banco para usar `upsert`.
 
-O botão chamará `onClose()` e depois `navigate("/")`.
+5. Resultado esperado
+- Salvar permissões continuará funcionando igual.
+- Os erros `406` deixarão de aparecer no console.
+- O salvamento ficará mais rápido e com menos chamadas à API.
 
-#### 2. `src/components/payment/BoletoPaymentDrawer.tsx`
-Verificar se a tela de resultado do boleto (step final) tem botão de voltar ao início. Adicionar se ausente.
+6. Limpeza adicional recomendada
+- Corrigir também os avisos de acessibilidade `Missing Description or aria-describedby` nos `DialogContent`, começando por:
+  - `src/pages/Users.tsx`
+  - `src/pages/Companies.tsx`
+  - `src/pages/Categories.tsx`
+  - `src/pages/WebhookEvents.tsx`
+- Isso não afeta a lógica, mas remove warnings recorrentes do console.
 
-#### 3. `src/components/payment/CashPaymentDrawer.tsx`
-Verificar tela de sucesso do pagamento em dinheiro — adicionar botão "Voltar ao Início" se ausente.
+Detalhes técnicos
+```text
+Hoje:
+select().single() -> 0 rows -> 406 -> insert()
 
-### Detalhes
-- Botão com variante `ghost` ou `outline`, ícone `Home`, texto "Voltar ao Início"
-- Posicionado como último botão de cada seção de resultado
-- Usa `navigate("/")` após fechar o drawer/dialog
+Depois:
+upsert([...], { onConflict: 'user_id,company_id,feature_key' })
+upsert([...], { onConflict: 'user_id,company_id,page_key' })
+```
 
+Arquivos a alterar
+- `src/pages/Users.tsx`
+- Opcional na mesma rodada de limpeza:
+  - `src/pages/Companies.tsx`
+  - `src/pages/Categories.tsx`
+  - `src/pages/WebhookEvents.tsx`
+
+Validação após implementar
+- Abrir edição de um usuário sem permissões prévias salvas
+- Marcar/desmarcar funcionalidades
+- Salvar
+- Confirmar:
+  - toast de sucesso
+  - nenhuma resposta `406` no console/network
+  - permissões persistidas corretamente ao reabrir o modal
