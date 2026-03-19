@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.pix-webhook-gateway]
 verify_jwt = false
+
+[functions.internal-payment-webhook]
+verify_jwt = false
