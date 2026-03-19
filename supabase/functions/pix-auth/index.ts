@@ -19,7 +19,14 @@ async function callOnzViaProxy(url: string, method: string, headers: Record<stri
     body: JSON.stringify(proxyBody),
   });
 
-  const data = await resp.json();
+  const text = await resp.text();
+  let data: any;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    console.error(`[callOnzViaProxy] Non-JSON response (status ${resp.status}):`, text.substring(0, 500));
+    throw new Error(`Proxy returned non-JSON response (HTTP ${resp.status}). Check if ONZ_PROXY_URL is correct and the proxy is running.`);
+  }
   return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
 }
 
