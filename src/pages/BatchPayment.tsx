@@ -379,7 +379,7 @@ export default function BatchPayment() {
             {items.length > 0 && (
               <div className="space-y-2">
                 {items.length > 10 && (
-                  <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 p-2 rounded-md">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted p-2 rounded-md">
                     <AlertTriangle className="h-4 w-4 flex-shrink-0" />
                     <span>Lotes grandes podem levar vários minutos para processar.</span>
                   </div>
