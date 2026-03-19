@@ -13,6 +13,7 @@ import {
   Link2,
   LogOut,
   ChevronRight,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -22,6 +23,7 @@ export default function MobileMenu() {
 
   const allMenuItems = [
     { name: "Novo Pagamento", href: "/pix/new", icon: PlusCircle, pageKey: "new_payment" },
+    { name: "Pagamento em Lote", href: "/batch-payment", icon: Layers, pageKey: "new_payment" },
     { name: "Categorias", href: "/categories", icon: FolderOpen, pageKey: "categories" },
     { name: "Relatórios", href: "/reports", icon: FileText, pageKey: "reports" },
     { name: "Usuários", href: "/users", icon: Users, pageKey: "users" },

@@ -21,6 +21,7 @@ const Users = lazy(() => import("./pages/Users"));
 const Companies = lazy(() => import("./pages/Companies"));
 const Settings = lazy(() => import("./pages/Settings"));
 const PixIntegration = lazy(() => import("./pages/settings/PixIntegration"));
+const BatchPayment = lazy(() => import("./pages/BatchPayment"));
 const MobileMenu = lazy(() => import("./pages/MobileMenu"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
@@ -65,6 +66,7 @@ const App = () => (
             <Route path="/companies" element={<AuthGuard requireAdmin requiredPage="companies"><Companies /></AuthGuard>} />
             <Route path="/settings" element={<AuthGuard requiredPage="settings"><Settings /></AuthGuard>} />
             <Route path="/settings/pix-integration" element={<AuthGuard requireAdmin><PixIntegration /></AuthGuard>} />
+            <Route path="/batch-payment" element={<AuthGuard requiredPage="new_payment"><BatchPayment /></AuthGuard>} />
             <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
