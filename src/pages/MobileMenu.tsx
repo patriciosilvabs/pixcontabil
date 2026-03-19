@@ -13,6 +13,7 @@ import {
   Link2,
   LogOut,
   ChevronRight,
+  Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
