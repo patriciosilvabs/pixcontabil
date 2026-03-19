@@ -141,6 +141,8 @@ Deno.serve(async (req) => {
         'Content-Type': 'application/x-www-form-urlencoded',
       }, authBody);
 
+      console.log(`[pix-auth] ONZ proxy response - proxyStatus: ${result.proxyStatus}, status: ${result.status}, data:`, JSON.stringify(result.data));
+
       if (result.status >= 400 || !result.data?.accessToken) {
         const errorDetail = JSON.stringify(result.data);
         console.error('[pix-auth] ONZ auth error:', errorDetail);
