@@ -212,7 +212,7 @@ export default function BatchPayment() {
                         </TableCell>
                         <TableCell className="text-center">
                           {r.success ? (
-                            <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto" />
+                            <CheckCircle2 className="h-4 w-4 text-primary mx-auto" />
                           ) : (
                             <div className="flex flex-col items-center">
                               <XCircle className="h-4 w-4 text-destructive" />
