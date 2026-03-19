@@ -5,10 +5,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function getApiBaseUrl(config: any): string {
-  return config.is_sandbox
-    ? 'https://api-sandbox.transfeera.com'
-    : 'https://api.transfeera.com';
+async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
+  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
+  const proxyBody: any = { url, method, headers };
+  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
+  const resp = await fetch(`${proxyUrl}/proxy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+    body: JSON.stringify(proxyBody),
+  });
+  const data = await resp.json();
+  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
 }
 
 Deno.serve(async (req) => {
@@ -19,10 +28,8 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabase = createClient(
@@ -33,10 +40,8 @@ Deno.serve(async (req) => {
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const body = await req.json();
@@ -52,17 +57,20 @@ Deno.serve(async (req) => {
       if (txData) {
         companyId = companyId || txData.company_id;
         if (!billetExternalId && txData.external_id) {
-          const parts = txData.external_id.split(':');
-          billetExternalId = parts.length > 1 ? parts[1] : parts[0];
+          const eid = txData.external_id;
+          if (eid.startsWith('onz:')) {
+            billetExternalId = eid.replace('onz:', '');
+          } else {
+            const parts = eid.split(':');
+            billetExternalId = parts.length > 1 ? parts[1] : parts[0];
+          }
         }
       }
     }
 
     if (!companyId || !billetExternalId) {
-      return new Response(
-        JSON.stringify({ error: 'company_id and billet_id (or transaction_id) are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'company_id and billet_id (or transaction_id) are required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Get config
@@ -75,10 +83,8 @@ Deno.serve(async (req) => {
     }
 
     if (!config) {
-      return new Response(
-        JSON.stringify({ error: 'Pix configuration not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Pix configuration not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Get auth token
@@ -89,77 +95,87 @@ Deno.serve(async (req) => {
     });
 
     if (!authResponse.ok) {
-      return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with provider' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const { access_token } = await authResponse.json();
-    const apiBase = getApiBaseUrl(config);
 
-    // GET /billet/{id} to get receipt_url
-    try {
-      const billetResponse = await fetch(`${apiBase}/billet/${billetExternalId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
-        },
-      });
-
-      const billetData = await billetResponse.json();
-
-      if (!billetResponse.ok) {
-        return new Response(
-          JSON.stringify({ error: 'Failed to get billet data', provider_error: JSON.stringify(billetData) }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    if (config.provider === 'onz') {
+      // ========== ONZ: GET /api/v2/billets/payments/receipt/{id} ==========
+      try {
+        const result = await callOnzViaProxy(
+          `${config.base_url}/api/v2/billets/payments/receipt/${billetExternalId}`,
+          'GET',
+          { 'Authorization': `Bearer ${access_token}` },
         );
+
+        if (result.status >= 400 || !result.data) {
+          return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível', status: result.data?.status }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const pdfBase64 = result.data.pdf || result.data.data?.pdf;
+        if (!pdfBase64) {
+          return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        return new Response(JSON.stringify({
+          success: true, billet_id: billetExternalId, provider: 'onz',
+          pdf_base64: pdfBase64, content_type: 'application/pdf',
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      } catch (e) {
+        return new Response(JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const receiptUrl = billetData.receipt_url || billetData.bank_receipt_url;
+    } else {
+      // ========== TRANSFEERA ==========
+      const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
 
-      if (!receiptUrl) {
-        return new Response(
-          JSON.stringify({ error: 'Comprovante ainda não disponível', status: billetData.status }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+      try {
+        const billetResponse = await fetch(`${apiBase}/billet/${billetExternalId}`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${access_token}`, 'User-Agent': 'PixContabil (contato@pixcontabil.com.br)' },
+        });
+
+        const billetData = await billetResponse.json();
+        if (!billetResponse.ok) {
+          return new Response(JSON.stringify({ error: 'Failed to get billet data', provider_error: JSON.stringify(billetData) }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const receiptUrl = billetData.receipt_url || billetData.bank_receipt_url;
+        if (!receiptUrl) {
+          return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível', status: billetData.status }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const pdfResponse = await fetch(receiptUrl);
+        if (!pdfResponse.ok) {
+          return new Response(JSON.stringify({ error: 'Failed to download receipt PDF' }),
+            { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const pdfBuffer = await pdfResponse.arrayBuffer();
+        const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
+
+        return new Response(JSON.stringify({
+          success: true, billet_id: billetExternalId, provider: 'transfeera',
+          pdf_base64: pdfBase64, content_type: 'application/pdf',
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      } catch (e) {
+        return new Response(JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-
-      // Download and return as base64
-      const pdfResponse = await fetch(receiptUrl);
-      if (!pdfResponse.ok) {
-        return new Response(
-          JSON.stringify({ error: 'Failed to download receipt PDF' }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      const pdfBuffer = await pdfResponse.arrayBuffer();
-      const pdfBase64 = btoa(String.fromCharCode(...new Uint8Array(pdfBuffer)));
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          billet_id: billetExternalId,
-          provider: 'transfeera',
-          pdf_base64: pdfBase64,
-          content_type: 'application/pdf',
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    } catch (e) {
-      return new Response(
-        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
     }
 
   } catch (error) {
     console.error('[billet-receipt] Error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error', details: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error', details: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
