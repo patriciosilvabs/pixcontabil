@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
+  { value: "onz", label: "ONZ Infopago" },
   { value: "transfeera", label: "Transfeera" },
 ];
 
