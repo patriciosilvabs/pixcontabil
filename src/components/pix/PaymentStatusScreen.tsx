@@ -167,13 +167,22 @@ export function PaymentStatusScreen({
             ) : (
               <>
                 <Button
-                  onClick={handleDownloadReceipt}
+                  onClick={handleShareReceipt}
                   className="w-full h-12 text-base font-bold uppercase tracking-wider"
                 >
-                  Ver Comprovante
+                  <Share2 className="mr-2 h-5 w-5" />
+                  Compartilhar
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={handleSaveReceipt}
+                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                >
+                  <Download className="mr-2 h-5 w-5" />
+                  Salvar no Aparelho
+                </Button>
+                <Button
+                  variant="ghost"
                   onClick={onClose}
                   className="w-full h-12 text-base font-bold uppercase tracking-wider"
                 >
