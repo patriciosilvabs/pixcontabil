@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 
 const PIX_PROVIDERS = [
+  { value: "onz", label: "ONZ Infopago" },
   { value: "transfeera", label: "Transfeera" },
 ];
 
@@ -54,6 +55,22 @@ const PROVIDER_CONFIG: Record<string, {
   credentialsDescription: string;
   urls: { production: string; sandbox: string };
 }> = {
+  onz: {
+    clientIdLabel: 'Client ID (UUID)',
+    clientIdPlaceholder: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+    clientIdHelp: 'UUID fornecido pela ONZ Infopago.',
+    showClientSecret: true,
+    clientSecretLabel: 'Client Secret',
+    clientSecretHelp: 'Segredo fornecido pela ONZ Infopago.',
+    showCertificate: true,
+    showCompanyId: false,
+    credentialsTitle: 'Credenciais ONZ Infopago',
+    credentialsDescription: 'OAuth2 via proxy mTLS. Certificados são configurados no proxy.',
+    urls: {
+      production: 'https://cashout.infopago.com.br',
+      sandbox: 'https://cashout-sandbox.infopago.com.br',
+    },
+  },
   transfeera: {
     clientIdLabel: 'Client ID',
     clientIdPlaceholder: 'seu_client_id_transfeera',
@@ -300,7 +317,7 @@ function ProviderConfigForm({
         const webhookOk = await handleRegisterWebhook(true);
         if (webhookOk) {
           setTestMessage(prev => prev + ' Webhook registrado automaticamente.');
-          toast({ title: "Tudo pronto!", description: "Conexão validada e webhook registrado na Transfeera." });
+          toast({ title: "Tudo pronto!", description: `Conexão validada e webhook registrado.` });
         }
       }
     } catch (e: any) {

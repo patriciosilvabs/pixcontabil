@@ -5,10 +5,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function getApiBaseUrl(config: any): string {
-  return config.is_sandbox
-    ? 'https://api-sandbox.transfeera.com'
-    : 'https://api.transfeera.com';
+async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
+  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
+  const proxyBody: any = { url, method, headers };
+  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
+  const resp = await fetch(`${proxyUrl}/proxy`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+    body: JSON.stringify(proxyBody),
+  });
+  const data = await resp.json();
+  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
 }
 
 Deno.serve(async (req) => {
@@ -19,10 +28,8 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabase = createClient(
@@ -33,10 +40,8 @@ Deno.serve(async (req) => {
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const body = await req.json();
@@ -52,17 +57,21 @@ Deno.serve(async (req) => {
       if (txData) {
         companyId = companyId || txData.company_id;
         if (!billetExternalId && txData.external_id) {
-          const parts = txData.external_id.split(':');
-          billetExternalId = parts.length > 1 ? parts[1] : parts[0];
+          // Handle both formats: "onz:{id}" and "batchId:billetId"
+          const eid = txData.external_id;
+          if (eid.startsWith('onz:')) {
+            billetExternalId = eid.replace('onz:', '');
+          } else {
+            const parts = eid.split(':');
+            billetExternalId = parts.length > 1 ? parts[1] : parts[0];
+          }
         }
       }
     }
 
     if (!companyId || !billetExternalId) {
-      return new Response(
-        JSON.stringify({ error: 'company_id and billet_id (or transaction_id) are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'company_id and billet_id (or transaction_id) are required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Get config
@@ -75,10 +84,8 @@ Deno.serve(async (req) => {
     }
 
     if (!config) {
-      return new Response(
-        JSON.stringify({ error: 'Pix configuration not found' }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Pix configuration not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Get auth token
@@ -89,44 +96,65 @@ Deno.serve(async (req) => {
     });
 
     if (!authResponse.ok) {
-      return new Response(
-        JSON.stringify({ error: 'Failed to authenticate with provider' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const { access_token } = await authResponse.json();
-    const apiBase = getApiBaseUrl(config);
 
-    // Transfeera: GET /billet/{id}
     let statusData: any;
-    try {
-      const statusResponse = await fetch(`${apiBase}/billet/${billetExternalId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${access_token}`,
-          'User-Agent': 'PixContabil (contato@pixcontabil.com.br)',
-        },
-      });
-      statusData = await statusResponse.json();
-    } catch (e) {
-      return new Response(
-        JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    let internalStatus: string;
+
+    if (config.provider === 'onz') {
+      // ========== ONZ: GET /api/v2/billets/{id} ==========
+      try {
+        const result = await callOnzViaProxy(
+          `${config.base_url}/api/v2/billets/${billetExternalId}`,
+          'GET',
+          { 'Authorization': `Bearer ${access_token}` },
+        );
+        statusData = result.data;
+      } catch (e) {
+        return new Response(JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const rawStatus = String(statusData.status || '').toUpperCase();
+      const statusMap: Record<string, string> = {
+        'LIQUIDATED': 'completed',
+        'PAID': 'completed',
+        'PROCESSING': 'pending',
+        'CREATED': 'pending',
+        'SCHEDULED': 'pending',
+        'CANCELED': 'failed',
+        'FAILED': 'failed',
+        'REFUNDED': 'refunded',
+      };
+      internalStatus = statusMap[rawStatus] || 'pending';
+
+    } else {
+      // ========== TRANSFEERA ==========
+      const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
+      try {
+        const statusResponse = await fetch(`${apiBase}/billet/${billetExternalId}`, {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${access_token}`, 'User-Agent': 'PixContabil (contato@pixcontabil.com.br)' },
+        });
+        statusData = await statusResponse.json();
+      } catch (e) {
+        return new Response(JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const rawStatus = String(statusData.status || '').toUpperCase();
+      const statusMap: Record<string, string> = {
+        'PAGO': 'completed', 'AGENDADO': 'pending', 'CRIADA': 'pending',
+        'FALHA': 'failed', 'DEVOLVIDO': 'refunded',
+      };
+      internalStatus = statusMap[rawStatus] || 'pending';
     }
 
     console.log('[billet-check-status] Status received:', JSON.stringify(statusData));
-
-    const rawStatus = String(statusData.status || '').toUpperCase();
-    const statusMap: Record<string, string> = {
-      'PAGO': 'completed',
-      'AGENDADO': 'pending',
-      'CRIADA': 'pending',
-      'FALHA': 'failed',
-      'DEVOLVIDO': 'refunded',
-    };
-    const internalStatus = statusMap[rawStatus] || 'pending';
 
     if (transaction_id) {
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -135,24 +163,19 @@ Deno.serve(async (req) => {
       await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
     }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        billet_id: billetExternalId,
-        status: statusData.status,
-        internal_status: internalStatus,
-        is_completed: internalStatus === 'completed',
-        provider: 'transfeera',
-        payload: statusData,
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({
+      success: true,
+      billet_id: billetExternalId,
+      status: statusData.status,
+      internal_status: internalStatus,
+      is_completed: internalStatus === 'completed',
+      provider: config.provider,
+      payload: statusData,
+    }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
     console.error('[billet-check-status] Error:', error);
-    return new Response(
-      JSON.stringify({ error: 'Internal server error', details: error.message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: 'Internal server error', details: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
