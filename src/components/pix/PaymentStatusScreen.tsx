@@ -115,11 +115,11 @@ export function PaymentStatusScreen({
   };
 
   return (
-    <div className="flex flex-col items-center gap-5 py-4">
+    <div className="flex flex-col items-center gap-4 py-3 pb-[env(safe-area-inset-bottom,16px)]">
       {/* Polling */}
       {status === "polling" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
           <div className="text-center space-y-1">
@@ -131,14 +131,14 @@ export function PaymentStatusScreen({
           {beneficiaryName && (
             <p className="text-sm text-muted-foreground">{beneficiaryName}</p>
           )}
-          <p className="text-2xl font-bold text-primary">{formattedAmount}</p>
+          <p className="text-xl font-bold text-primary">{formattedAmount}</p>
         </>
       )}
 
       {/* Completed */}
       {status === "completed" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-emerald-500/10 flex items-center justify-center">
             <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-center space-y-1">
@@ -150,8 +150,8 @@ export function PaymentStatusScreen({
           {beneficiaryName && (
             <p className="text-sm text-muted-foreground">{beneficiaryName}</p>
           )}
-          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
-          <div className="w-full space-y-2 mt-2">
+          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
+          <div className="w-full space-y-2 mt-1">
             {redirectToReceiptCapture ? (
               <>
                 <Button
@@ -159,7 +159,7 @@ export function PaymentStatusScreen({
                     onClose();
                     navigate(`/pix/receipt/${transactionId}`);
                   }}
-                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
                   Anexar Comprovante
                 </Button>
@@ -168,7 +168,7 @@ export function PaymentStatusScreen({
               <>
                 <Button
                   onClick={handleShareReceipt}
-                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
                   <Share2 className="mr-2 h-5 w-5" />
                   Compartilhar
@@ -176,7 +176,7 @@ export function PaymentStatusScreen({
                 <Button
                   variant="outline"
                   onClick={handleSaveReceipt}
-                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
                   <Download className="mr-2 h-5 w-5" />
                   Salvar no Aparelho
@@ -184,7 +184,7 @@ export function PaymentStatusScreen({
                 <Button
                   variant="ghost"
                   onClick={onClose}
-                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
                   Fechar
                 </Button>
@@ -197,18 +197,18 @@ export function PaymentStatusScreen({
       {/* Failed */}
       {status === "failed" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-destructive/10 flex items-center justify-center">
             <XCircle className="h-8 w-8 text-destructive" />
           </div>
           <div className="text-center space-y-1">
             <p className="text-base font-bold">Pagamento não concluído</p>
             <p className="text-sm text-muted-foreground">{errorMessage}</p>
           </div>
-          <p className="text-2xl font-bold text-destructive">{formattedAmount}</p>
+          <p className="text-xl font-bold text-destructive">{formattedAmount}</p>
           <Button
             variant="outline"
             onClick={onClose}
-            className="w-full h-12 text-base font-bold uppercase tracking-wider mt-2"
+            className="w-full h-11 text-sm font-bold uppercase tracking-wider mt-1"
           >
             Fechar
           </Button>
@@ -218,7 +218,7 @@ export function PaymentStatusScreen({
       {/* Timeout */}
       {status === "timeout" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-amber-500/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-amber-500/10 flex items-center justify-center">
             <Clock className="h-8 w-8 text-amber-600 dark:text-amber-400" />
           </div>
           <div className="text-center space-y-1">
@@ -227,11 +227,11 @@ export function PaymentStatusScreen({
               O pagamento ainda está sendo processado. Acompanhe pelo extrato.
             </p>
           </div>
-          <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">{formattedAmount}</p>
+          <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{formattedAmount}</p>
           <Button
             variant="outline"
             onClick={onClose}
-            className="w-full h-12 text-base font-bold uppercase tracking-wider mt-2"
+            className="w-full h-11 text-sm font-bold uppercase tracking-wider mt-1"
           >
             Fechar
           </Button>
