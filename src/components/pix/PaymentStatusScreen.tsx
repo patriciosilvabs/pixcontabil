@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2, CheckCircle2, XCircle, Clock, Share2, Download } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Clock, Share2, Download, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
