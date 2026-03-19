@@ -176,7 +176,7 @@ export function PaymentStatusScreen({
                 <Button
                   variant="outline"
                   onClick={handleSaveReceipt}
-                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
                 >
                   <Download className="mr-2 h-5 w-5" />
                   Salvar no Aparelho
