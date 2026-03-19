@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
 
       console.log(`[pix-pay-dict] ONZ: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      let result = await callOnzViaProxy(`${config.base_url}/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+      let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
 
       // Token retry
       if (result.status === 401 || result.data?.type === 'onz-0018') {
@@ -174,7 +174,7 @@ Deno.serve(async (req) => {
         });
         const { access_token: newToken } = await retryAuth.json();
         onzHeaders['Authorization'] = `Bearer ${newToken}`;
-        result = await callOnzViaProxy(`${config.base_url}/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+        result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
       }
 
       if (result.status >= 400) {

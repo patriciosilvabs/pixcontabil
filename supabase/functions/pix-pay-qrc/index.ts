@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
       };
 
       // Use body_raw to avoid double serialization of EMV
-      let result = await callOnzViaProxy(`${config.base_url}/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+      let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
 
       // Token retry
       if (result.status === 401 || result.data?.type === 'onz-0018') {
@@ -145,7 +145,7 @@ Deno.serve(async (req) => {
         });
         const { access_token: newToken } = await retryAuth.json();
         onzHeaders['Authorization'] = `Bearer ${newToken}`;
-        result = await callOnzViaProxy(`${config.base_url}/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+        result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
       }
 
       // If QRC fails with onz-0010 and we have a key, fallback to dict
