@@ -23,6 +23,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const PixIntegration = lazy(() => import("./pages/settings/PixIntegration"));
 const BatchPayment = lazy(() => import("./pages/BatchPayment"));
 const MobileMenu = lazy(() => import("./pages/MobileMenu"));
+const WebhookEvents = lazy(() => import("./pages/WebhookEvents"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const queryClient = new QueryClient({
