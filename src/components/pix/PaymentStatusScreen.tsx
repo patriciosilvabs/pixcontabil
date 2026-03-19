@@ -106,8 +106,12 @@ export function PaymentStatusScreen({
     currency: "BRL",
   });
 
-  const handleDownloadReceipt = async () => {
-    await downloadReceipt(transactionId, true);
+  const handleShareReceipt = async () => {
+    await shareReceipt(transactionId, true);
+  };
+
+  const handleSaveReceipt = async () => {
+    await saveReceiptAsFile(transactionId, true);
   };
 
   return (
