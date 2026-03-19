@@ -197,7 +197,7 @@ export function PaymentStatusScreen({
       {/* Failed */}
       {status === "failed" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-destructive/10 flex items-center justify-center">
             <XCircle className="h-8 w-8 text-destructive" />
           </div>
           <div className="text-center space-y-1">
