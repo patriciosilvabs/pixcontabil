@@ -518,6 +518,67 @@ export function usePixPayment() {
     }
   }, [getReceipt, toast]);
 
+  // Share receipt via Web Share API (WhatsApp, Telegram, etc.)
+  const shareReceipt = useCallback(async (
+    endToEndIdOrTransactionId: string,
+    isTransactionId = false
+  ) => {
+    const receipt = await getReceipt(endToEndIdOrTransactionId, isTransactionId);
+
+    if (!receipt?.pdf_base64) return;
+
+    const byteCharacters = atob(receipt.pdf_base64);
+    const byteArray = new Uint8Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteArray[i] = byteCharacters.charCodeAt(i);
+    }
+    const blob = new Blob([byteArray], { type: 'application/pdf' });
+    const file = new File([blob], `comprovante_pix_${receipt.end_to_end_id}.pdf`, { type: 'application/pdf' });
+
+    const shareData: ShareData = {
+      title: 'Comprovante Pix',
+      text: 'Segue o comprovante do pagamento Pix.',
+      files: [file],
+    };
+
+    if (navigator.canShare && navigator.canShare(shareData)) {
+      try {
+        await navigator.share(shareData);
+        return;
+      } catch (e: any) {
+        if (e.name === 'AbortError') return; // user cancelled
+        console.error('[usePixPayment] Share failed, falling back:', e);
+      }
+    }
+
+    // Fallback: open WhatsApp with text (no file)
+    const waUrl = `https://wa.me/?text=${encodeURIComponent('Segue o comprovante do pagamento Pix.')}`;
+    window.open(waUrl, '_blank');
+
+    // Also trigger download so the user has the file
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    toast({
+      title: "Comprovante salvo",
+      description: "O PDF foi baixado. Anexe-o manualmente no WhatsApp.",
+    });
+  }, [getReceipt, toast]);
+
+  // Save receipt as file to device
+  const saveReceiptAsFile = useCallback(async (
+    endToEndIdOrTransactionId: string,
+    isTransactionId = false
+  ) => {
+    await downloadReceipt(endToEndIdOrTransactionId, isTransactionId);
+  }, [downloadReceipt]);
+
   // Request refund
   const requestRefund = useCallback(async (transactionId: string, valor?: number, motivo?: string) => {
     if (!session) {
