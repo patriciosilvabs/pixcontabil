@@ -119,7 +119,7 @@ export function PaymentStatusScreen({
       {/* Polling */}
       {status === "polling" && (
         <>
-          <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+          <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
           <div className="text-center space-y-1">
