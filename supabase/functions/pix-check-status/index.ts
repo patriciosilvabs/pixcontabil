@@ -110,28 +110,34 @@ Deno.serve(async (req) => {
       if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
 
       const result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/${e2eId}`, 'GET', onzHeaders);
-      console.log(`[pix-check-status] ONZ response for e2e ${e2eId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+      console.log(`[pix-check-status] ONZ raw response for e2e ${e2eId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-      statusData = result.data;
 
-      const rawStatus = String(statusData.status || '').toUpperCase();
+      // Normalize nested ONZ response: { data: { status: ... } } -> { status: ... }
+      const onzPayload = result.data?.data && typeof result.data.data === 'object' && result.data.data.status
+        ? result.data.data
+        : result.data;
+      statusData = onzPayload;
+      console.log(`[pix-check-status] ONZ normalized payload status: ${onzPayload.status}`);
+
+      const rawStatus = String(onzPayload.status || '').toUpperCase();
       const statusMap: Record<string, string> = {
         'LIQUIDATED': 'completed', 'REALIZADO': 'completed', 'CONFIRMED': 'completed',
         'PROCESSING': 'pending', 'EM_PROCESSAMENTO': 'pending', 'ACTIVE': 'pending',
         'CANCELED': 'failed', 'NAO_REALIZADO': 'failed',
         'REFUNDED': 'refunded', 'PARTIALLY_REFUNDED': 'refunded',
       };
-      const internalStatus = statusMap[rawStatus] || 'pending';
+      let internalStatus = statusMap[rawStatus] || 'pending';
 
       if (transaction_id) {
         const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-        // Check current status to avoid overwriting completed/failed with pending
         const { data: currentTx } = await supabaseAdmin.from('transactions').select('status').eq('id', transaction_id).single();
         const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
         if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
           console.log(`[pix-check-status] Skipping update: tx ${transaction_id} already ${currentTx.status}, not overwriting with ${internalStatus}`);
+          internalStatus = currentTx.status;
         } else {
           const updateData: any = { status: internalStatus, pix_provider_response: statusData, pix_e2eid: e2eId };
           if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
@@ -140,7 +146,7 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({
-        success: true, status: statusData.status, internal_status: internalStatus,
+        success: true, status: onzPayload.status, internal_status: internalStatus,
         is_completed: internalStatus === 'completed', provider: 'onz', payload: statusData,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
