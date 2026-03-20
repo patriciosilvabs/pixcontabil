@@ -600,10 +600,10 @@ export default function Users() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Nova Senha</DialogTitle>
+              <DialogDescription>
+                Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
+              </DialogDescription>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground">
-              Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
-            </p>
             <div className="space-y-2">
               <Label>Nova Senha</Label>
               <Input

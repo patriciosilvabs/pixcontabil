@@ -160,6 +160,7 @@ export default function Companies() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingId ? "Editar Empresa" : "Nova Empresa"}</DialogTitle>
+              <DialogDescription>Preencha os dados da empresa</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">

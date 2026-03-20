@@ -216,6 +216,7 @@ export default function Categories() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingId ? "Editar Categoria" : "Nova Categoria"}</DialogTitle>
+              <DialogDescription>Defina o nome, classificação e palavras-chave</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">

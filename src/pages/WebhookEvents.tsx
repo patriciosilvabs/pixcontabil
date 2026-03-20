@@ -304,6 +304,7 @@ export default function WebhookEvents() {
         <DialogContent className="max-w-2xl max-h-[85vh]">
           <DialogHeader>
             <DialogTitle>Detalhes do Evento</DialogTitle>
+            <DialogDescription>Informações completas do webhook recebido</DialogDescription>
           </DialogHeader>
           {selectedEvent && (
             <ScrollArea className="max-h-[70vh]">
