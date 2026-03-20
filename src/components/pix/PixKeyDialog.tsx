@@ -32,6 +32,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const handleClose = () => {
     setPixKey("");
     setAmount("");
+    setDescription("");
     setSaveFavorite(false);
     setStep(1);
     setTransactionId("");
