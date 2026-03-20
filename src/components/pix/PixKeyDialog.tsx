@@ -197,6 +197,22 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Descrição (opcional)
+                </Label>
+                <Textarea
+                  id="pix-description"
+                  placeholder="Ex: Pagamento fornecedor"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value.slice(0, 140))}
+                  className="text-sm resize-none"
+                  rows={2}
+                  maxLength={140}
+                />
+                <p className="text-xs text-muted-foreground text-right">{description.length}/140</p>
+              </div>
+
               <Button
                 onClick={handleStep2}
                 disabled={!amount || parseLocalizedNumber(amount) <= 0}
