@@ -236,6 +236,15 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</p>
                   <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
                 </div>
+                {description.trim() && (
+                  <>
+                    <div className="h-px bg-border" />
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Descrição</p>
+                      <p className="text-sm font-medium mt-1">{description.trim()}</p>
+                    </div>
+                  </>
+                )}
               </div>
 
               <Button
