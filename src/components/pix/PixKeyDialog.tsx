@@ -26,6 +26,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
+  const [description, setDescription] = useState("");
   const [transactionId, setTransactionId] = useState("");
 
   const handleClose = () => {
