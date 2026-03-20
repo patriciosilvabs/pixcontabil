@@ -203,7 +203,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição (opcional)
+                  Descrição *
                 </Label>
                 <Textarea
                   id="pix-description"
