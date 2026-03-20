@@ -535,6 +535,7 @@ export default function Users() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Usuário</DialogTitle>
+              <DialogDescription>Cadastre um novo membro para a empresa</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
