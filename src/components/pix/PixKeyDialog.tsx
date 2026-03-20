@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { Textarea } from "@/components/ui/textarea";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -25,11 +26,13 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
+  const [description, setDescription] = useState("");
   const [transactionId, setTransactionId] = useState("");
 
   const handleClose = () => {
     setPixKey("");
     setAmount("");
+    setDescription("");
     setSaveFavorite(false);
     setStep(1);
     setTransactionId("");
@@ -74,6 +77,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     const result = await payByKey({
       pix_key: pixKey.trim(),
       valor: value,
+      descricao: description.trim() || undefined,
     });
 
     if (result?.transaction_id) {
@@ -193,6 +197,22 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 />
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Descrição (opcional)
+                </Label>
+                <Textarea
+                  id="pix-description"
+                  placeholder="Ex: Pagamento fornecedor"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value.slice(0, 140))}
+                  className="text-sm resize-none"
+                  rows={2}
+                  maxLength={140}
+                />
+                <p className="text-xs text-muted-foreground text-right">{description.length}/140</p>
+              </div>
+
               <Button
                 onClick={handleStep2}
                 disabled={!amount || parseLocalizedNumber(amount) <= 0}
@@ -216,6 +236,15 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</p>
                   <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
                 </div>
+                {description.trim() && (
+                  <>
+                    <div className="h-px bg-border" />
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Descrição</p>
+                      <p className="text-sm font-medium mt-1">{description.trim()}</p>
+                    </div>
+                  </>
+                )}
               </div>
 
               <Button
