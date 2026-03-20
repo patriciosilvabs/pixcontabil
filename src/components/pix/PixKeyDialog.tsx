@@ -77,6 +77,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     const result = await payByKey({
       pix_key: pixKey.trim(),
       valor: value,
+      descricao: description.trim() || undefined,
     });
 
     if (result?.transaction_id) {
