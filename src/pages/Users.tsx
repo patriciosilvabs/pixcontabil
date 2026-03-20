@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
@@ -174,7 +174,7 @@ export default function Users() {
         if (roleError) throw roleError;
       }
 
-      // Upsert page permissions
+      // Batch upsert page permissions
       const permRows = PAGE_OPTIONS.map(p => ({
         user_id: editingMember.user_id,
         company_id: currentCompany.id,
@@ -182,28 +182,12 @@ export default function Users() {
         has_access: editPermissions[p.key] ?? true,
       }));
 
-      for (const row of permRows) {
-        const { data: existing } = await supabase
-          .from("user_page_permissions")
-          .select("id")
-          .eq("user_id", row.user_id)
-          .eq("company_id", row.company_id)
-          .eq("page_key", row.page_key)
-          .single();
+      const { error: permError } = await supabase
+        .from("user_page_permissions")
+        .upsert(permRows, { onConflict: "user_id,company_id,page_key" });
+      if (permError) throw permError;
 
-        if (existing) {
-          await supabase
-            .from("user_page_permissions")
-            .update({ has_access: row.has_access })
-            .eq("id", existing.id);
-        } else {
-          await supabase
-            .from("user_page_permissions")
-            .insert(row);
-        }
-      }
-
-      // Upsert feature permissions
+      // Batch upsert feature permissions
       const featureRows = FEATURE_OPTIONS.map(f => ({
         user_id: editingMember.user_id,
         company_id: currentCompany.id,
@@ -211,26 +195,10 @@ export default function Users() {
         is_visible: editFeaturePermissions[f.key] ?? true,
       }));
 
-      for (const row of featureRows) {
-        const { data: existing } = await supabase
-          .from("user_feature_permissions")
-          .select("id")
-          .eq("user_id", row.user_id)
-          .eq("company_id", row.company_id)
-          .eq("feature_key", row.feature_key)
-          .single();
-
-        if (existing) {
-          await supabase
-            .from("user_feature_permissions")
-            .update({ is_visible: row.is_visible })
-            .eq("id", existing.id);
-        } else {
-          await supabase
-            .from("user_feature_permissions")
-            .insert(row);
-        }
-      }
+      const { error: featError } = await supabase
+        .from("user_feature_permissions")
+        .upsert(featureRows, { onConflict: "user_id,company_id,feature_key" });
+      if (featError) throw featError;
 
       toast({ title: "Usuário atualizado!" });
       setEditDialog(false);
@@ -486,6 +454,7 @@ export default function Users() {
           <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Editar Membro</DialogTitle>
+              <DialogDescription>Altere as permissões e configurações do membro</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -566,6 +535,7 @@ export default function Users() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Adicionar Usuário</DialogTitle>
+              <DialogDescription>Cadastre um novo membro para a empresa</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -630,10 +600,10 @@ export default function Users() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Nova Senha</DialogTitle>
+              <DialogDescription>
+                Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
+              </DialogDescription>
             </DialogHeader>
-            <p className="text-sm text-muted-foreground">
-              Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
-            </p>
             <div className="space-y-2">
               <Label>Nova Senha</Label>
               <Input

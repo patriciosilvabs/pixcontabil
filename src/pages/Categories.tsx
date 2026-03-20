@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -216,6 +216,7 @@ export default function Categories() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{editingId ? "Editar Categoria" : "Nova Categoria"}</DialogTitle>
+              <DialogDescription>Defina o nome, classificação e palavras-chave</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
