@@ -69,6 +69,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error(validation.message);
       return;
     }
+    if (!description.trim()) {
+      toast.error("Informe a descrição do pagamento");
+      return;
+    }
     setStep(3);
   };
 
@@ -199,7 +203,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição (opcional)
+                  Descrição *
                 </Label>
                 <Textarea
                   id="pix-description"
@@ -215,7 +219,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <Button
                 onClick={handleStep2}
-                disabled={!amount || parseLocalizedNumber(amount) <= 0}
+                disabled={!amount || parseLocalizedNumber(amount) <= 0 || !description.trim()}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar
@@ -271,6 +275,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
               amount={parseLocalizedNumber(amount)}
               beneficiaryName={pixKey}
               onClose={handleCloseAndNavigate}
+              redirectToReceiptCapture
             />
           )}
         </div>
