@@ -454,6 +454,7 @@ export default function Users() {
           <DialogContent className="max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Editar Membro</DialogTitle>
+              <DialogDescription>Altere as permissões e configurações do membro</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
