@@ -152,7 +152,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   value={pixKey}
                   onChange={(e) => setPixKey(e.target.value)}
                   className="h-12 text-base"
-                  autoFocus
                 />
               </div>
 
