@@ -69,6 +69,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error(validation.message);
       return;
     }
+    if (!description.trim()) {
+      toast.error("Informe a descrição do pagamento");
+      return;
+    }
     setStep(3);
   };
 
