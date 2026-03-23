@@ -51,7 +51,13 @@ Deno.serve(async (req) => {
       });
       if (!authResponse.ok) {
         const authError = await authResponse.text();
-        return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor', details: authError }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const status = authResponse.status === 401 || authResponse.status === 403 ? 401 : 502;
+        const errorMessage = status === 401 ? 'Invalid token' : 'Falha ao autenticar com o provedor';
+
+        return new Response(
+          JSON.stringify({ error: errorMessage, details: authError }),
+          { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
       const { access_token } = await authResponse.json();
 
