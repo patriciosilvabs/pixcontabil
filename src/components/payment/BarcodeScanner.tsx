@@ -21,6 +21,7 @@ interface BarcodeScannerProps {
 export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, preAcquiredStream }: BarcodeScannerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const frameCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(false);
@@ -199,6 +200,14 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
           return mfReader.decode(bitmap);
         };
 
+        const getFrameCanvas = (width: number, height: number) => {
+          const canvas = frameCanvasRef.current ?? document.createElement("canvas");
+          if (canvas.width !== width) canvas.width = width;
+          if (canvas.height !== height) canvas.height = height;
+          frameCanvasRef.current = canvas;
+          return canvas;
+        };
+
         const buildScanRegions = (vw: number, vh: number) => {
           if (mode === "qrcode") {
             const size = Math.min(vw, vh);
@@ -209,6 +218,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
             { sx: 0, sy: 0, sw: vw, sh: vh },
             { sx: 0, sy: Math.round(vh * 0.2), sw: vw, sh: Math.round(vh * 0.6) },
             { sx: 0, sy: Math.round(vh * 0.35), sw: vw, sh: Math.round(vh * 0.3) },
+            { sx: 0, sy: Math.round(vh * 0.42), sw: vw, sh: Math.max(140, Math.round(vh * 0.16)) },
           ];
         };
 
@@ -222,14 +232,42 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
             const vh = videoEl.videoHeight;
             const regions = buildScanRegions(vw, vh);
 
+            const frameCanvas = getFrameCanvas(vw, vh);
+            const frameCtx = frameCanvas.getContext("2d", { willReadFrequently: true });
+            if (!frameCtx) return;
+            frameCtx.drawImage(videoEl, 0, 0, vw, vh);
+
             for (const region of regions) {
               const canvas = document.createElement("canvas");
               canvas.width = region.sw;
               canvas.height = region.sh;
-              const ctx = canvas.getContext("2d");
+              const ctx = canvas.getContext("2d", { willReadFrequently: true });
               if (!ctx) continue;
 
-              ctx.drawImage(videoEl, region.sx, region.sy, region.sw, region.sh, 0, 0, region.sw, region.sh);
+              ctx.imageSmoothingEnabled = false;
+              ctx.drawImage(frameCanvas, region.sx, region.sy, region.sw, region.sh, 0, 0, region.sw, region.sh);
+
+              if (mode === "barcode") {
+                const upscaleCanvas = document.createElement("canvas");
+                upscaleCanvas.width = region.sw * 2;
+                upscaleCanvas.height = region.sh * 2;
+                const upscaleCtx = upscaleCanvas.getContext("2d", { willReadFrequently: true });
+                if (upscaleCtx) {
+                  upscaleCtx.imageSmoothingEnabled = false;
+                  upscaleCtx.drawImage(canvas, 0, 0, upscaleCanvas.width, upscaleCanvas.height);
+                  try {
+                    const upscaledResult = decodeCanvas(upscaleCanvas);
+                    if (upscaledResult) {
+                      const rawText = upscaledResult.getText();
+                      const text = mode === "barcode" ? rawText.replace(/\s/g, "") : rawText.trim();
+                      handleResult(text);
+                      break;
+                    }
+                  } catch {
+                    // try original canvas below
+                  }
+                }
+              }
 
               const result = decodeCanvas(canvas);
               if (!result) continue;

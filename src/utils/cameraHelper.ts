@@ -21,6 +21,17 @@ type ZoomCapability = {
   max?: number;
 };
 
+type NumericCapability = {
+  min?: number;
+  max?: number;
+};
+
+function clampPreferredValue(capability: NumericCapability | undefined, preferred: number, fallback: number) {
+  if (!capability?.max) return fallback;
+  const min = capability.min ?? fallback;
+  return Math.max(min, Math.min(capability.max, preferred));
+}
+
 function scoreRearCamera(device: MediaDeviceInfo): number {
   const label = device.label.toLowerCase();
   let score = 0;
@@ -39,14 +50,38 @@ async function normalizeCameraTrack(stream: MediaStream): Promise<MediaStream> {
   try {
     const capabilities = track.getCapabilities() as MediaTrackCapabilities & {
       zoom?: ZoomCapability;
+      width?: NumericCapability;
+      height?: NumericCapability;
+      focusMode?: string[];
     };
 
-    if (capabilities.zoom) {
-      await track.applyConstraints({
-        advanced: [{ zoom: capabilities.zoom.min ?? 1 } as MediaTrackConstraintSet],
-      });
-      console.log("[Camera] Zoom reset to minimum supported value");
+    const advanced: MediaTrackConstraintSet[] = [];
+
+    const idealWidth = clampPreferredValue(capabilities.width, 1920, 1280);
+    const idealHeight = clampPreferredValue(capabilities.height, 1080, 720);
+
+    advanced.push({
+      width: idealWidth,
+      height: idealHeight,
+    } as MediaTrackConstraintSet);
+
+    if (Array.isArray(capabilities.focusMode) && capabilities.focusMode.includes("continuous")) {
+      advanced.push({ focusMode: "continuous" } as MediaTrackConstraintSet);
     }
+
+    if (capabilities.zoom) {
+      advanced.push({ zoom: capabilities.zoom.min ?? 1 } as MediaTrackConstraintSet);
+    }
+
+    await track.applyConstraints({ advanced });
+
+    const settings = track.getSettings();
+    console.log("[Camera] Normalized track settings:", {
+      width: settings.width,
+      height: settings.height,
+      focusMode: (settings as MediaTrackSettings & { focusMode?: string }).focusMode,
+      zoom: (settings as MediaTrackSettings & { zoom?: number }).zoom,
+    });
   } catch (e) {
     console.warn("[Camera] Could not normalize track constraints", e);
   }
@@ -58,9 +93,10 @@ export async function getRearCameraStream(
   extraConstraints?: MediaTrackConstraints
 ): Promise<MediaStream> {
   const base: ExtendedMediaTrackConstraints = {
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
+    width: { ideal: 1920, min: 1280 },
+    height: { ideal: 1080, min: 720 },
     aspectRatio: { ideal: 16 / 9 },
+    frameRate: { ideal: 30, max: 60 },
     resizeMode: "none",
     ...extraConstraints,
   };
