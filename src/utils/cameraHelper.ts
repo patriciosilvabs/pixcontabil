@@ -13,8 +13,11 @@ export async function getRearCameraStream(
   extraConstraints?: MediaTrackConstraints
 ): Promise<MediaStream> {
   const base: MediaTrackConstraints = {
-    width: { ideal: 1920 },
-    height: { ideal: 1080 },
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    // @ts-ignore – vendor constraints to prevent digital zoom
+    zoom: 1.0,
+    resizeMode: "none",
     ...extraConstraints,
   };
 
