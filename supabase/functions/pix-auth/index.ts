@@ -51,10 +51,12 @@ Deno.serve(async (req) => {
     );
 
     const token = authHeader.replace('Bearer ', '');
+    console.log('[pix-auth] Validating user token, length:', token.length);
     const { data: userData, error: authError } = await supabase.auth.getUser(token);
+    console.log('[pix-auth] getUser result - error:', authError?.message, 'user:', userData?.user?.id);
     if (authError || !userData?.user) {
       return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
+        JSON.stringify({ error: 'Invalid token', details: authError?.message }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
