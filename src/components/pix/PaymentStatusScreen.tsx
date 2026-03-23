@@ -34,7 +34,7 @@ export function PaymentStatusScreen({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
 
-  const MAX_ATTEMPTS = 30;
+  const MAX_ATTEMPTS = 90;
   const POLL_INTERVAL = 2000;
 
   const poll = useCallback(async () => {
