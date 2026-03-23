@@ -29,9 +29,17 @@ export function usePixBalance() {
     }
 
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setState(prev => ({ ...prev, isLoading: false, error: 'Não autenticado' }));
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        setState(prev => ({
+          ...prev,
+          isLoading: false,
+          error: 'Sessão expirada. Faça login novamente.',
+        }));
         return;
       }
 
@@ -41,10 +49,12 @@ export function usePixBalance() {
 
       if (response.error) {
         console.error('[usePixBalance] Error:', response.error);
+        const isUnauthorized = response.error.message?.includes('Invalid token') || response.error.context?.status === 401;
+
         setState(prev => ({
           ...prev,
           isLoading: false,
-          error: response.error.message,
+          error: isUnauthorized ? 'Sessão expirada. Faça login novamente.' : response.error.message,
         }));
         return;
       }
