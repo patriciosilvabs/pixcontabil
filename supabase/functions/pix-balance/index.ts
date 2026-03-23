@@ -46,7 +46,7 @@ Deno.serve(async (req) => {
       if (forceNewToken) authBody.force_new = true;
 
       const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/pix-auth`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
         body: JSON.stringify(authBody),
       });
       if (!authResponse.ok) {
