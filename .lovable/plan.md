@@ -1,20 +1,32 @@
 
 
-## Corrigir fluxo Pix Copia e Cola — valor obrigatório do sistema
+## Problem
 
-### Problema
-Atualmente, quando o sistema não consegue extrair o valor do código EMV (amount null/0), o drawer redireciona para o Step 3 pedindo ao usuário para digitar o valor manualmente. Isso está errado: no fluxo Copia e Cola, o valor **sempre** vem do código — se não vier, é erro e o pagamento não deve prosseguir.
+The `billet-check-status` edge function receives ONZ responses where the actual billet data is nested inside a `data` property: `{"data": {"status": "LIQUIDATED", ...}}`. The code reads `statusData.status` which is `undefined`, so every poll returns `internal_status: "pending"` even when the provider says `LIQUIDATED`. The app gets stuck on "Aguardando confirmação" forever, then times out.
 
-### Correção
+## Root Cause
 
-**Arquivo: `src/components/pix/PixCopyPasteDrawer.tsx`**
+In `callOnzViaProxy`, the proxy response is `{"data": {"data": {...actual billet...}}}`. The helper does `data.data || data` which unwraps one level, yielding `{"data": {...actual billet...}}`. But `billet-check-status` then does `statusData = result.data` which is still `{"data": {...}}` — one level of nesting remains.
 
-1. **Remover Step 3 (entrada manual de valor)** — eliminar toda a UI e lógica do step de digitação de valor
-2. **Quando `getQRCodeInfo` retornar sem valor (`amount` null/0)**: exibir erro claro ("Este código Pix não contém valor. Verifique o código e tente novamente.") e voltar ao Step 1 em vez de avançar
-3. **Quando `getQRCodeInfo` falhar completamente**: exibir erro e voltar ao Step 1
-4. **Ajustar indicadores de progresso** de 4 steps para 3 (Código → Consultando → Confirmação)
-5. **Remover estado e função `handleAmountContinue`** que não serão mais necessários
+## Fix
 
-### Resultado
-O fluxo será: Colar código → Sistema consulta e extrai valor → Confirmação com valor do sistema → Pagamento. Se o código não tiver valor, erro e volta.
+**File: `supabase/functions/billet-check-status/index.ts`**
+
+After line 116 (`statusData = result.data;`), add unwrapping logic:
+
+```typescript
+// ONZ responses may be nested in a "data" wrapper
+if (statusData && statusData.data && typeof statusData.data === 'object' && statusData.data.status) {
+  statusData = statusData.data;
+}
+```
+
+This ensures `statusData.status` correctly reads `"LIQUIDATED"`, which maps to `"completed"`, unblocking the polling loop and showing the success screen.
+
+## Technical Details
+
+- Only the ONZ branch is affected (Transfeera responses are flat)
+- The fix is defensive — it only unwraps when `.data.status` exists
+- No frontend changes needed; the polling logic in `BoletoPaymentDrawer` already handles `is_completed` correctly
+- Deploy via `supabase--deploy_edge_functions`
 
