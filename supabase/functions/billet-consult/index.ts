@@ -101,6 +101,7 @@ Deno.serve(async (req) => {
     }
 
     const cleanBarcode = codigo_barras.replace(/[\s.\-]/g, '');
+    const digitableCode = convertToLinhaDigitavel(cleanBarcode);
 
     if (config.provider === 'onz') {
       // ========== ONZ: No dedicated consult endpoint ==========
