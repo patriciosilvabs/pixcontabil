@@ -1,4 +1,4 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,20 +44,37 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Validate user token via direct API call (more reliable in edge runtime)
+    const token = authHeader.replace('Bearer ', '');
+    const userResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/auth/v1/user`, {
+      headers: {
+        'Authorization': authHeader,
+        'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+      },
+    });
+    if (!userResponse.ok) {
+      const errBody = await userResponse.text();
+      console.error('[pix-auth] Token validation failed:', userResponse.status, errBody);
+      return new Response(
+        JSON.stringify({ error: 'Invalid token', details: errBody }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const userData = await userResponse.json();
+    console.log('[pix-auth] User validated:', userData.id);
+
+    // Use service role client for DB operations (bypasses RLS)
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    );
+
+    // Create user-context client for RLS-protected queries
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
       { global: { headers: { Authorization: authHeader } } }
     );
-
-    const token = authHeader.replace('Bearer ', '');
-    const { data: userData, error: authError } = await supabase.auth.getUser(token);
-    if (authError || !userData?.user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     const { company_id, purpose, force_new } = await req.json();
 
@@ -218,10 +235,7 @@ Deno.serve(async (req) => {
     // Cache token (with 60s margin)
     const expiresAt = new Date(Date.now() + (expiresInSeconds - 60) * 1000);
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // Reuse supabaseAdmin from above for caching
 
     if (config.id) {
       await supabaseAdmin.from('pix_tokens').delete().eq('pix_config_id', config.id);
