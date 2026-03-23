@@ -60,9 +60,8 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
 
   const acquireStreamAndOpen = async (setter: (v: boolean) => void) => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
+      const { getRearCameraStream } = await import("@/utils/cameraHelper");
+      const stream = await getRearCameraStream();
       preAcquiredStreamRef.current = stream;
       setter(true);
     } catch (err: any) {
