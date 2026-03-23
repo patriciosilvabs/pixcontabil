@@ -44,14 +44,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    const supabase = createClient(
+    // Use service role client for reliable token validation
+    const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
+    const token = authHeader.replace('Bearer ', '');
     console.log('[pix-auth] Validating user token...');
-    const { data: userData, error: authError } = await supabase.auth.getUser();
+    const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
     console.log('[pix-auth] getUser result - error:', authError?.message, 'user:', userData?.user?.id);
     if (authError || !userData?.user) {
       return new Response(
@@ -59,6 +60,13 @@ Deno.serve(async (req) => {
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Create user-context client for RLS-protected queries
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
 
     const { company_id, purpose, force_new } = await req.json();
 
