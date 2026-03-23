@@ -227,10 +227,7 @@ Deno.serve(async (req) => {
     // Cache token (with 60s margin)
     const expiresAt = new Date(Date.now() + (expiresInSeconds - 60) * 1000);
 
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    // Reuse supabaseAdmin from above for caching
 
     if (config.id) {
       await supabaseAdmin.from('pix_tokens').delete().eq('pix_config_id', config.id);
