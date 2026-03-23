@@ -228,11 +228,7 @@ export default function ReceiptCapture() {
 
       if (receiptError) throw receiptError;
 
-      // Update transaction status to completed
-      await supabase
-        .from("transactions")
-        .update({ status: "completed" as const, paid_at: new Date().toISOString() })
-        .eq("id", transactionId);
+      // Status is already set by the payment provider confirmation — do not override here
 
       // Update category on transaction if selected
       if (receiptData.subcategory) {
