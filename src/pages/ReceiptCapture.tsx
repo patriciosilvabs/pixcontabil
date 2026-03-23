@@ -19,7 +19,6 @@ import {
   Check,
   AlertCircle,
   X,
-  Sparkles,
   Search,
 } from "lucide-react";
 
@@ -30,13 +29,6 @@ interface ReceiptData {
   previewUrl: string | null;
   classification: ClassificationType | null;
   subcategory: string | null;
-  ocrData: {
-    cnpj?: string;
-    date?: string;
-    value?: string;
-    accessKey?: string;
-    suggestedCategory?: string;
-  } | null;
   isProcessing: boolean;
 }
 
@@ -92,7 +84,6 @@ export default function ReceiptCapture() {
     previewUrl: null,
     classification: null,
     subcategory: null,
-    ocrData: null,
     isProcessing: false,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -134,83 +125,9 @@ export default function ReceiptCapture() {
       ...prev,
       file: correctedFile,
       previewUrl,
-      isProcessing: true,
+      isProcessing: false,
     }));
-
-    // Convert image to base64 and call OCR
-    try {
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          // Remove data:image/...;base64, prefix
-          resolve(result.split(",")[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(correctedFile);
-      });
-
-      const { data: ocrResponse, error: ocrError } = await supabase.functions.invoke("process-ocr", {
-        body: { imageBase64: base64 },
-      });
-
-      if (ocrError) throw ocrError;
-
-      if (ocrResponse?.success && ocrResponse.data) {
-        const d = ocrResponse.data;
-        const extractedOcr = {
-          cnpj: d.cnpj || undefined,
-          date: d.data_emissao || undefined,
-          value: d.valor_total != null ? `R$ ${Number(d.valor_total).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : undefined,
-          accessKey: d.chave_acesso || undefined,
-          suggestedCategory: d.categoria_sugerida || undefined,
-        };
-
-        const aiClassification: ClassificationType | null =
-          d.classificacao_sugerida === "cost" || d.classificacao_sugerida === "expense"
-            ? d.classificacao_sugerida
-            : null;
-
-        setReceiptData((prev) => ({
-          ...prev,
-          ocrData: extractedOcr,
-          classification: aiClassification,
-          isProcessing: false,
-        }));
-
-        // Auto-select suggested category if it matches
-        if (extractedOcr.suggestedCategory && aiClassification) {
-          const match = categories.find(
-            (c) =>
-              c.name.toLowerCase() === extractedOcr.suggestedCategory!.toLowerCase() &&
-              c.classification === aiClassification
-          );
-          if (match) {
-            setReceiptData((prev) => ({ ...prev, subcategory: match.name }));
-          }
-        }
-
-        toast({
-          title: "Comprovante processado!",
-          description: "Os dados foram extraídos automaticamente pela IA.",
-        });
-      } else {
-        throw new Error(ocrResponse?.error || "Falha na extração");
-      }
-    } catch (err: any) {
-      console.error("OCR error:", err);
-      setReceiptData((prev) => ({ ...prev, isProcessing: false }));
-      toast({
-        variant: "destructive",
-        title: "Erro no OCR",
-        description: err?.message?.includes("429")
-          ? "Limite de requisições excedido. Tente novamente em alguns segundos."
-          : err?.message?.includes("402")
-          ? "Créditos de IA esgotados."
-          : "Não foi possível extrair dados do comprovante.",
-      });
-    }
-  }, [toast, normalizeImageOrientation, categories]);
+  }, [normalizeImageOrientation]);
 
   const handleCameraCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -324,7 +241,6 @@ export default function ReceiptCapture() {
       previewUrl: null,
       classification: null,
       subcategory: null,
-      ocrData: null,
       isProcessing: false,
     });
   };
@@ -429,55 +345,11 @@ export default function ReceiptCapture() {
                   <X className="h-4 w-4" />
                 </Button>
 
-                {/* Processing overlay */}
-                {receiptData.isProcessing && (
-                  <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
-                    <div className="text-center">
-                      <Loader2 className="h-10 w-10 animate-spin mx-auto text-primary mb-4" />
-                      <p className="font-medium">Processando comprovante...</p>
-                      <p className="text-sm text-muted-foreground">
-                        Extraindo dados com IA
-                      </p>
-                    </div>
-                  </div>
-                )}
               </div>
-
-              {/* OCR Data */}
-              {receiptData.ocrData && !receiptData.isProcessing && (
-                <CardContent className="p-4 space-y-3 bg-muted/30">
-                  <div className="flex items-center gap-2 text-sm text-primary">
-                    <Sparkles className="h-4 w-4" />
-                    <span className="font-medium">Dados extraídos por IA</span>
-                  </div>
-
-                  <div className="grid gap-2 text-sm">
-                    {receiptData.ocrData.cnpj && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">CNPJ</span>
-                        <span className="font-mono">{receiptData.ocrData.cnpj}</span>
-                      </div>
-                    )}
-                    {receiptData.ocrData.value && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Valor</span>
-                        <span className="font-bold">{receiptData.ocrData.value}</span>
-                      </div>
-                    )}
-                    {receiptData.ocrData.date && (
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Data</span>
-                        <span>{receiptData.ocrData.date}</span>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              )}
             </Card>
 
             {/* Classification */}
-            {!receiptData.isProcessing && (
-              <Card className="mb-6">
+            <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>Classificar Pagamento</CardTitle>
                   <CardDescription>
@@ -603,8 +475,7 @@ export default function ReceiptCapture() {
                     </div>
                   )}
                 </CardContent>
-              </Card>
-            )}
+            </Card>
           </>
         )}
 
