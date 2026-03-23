@@ -40,9 +40,8 @@ export function AdminDashboard() {
 
   const acquireStreamAndOpenBarcode = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
+      const { getRearCameraStream } = await import("@/utils/cameraHelper");
+      const stream = await getRearCameraStream();
       preAcquiredStreamRef.current = stream;
       setBarcodeScannerOpen(true);
     } catch (err: any) {

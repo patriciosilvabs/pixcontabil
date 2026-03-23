@@ -97,13 +97,8 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
         } else {
           // Fallback: request camera directly (works on Android, may fail on iOS)
           console.log("[BarcodeScanner] Fallback: requesting camera directly");
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: "environment" },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
-            },
-          });
+          const { getRearCameraStream } = await import("@/utils/cameraHelper");
+          stream = await getRearCameraStream();
         }
 
         if (cancelled || !mountedRef.current) {
