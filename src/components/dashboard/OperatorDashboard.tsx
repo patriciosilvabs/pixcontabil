@@ -63,6 +63,11 @@ export function OperatorDashboard() {
     setBoletoPaymentOpen(true);
   };
 
+  const handleManualBarcodeSubmit = (barcode: string) => {
+    setScannedBarcode(barcode);
+    setBoletoPaymentOpen(true);
+  };
+
   const content = isMobile ? (
     <MobileDashboard
       balanceVisible={balanceVisible}
