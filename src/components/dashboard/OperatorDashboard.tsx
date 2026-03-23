@@ -297,7 +297,16 @@ export function OperatorDashboard() {
         isOpen={barcodeScannerOpen}
         onScan={handleBarcodeScan}
         onClose={() => setBarcodeScannerOpen(false)}
+        onManualInput={() => {
+          setBarcodeScannerOpen(false);
+          setManualBarcodeOpen(true);
+        }}
         preAcquiredStream={preAcquiredStreamRef.current}
+      />
+      <ManualBarcodeDialog
+        open={manualBarcodeOpen}
+        onOpenChange={setManualBarcodeOpen}
+        onSubmit={handleManualBarcodeSubmit}
       />
       <BoletoPaymentDrawer
         open={boletoPaymentOpen}
