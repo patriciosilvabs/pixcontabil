@@ -12,6 +12,15 @@ const REAR_CAMERA_KEYWORDS = ["back", "rear", "traseira", "environment", "arriè
 const PREFERRED_REAR_CAMERA_KEYWORDS = ["wide", "1x", "main", "principal"];
 const DEPRIORITIZED_REAR_CAMERA_KEYWORDS = ["tele", "macro", "ultra", "depth"];
 
+type ExtendedMediaTrackConstraints = MediaTrackConstraints & {
+  resizeMode?: string;
+};
+
+type ZoomCapability = {
+  min?: number;
+  max?: number;
+};
+
 function scoreRearCamera(device: MediaDeviceInfo): number {
   const label = device.label.toLowerCase();
   let score = 0;
@@ -29,12 +38,12 @@ async function normalizeCameraTrack(stream: MediaStream): Promise<MediaStream> {
 
   try {
     const capabilities = track.getCapabilities() as MediaTrackCapabilities & {
-      zoom?: { min?: number; max?: number };
+      zoom?: ZoomCapability;
     };
 
     if (capabilities.zoom) {
       await track.applyConstraints({
-        advanced: [{ zoom: capabilities.zoom.min ?? 1 }],
+        advanced: [{ zoom: capabilities.zoom.min ?? 1 } as MediaTrackConstraintSet],
       });
       console.log("[Camera] Zoom reset to minimum supported value");
     }
@@ -48,7 +57,7 @@ async function normalizeCameraTrack(stream: MediaStream): Promise<MediaStream> {
 export async function getRearCameraStream(
   extraConstraints?: MediaTrackConstraints
 ): Promise<MediaStream> {
-  const base: MediaTrackConstraints = {
+  const base: ExtendedMediaTrackConstraints = {
     width: { ideal: 1280 },
     height: { ideal: 720 },
     aspectRatio: { ideal: 16 / 9 },
@@ -56,7 +65,6 @@ export async function getRearCameraStream(
     ...extraConstraints,
   };
 
-  // Attempt 1: exact environment
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { ...base, facingMode: { exact: "environment" } },
@@ -67,15 +75,12 @@ export async function getRearCameraStream(
     console.warn("[Camera] exact environment failed, trying enumerate", e);
   }
 
-  // Attempt 2: enumerate devices and find best rear camera by label
   try {
-    const rearDevice = navigator.mediaDevices
-      ? (await navigator.mediaDevices.enumerateDevices())
-          .filter((d) => d.kind === "videoinput")
-          .map((device) => ({ device, score: scoreRearCamera(device) }))
-          .filter(({ score }) => score > 0)
-          .sort((a, b) => b.score - a.score)[0]?.device
-      : undefined;
+    const rearDevice = (await navigator.mediaDevices.enumerateDevices())
+      .filter((d) => d.kind === "videoinput")
+      .map((device) => ({ device, score: scoreRearCamera(device) }))
+      .filter(({ score }) => score > 0)
+      .sort((a, b) => b.score - a.score)[0]?.device;
 
     if (rearDevice) {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -88,7 +93,6 @@ export async function getRearCameraStream(
     console.warn("[Camera] enumerate fallback failed", e);
   }
 
-  // Attempt 3: ideal environment (original behavior)
   console.log("[Camera] Final fallback: ideal environment");
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { ...base, facingMode: { ideal: "environment" } },
