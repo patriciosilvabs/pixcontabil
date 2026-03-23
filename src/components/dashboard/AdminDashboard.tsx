@@ -11,6 +11,7 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { Skeleton } from "@/components/ui/skeleton";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
+import { ManualBarcodeDialog } from "@/components/payment/ManualBarcodeDialog";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import {
   DollarSign,
