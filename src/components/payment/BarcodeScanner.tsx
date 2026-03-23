@@ -136,6 +136,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
         // Track partial reads for barcode confirmation
         const partialReads: string[] = [];
         let lastReadTime = 0;
+        let lastDifferentBarcode = "";
 
         const handleResult = (text: string) => {
           if (hasScannedRef.current || cancelled) return;
@@ -160,17 +161,30 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
             return;
           }
 
-          // Shorter barcodes: require 2x confirmation
+          // Shorter barcodes: require 2x confirmation, but tolerate small frame variations
           if (text.length >= 8 && text.length < 44) {
+            const normalizedText = text.replace(/\D/g, "");
+
+            if (normalizedText !== lastDifferentBarcode && now - lastReadTime >= 2000) {
+              partialReads.length = 0;
+            }
+
             if (now - lastReadTime < 2000) {
               partialReads.push(text);
             } else {
               partialReads.length = 0;
               partialReads.push(text);
             }
+
+            lastDifferentBarcode = normalizedText;
             lastReadTime = now;
 
-            if (partialReads.filter(r => r === text).length >= 2) {
+            const similarReads = partialReads.filter((read) => {
+              const normalizedRead = read.replace(/\D/g, "");
+              return normalizedRead === normalizedText || normalizedRead.includes(normalizedText) || normalizedText.includes(normalizedRead);
+            }).length;
+
+            if (similarReads >= 2) {
               hasScannedRef.current = true;
               console.log("[BarcodeScanner] Confirmed barcode:", text);
               onScan(text);
@@ -179,50 +193,54 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
           }
         };
 
+        const decodeCanvas = (canvas: HTMLCanvasElement) => {
+          const luminance = new HTMLCanvasElementLuminanceSource(canvas);
+          const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
+          return mfReader.decode(bitmap);
+        };
+
+        const buildScanRegions = (vw: number, vh: number) => {
+          if (mode === "qrcode") {
+            const size = Math.min(vw, vh);
+            return [{ sx: Math.round((vw - size) / 2), sy: Math.round((vh - size) / 2), sw: size, sh: size }];
+          }
+
+          return [
+            { sx: 0, sy: 0, sw: vw, sh: vh },
+            { sx: 0, sy: Math.round(vh * 0.2), sw: vw, sh: Math.round(vh * 0.6) },
+            { sx: 0, sy: Math.round(vh * 0.35), sw: vw, sh: Math.round(vh * 0.3) },
+          ];
+        };
+
         // Canvas-based scanning loop (works for both modes)
-        const scanInterval = mode === "qrcode" ? 250 : 500;
+        const scanInterval = mode === "qrcode" ? 250 : 250;
         scanIntervalRef.current = setInterval(() => {
           if (cancelled || hasScannedRef.current || !videoEl.videoWidth) return;
 
           try {
             const vw = videoEl.videoWidth;
             const vh = videoEl.videoHeight;
+            const regions = buildScanRegions(vw, vh);
 
-            let canvasW = vw;
-            let canvasH = vh;
-            let sx = 0;
-            let sy = 0;
+            for (const region of regions) {
+              const canvas = document.createElement("canvas");
+              canvas.width = region.sw;
+              canvas.height = region.sh;
+              const ctx = canvas.getContext("2d");
+              if (!ctx) continue;
 
-            if (mode === "barcode") {
-              // Crop horizontal center strip for barcodes
-              canvasH = Math.round(vh * 0.3);
-              sy = Math.round((vh - canvasH) / 2);
-            } else {
-              // For QR, crop center square
-              const size = Math.min(vw, vh);
-              canvasW = size;
-              canvasH = size;
-              sx = Math.round((vw - size) / 2);
-              sy = Math.round((vh - size) / 2);
-            }
+              ctx.drawImage(videoEl, region.sx, region.sy, region.sw, region.sh, 0, 0, region.sw, region.sh);
 
-            const canvas = document.createElement("canvas");
-            canvas.width = canvasW;
-            canvas.height = canvasH;
-            const ctx = canvas.getContext("2d");
-            if (!ctx) return;
-            ctx.drawImage(videoEl, sx, sy, canvasW, canvasH, 0, 0, canvasW, canvasH);
+              const result = decodeCanvas(canvas);
+              if (!result) continue;
 
-            const luminance = new HTMLCanvasElementLuminanceSource(canvas);
-            const bitmap = new BinaryBitmap(new HybridBinarizer(luminance));
-            const result = mfReader.decode(bitmap);
-            if (result) {
               // For barcodes (boleto), strip all whitespace since codes are purely numeric
               // For QR codes (EMV Pix), preserve spaces - they are part of the merchant name
               // and stripping them corrupts the EMV structure (length fields) and CRC16 checksum
               const rawText = result.getText();
               const text = mode === "barcode" ? rawText.replace(/\s/g, "") : rawText.trim();
               handleResult(text);
+              break;
             }
           } catch {
             // No code found - normal
