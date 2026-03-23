@@ -46,7 +46,6 @@ Deno.serve(async (req) => {
 
     // Validate user token via direct API call (more reliable in edge runtime)
     const token = authHeader.replace('Bearer ', '');
-    console.log('[pix-auth] Validating user token via API...');
     const userResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/auth/v1/user`, {
       headers: {
         'Authorization': authHeader,
