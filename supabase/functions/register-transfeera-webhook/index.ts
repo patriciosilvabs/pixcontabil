@@ -72,7 +72,7 @@ Deno.serve(async (req) => {
       // Get token via pix-auth
       const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
         method: 'POST',
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
         body: JSON.stringify({ company_id }),
       });
 
