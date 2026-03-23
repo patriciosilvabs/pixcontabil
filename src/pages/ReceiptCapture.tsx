@@ -49,6 +49,45 @@ export default function ReceiptCapture() {
   const [categorySearch, setCategorySearch] = useState("");
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
+  const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+
+  // Check transaction status — only allow receipt attachment if completed
+  useEffect(() => {
+    if (!transactionId) return;
+    setIsLoadingStatus(true);
+
+    const checkStatus = async () => {
+      const { data } = await supabase
+        .from("transactions")
+        .select("status")
+        .eq("id", transactionId)
+        .single();
+
+      setTransactionStatus(data?.status || null);
+      setIsLoadingStatus(false);
+    };
+
+    checkStatus();
+
+    // Poll every 3s if not yet completed
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("transactions")
+        .select("status")
+        .eq("id", transactionId)
+        .single();
+
+      if (data?.status) {
+        setTransactionStatus(data.status);
+        if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
+          clearInterval(interval);
+        }
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [transactionId]);
 
   useEffect(() => {
     if (!currentCompany) return;
@@ -189,11 +228,7 @@ export default function ReceiptCapture() {
 
       if (receiptError) throw receiptError;
 
-      // Update transaction status to completed
-      await supabase
-        .from("transactions")
-        .update({ status: "completed" as const, paid_at: new Date().toISOString() })
-        .eq("id", transactionId);
+      // Status is already set by the payment provider confirmation — do not override here
 
       // Update category on transaction if selected
       if (receiptData.subcategory) {
@@ -247,6 +282,10 @@ export default function ReceiptCapture() {
 
   const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
 
+  // Guard: show waiting screen if transaction is not yet completed
+  const isTransactionCompleted = transactionStatus === "completed";
+  const isTransactionFinalFailed = transactionStatus === "failed" || transactionStatus === "cancelled";
+
   return (
     <MainLayout>
       <div className="p-6 lg:p-8 max-w-2xl mx-auto">
@@ -258,6 +297,48 @@ export default function ReceiptCapture() {
           </p>
         </div>
 
+        {/* Loading status */}
+        {isLoadingStatus && (
+          <Card className="mb-6">
+            <CardContent className="flex flex-col items-center gap-3 p-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm text-muted-foreground">Verificando status do pagamento...</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Transaction failed/cancelled */}
+        {!isLoadingStatus && isTransactionFinalFailed && (
+          <Card className="border-destructive/50 bg-destructive/5 mb-6">
+            <CardContent className="flex flex-col items-center gap-3 p-8">
+              <AlertCircle className="h-8 w-8 text-destructive" />
+              <p className="font-medium">Pagamento não confirmado</p>
+              <p className="text-sm text-muted-foreground text-center">
+                Este pagamento foi {transactionStatus === "failed" ? "recusado" : "cancelado"}. Não é possível anexar comprovante.
+              </p>
+              <Button variant="outline" onClick={() => navigate("/")}>
+                Voltar ao Início
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Waiting for confirmation */}
+        {!isLoadingStatus && !isTransactionCompleted && !isTransactionFinalFailed && (
+          <Card className="border-primary/30 bg-primary/5 mb-6">
+            <CardContent className="flex flex-col items-center gap-3 p-8">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <p className="font-medium">Aguardando confirmação do pagamento</p>
+              <p className="text-sm text-muted-foreground text-center">
+                O comprovante só pode ser anexado após a confirmação oficial do pagamento pelo provedor.
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Only show receipt capture when transaction is confirmed */}
+        {!isLoadingStatus && isTransactionCompleted && (
+          <>
         {/* Alert */}
         <Card className="border-warning/50 bg-warning/5 mb-6">
           <CardContent className="flex items-center gap-4 p-4">
@@ -497,6 +578,8 @@ export default function ReceiptCapture() {
             </>
           )}
         </Button>
+          </>
+        )}
       </div>
     </MainLayout>
   );

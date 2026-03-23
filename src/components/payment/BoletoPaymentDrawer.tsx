@@ -99,7 +99,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       pollAttemptsRef.current++;
 
       try {
-        const result = await checkBilletStatus(txId);
+        const result = await checkBilletStatus(txId, true);
         if (!mountedRef.current) return;
 
         if (!result) {
