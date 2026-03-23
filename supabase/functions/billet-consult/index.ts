@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
             'Authorization': `Bearer ${access_token}`,
             'Content-Type': 'application/json',
           },
-          JSON.stringify({ digitableCode: cleanBarcode }),
+          JSON.stringify({ digitableCode }),
         );
 
         if (result.status < 400 && result.data) {
