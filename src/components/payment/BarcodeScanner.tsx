@@ -286,7 +286,7 @@ export function BarcodeScanner({ mode, isOpen, onScan, onClose, onManualInput, p
             <>
               <video
                 ref={videoRef}
-                className="w-full h-full object-cover"
+                className="w-full h-full object-contain bg-black"
                 playsInline
                 muted
                 autoPlay
