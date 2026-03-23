@@ -114,6 +114,10 @@ Deno.serve(async (req) => {
           { 'Authorization': `Bearer ${access_token}` },
         );
         statusData = result.data;
+        // ONZ responses may be nested in a "data" wrapper
+        if (statusData && statusData.data && typeof statusData.data === 'object' && statusData.data.status) {
+          statusData = statusData.data;
+        }
       } catch (e) {
         return new Response(JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
