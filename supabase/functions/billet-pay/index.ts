@@ -124,9 +124,11 @@ Deno.serve(async (req) => {
 
     if (config.provider === 'onz') {
       // ========== ONZ: POST /api/v2/billets/payments ==========
+      // ONZ requires digitableCode in linha digitável format (47 digits)
+      const digitableCode = convertToLinhaDigitavel(cleanBarcode);
       const idempotencyKey = crypto.randomUUID();
       const onzBody = {
-        digitableCode: cleanBarcode,
+        digitableCode,
         description: descricao || 'Pagamento de boleto',
         paymentFlow: 'INSTANT',
       };
