@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
             // Token retry on 401
             if (result.status === 401 || result.data?.type === 'onz-0018') {
               const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-                method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+                method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
                 body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
               });
               const newTokenData = await retryAuth.json();
