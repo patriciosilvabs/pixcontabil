@@ -34,7 +34,7 @@ export function PaymentStatusScreen({
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
 
-  const MAX_ATTEMPTS = 30;
+  const MAX_ATTEMPTS = 90;
   const POLL_INTERVAL = 2000;
 
   const poll = useCallback(async () => {
@@ -241,16 +241,20 @@ export function PaymentStatusScreen({
           <div className="text-center space-y-1">
             <p className="text-base font-bold">Pagamento em processamento</p>
             <p className="text-sm text-muted-foreground">
-              O pagamento ainda está sendo processado. Acompanhe pelo extrato.
+              O pagamento ainda está sendo processado.
             </p>
           </div>
           <p className="text-xl font-bold text-amber-600 dark:text-amber-400">{formattedAmount}</p>
           <Button
-            variant="outline"
-            onClick={onClose}
+            onClick={async () => {
+              setStatus("polling");
+              attemptsRef.current = 0;
+              poll();
+              timerRef.current = setInterval(poll, POLL_INTERVAL);
+            }}
             className="w-full h-11 text-sm font-bold uppercase tracking-wider mt-1"
           >
-            Fechar
+            Verificar Status Novamente
           </Button>
           <Button
             variant="ghost"
