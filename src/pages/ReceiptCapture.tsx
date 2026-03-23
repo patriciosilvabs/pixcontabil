@@ -49,6 +49,45 @@ export default function ReceiptCapture() {
   const [categorySearch, setCategorySearch] = useState("");
   const [showAllCategories, setShowAllCategories] = useState(false);
   const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
+  const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+
+  // Check transaction status — only allow receipt attachment if completed
+  useEffect(() => {
+    if (!transactionId) return;
+    setIsLoadingStatus(true);
+
+    const checkStatus = async () => {
+      const { data } = await supabase
+        .from("transactions")
+        .select("status")
+        .eq("id", transactionId)
+        .single();
+
+      setTransactionStatus(data?.status || null);
+      setIsLoadingStatus(false);
+    };
+
+    checkStatus();
+
+    // Poll every 3s if not yet completed
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from("transactions")
+        .select("status")
+        .eq("id", transactionId)
+        .single();
+
+      if (data?.status) {
+        setTransactionStatus(data.status);
+        if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
+          clearInterval(interval);
+        }
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [transactionId]);
 
   useEffect(() => {
     if (!currentCompany) return;
