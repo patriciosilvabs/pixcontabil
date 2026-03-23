@@ -578,6 +578,8 @@ export default function ReceiptCapture() {
             </>
           )}
         </Button>
+          </>
+        )}
       </div>
     </MainLayout>
   );
