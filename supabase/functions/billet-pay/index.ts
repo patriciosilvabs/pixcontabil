@@ -25,6 +25,42 @@ function parsePositiveAmount(value: unknown): number | undefined {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
 }
 
+function mod10(block: string): string {
+  let sum = 0;
+  let weight = 2;
+  for (let i = block.length - 1; i >= 0; i--) {
+    let prod = parseInt(block[i], 10) * weight;
+    if (prod >= 10) prod = Math.floor(prod / 10) + (prod % 10);
+    sum += prod;
+    weight = weight === 2 ? 1 : 2;
+  }
+  const remainder = sum % 10;
+  return remainder === 0 ? '0' : String(10 - remainder);
+}
+
+function convertToLinhaDigitavel(code: string): string {
+  const clean = code.replace(/[\s.\-]/g, '');
+  // Already linha digitável (47 or 48 digits) or convênio (starts with 8)
+  if (clean.length !== 44 || clean[0] === '8') return clean;
+
+  const bankCurrency = clean.substring(0, 4);
+  const checkDigit = clean[4];
+  const dueFactor = clean.substring(5, 9);
+  const amount = clean.substring(9, 19);
+  const freeField1 = clean.substring(19, 24);
+  const freeField2 = clean.substring(24, 34);
+  const freeField3 = clean.substring(34, 44);
+
+  const check1 = mod10(bankCurrency + freeField1);
+  const check2 = mod10(freeField2);
+  const check3 = mod10(freeField3);
+
+  return bankCurrency + freeField1 + check1
+       + freeField2 + check2
+       + freeField3 + check3
+       + checkDigit + dueFactor + amount;
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -88,9 +124,11 @@ Deno.serve(async (req) => {
 
     if (config.provider === 'onz') {
       // ========== ONZ: POST /api/v2/billets/payments ==========
+      // ONZ requires digitableCode in linha digitável format (47 digits)
+      const digitableCode = convertToLinhaDigitavel(cleanBarcode);
       const idempotencyKey = crypto.randomUUID();
       const onzBody = {
-        digitableCode: cleanBarcode,
+        digitableCode,
         description: descricao || 'Pagamento de boleto',
         paymentFlow: 'INSTANT',
       };

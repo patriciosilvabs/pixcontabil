@@ -11,6 +11,7 @@ import { useDashboardData } from "@/hooks/useDashboardData";
 import { usePixBalance } from "@/hooks/usePixBalance";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
+import { ManualBarcodeDialog } from "@/components/payment/ManualBarcodeDialog";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import {
   Send,
@@ -35,6 +36,7 @@ export function OperatorDashboard() {
   const [barcodeScannerOpen, setBarcodeScannerOpen] = React.useState(false);
   const [scannedBarcode, setScannedBarcode] = React.useState("");
   const [boletoPaymentOpen, setBoletoPaymentOpen] = React.useState(false);
+  const [manualBarcodeOpen, setManualBarcodeOpen] = React.useState(false);
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
 
   const acquireStreamAndOpenBarcode = async () => {
@@ -58,6 +60,11 @@ export function OperatorDashboard() {
   const handleBarcodeScan = (result: string) => {
     setBarcodeScannerOpen(false);
     setScannedBarcode(result);
+    setBoletoPaymentOpen(true);
+  };
+
+  const handleManualBarcodeSubmit = (barcode: string) => {
+    setScannedBarcode(barcode);
     setBoletoPaymentOpen(true);
   };
 
@@ -290,7 +297,16 @@ export function OperatorDashboard() {
         isOpen={barcodeScannerOpen}
         onScan={handleBarcodeScan}
         onClose={() => setBarcodeScannerOpen(false)}
+        onManualInput={() => {
+          setBarcodeScannerOpen(false);
+          setManualBarcodeOpen(true);
+        }}
         preAcquiredStream={preAcquiredStreamRef.current}
+      />
+      <ManualBarcodeDialog
+        open={manualBarcodeOpen}
+        onOpenChange={setManualBarcodeOpen}
+        onSubmit={handleManualBarcodeSubmit}
       />
       <BoletoPaymentDrawer
         open={boletoPaymentOpen}
