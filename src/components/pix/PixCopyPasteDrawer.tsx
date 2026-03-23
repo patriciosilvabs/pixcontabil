@@ -1,15 +1,14 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
-import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Loader2, ClipboardPaste, DollarSign, CheckCircle2, Clipboard } from "lucide-react";
+import { ArrowLeft, Loader2, ClipboardPaste, CheckCircle2, Clipboard } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
-import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
+import { parseLocalizedNumber } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 
 interface PixCopyPasteDrawerProps {
@@ -20,14 +19,13 @@ interface PixCopyPasteDrawerProps {
 export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerProps) {
   const navigate = useNavigate();
   const { getQRCodeInfo, payByQRCode, isProcessing } = usePixPayment();
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [emvCode, setEmvCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [amount, setAmount] = useState("");
   const [merchantName, setMerchantName] = useState("");
   const [merchantCity, setMerchantCity] = useState("");
   const [pixKey, setPixKey] = useState("");
-  const [hasFixedAmount, setHasFixedAmount] = useState(false);
   const [transactionId, setTransactionId] = useState("");
 
   const reset = () => {
@@ -38,7 +36,6 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     setMerchantName("");
     setMerchantCity("");
     setPixKey("");
-    setHasFixedAmount(false);
     setTransactionId("");
   };
 
@@ -51,12 +48,9 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     if (step === 1) {
       handleClose();
     } else if (step === 2) {
-      // Loading step — go back to input
       setStep(1);
     } else if (step === 3) {
       setStep(1);
-    } else if (step === 4) {
-      setStep(hasFixedAmount ? 1 : 3);
     }
   };
 
@@ -90,27 +84,18 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
       setMerchantName(info.merchant_name || "");
       setMerchantCity(info.merchant_city || "");
       setPixKey(info.pix_key || "");
+
       if (info.amount && info.amount > 0) {
         setAmount(info.amount.toFixed(2).replace(".", ","));
-        setHasFixedAmount(true);
-        setStep(4); // skip amount step
+        setStep(3); // go to confirmation
       } else {
-        setStep(3);
+        toast.error("Este código Pix não contém valor. Verifique o código e tente novamente.");
+        setStep(1);
       }
     } else {
-      toast.error("Não foi possível ler os dados do código Pix");
-      setStep(3);
+      toast.error("Não foi possível ler os dados do código Pix. Verifique o código e tente novamente.");
+      setStep(1);
     }
-  };
-
-  const handleAmountContinue = () => {
-    const value = parseLocalizedNumber(amount);
-    const validation = isValidPaymentAmount(value);
-    if (!validation.valid) {
-      toast.error(validation.message);
-      return;
-    }
-    setStep(4);
   };
 
   const handleConfirm = async () => {
@@ -122,7 +107,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
 
     if (result?.transaction_id) {
       setTransactionId(result.transaction_id);
-      setStep(5);
+      setStep(4);
     }
   };
 
@@ -137,16 +122,15 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const totalSteps = 4;
-  const stepIcon = step === 1 ? ClipboardPaste : step === 2 ? ClipboardPaste : step === 3 ? DollarSign : CheckCircle2;
-  const stepTitle = step === 1 ? "Copia e Cola" : step === 2 ? "Consultando..." : step === 3 ? "Valor do Pagamento" : "Confirmar Pagamento";
+  const stepIcon = step === 1 ? ClipboardPaste : step === 2 ? ClipboardPaste : CheckCircle2;
+  const stepTitle = step === 1 ? "Copia e Cola" : step === 2 ? "Consultando..." : "Confirmar Pagamento";
   const StepIcon = stepIcon;
 
   return (
-    <Drawer open={open} onOpenChange={step === 5 ? undefined : handleClose}>
+    <Drawer open={open} onOpenChange={step === 4 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
-          {step !== 5 && (
+          {step !== 4 && (
             <>
               <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
                 <button onClick={handleBack} className="p-1 -ml-1">
@@ -165,9 +149,9 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
                 {stepTitle}
               </DrawerDescription>
 
-              {/* Step indicators */}
+              {/* Step indicators — 3 steps */}
               <div className="flex gap-1.5 mb-5">
-                {[1, 2, 3, 4].map((s) => (
+                {[1, 2, 3].map((s) => (
                   <div
                     key={s}
                     className={`h-1 flex-1 rounded-full transition-colors ${
@@ -226,45 +210,8 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
             </div>
           )}
 
-          {/* Step 3: Amount */}
+          {/* Step 3: Confirmation */}
           {step === 3 && (
-            <div className="space-y-5">
-              {merchantName && (
-                <div className="rounded-xl bg-secondary p-3">
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Recebedor</p>
-                  <p className="text-sm font-medium">{merchantName}</p>
-                  {merchantCity && <p className="text-xs text-muted-foreground">{merchantCity}</p>}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="cp-amount" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Valor (R$)
-                </Label>
-                <Input
-                  id="cp-amount"
-                  type="text"
-                  inputMode="decimal"
-                  placeholder="0,00"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  className="h-14 text-2xl font-bold text-center"
-                  autoFocus
-                />
-              </div>
-
-              <Button
-                onClick={handleAmountContinue}
-                disabled={!amount || parseLocalizedNumber(amount) <= 0}
-                className="w-full h-12 text-base font-bold uppercase tracking-wider"
-              >
-                Continuar
-              </Button>
-            </div>
-          )}
-
-          {/* Step 4: Confirmation */}
-          {step === 4 && (
             <div className="space-y-5">
               <div className="rounded-xl bg-secondary p-4 space-y-3">
                 {merchantName && (
@@ -308,8 +255,8 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
             </div>
           )}
 
-          {/* Step 5: Status verification */}
-          {step === 5 && transactionId && (
+          {/* Step 4: Status verification */}
+          {step === 4 && transactionId && (
             <PaymentStatusScreen
               transactionId={transactionId}
               amount={parseLocalizedNumber(amount)}
