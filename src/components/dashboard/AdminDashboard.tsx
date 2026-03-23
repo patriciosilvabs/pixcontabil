@@ -64,6 +64,11 @@ export function AdminDashboard() {
     setBoletoPaymentOpen(true);
   };
 
+  const handleManualBarcodeSubmit = (barcode: string) => {
+    setScannedBarcode(barcode);
+    setBoletoPaymentOpen(true);
+  };
+
   const content = isMobile ? (
     <MobileDashboard
       balanceVisible={balanceVisible}
