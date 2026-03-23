@@ -44,22 +44,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Use service role client for reliable token validation
+    // Validate user token via direct API call (more reliable in edge runtime)
+    const token = authHeader.replace('Bearer ', '');
+    console.log('[pix-auth] Validating user token via API...');
+    const userResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/auth/v1/user`, {
+      headers: {
+        'Authorization': authHeader,
+        'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+      },
+    });
+    if (!userResponse.ok) {
+      const errBody = await userResponse.text();
+      console.error('[pix-auth] Token validation failed:', userResponse.status, errBody);
+      return new Response(
+        JSON.stringify({ error: 'Invalid token', details: errBody }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const userData = await userResponse.json();
+    console.log('[pix-auth] User validated:', userData.id);
+
+    // Use service role client for DB operations (bypasses RLS)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
-
-    const token = authHeader.replace('Bearer ', '');
-    console.log('[pix-auth] Validating user token...');
-    const { data: userData, error: authError } = await supabaseAdmin.auth.getUser(token);
-    console.log('[pix-auth] getUser result - error:', authError?.message, 'user:', userData?.user?.id);
-    if (authError || !userData?.user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token', details: authError?.message }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Create user-context client for RLS-protected queries
     const supabase = createClient(
