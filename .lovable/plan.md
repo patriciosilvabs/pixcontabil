@@ -1,30 +1,31 @@
 
 
-## Corrigir posicionamento do Drawer "Com Chave" no mobile
+## Corrigir leitor de código de barras — câmera traseira no smartphone
 
 ### Problema
-Quando o usuário abre o drawer "Com Chave" no mobile, o conteúdo aparece no topo da tela e fica parcialmente oculto. Isso acontece porque:
-1. O drawer do vaul abre do fundo mas com `min-h-[40dvh]` pode expandir demais
-2. Quando o teclado virtual abre (campo de input com autoFocus), o viewport encolhe e empurra o conteúdo para cima
-3. O `autoFocus` no input da chave Pix dispara o teclado imediatamente, antes do drawer terminar a animação
+O `facingMode: { ideal: "environment" }` é uma constraint "suave" — o navegador pode ignorá-la e entregar a câmera frontal. Em muitos smartphones (especialmente Samsung e iOS), isso resulta na câmera errada sendo usada.
 
-### Correções
+### Correção
 
-**1. `src/components/pix/PixKeyDialog.tsx`**
-- Remover `autoFocus` do input de chave Pix (Step 1) — o teclado abrindo instantaneamente causa o problema de posicionamento
-- Remover `autoFocus` do input de valor (Step 2) pelo mesmo motivo
-- Adicionar padding-top ao container para garantir espaçamento do handle
+**Arquivo: `src/components/payment/BarcodeScanner.tsx`**
 
-**2. `src/components/ui/drawer.tsx`**
-- Adicionar `snap points` ao Drawer para controlar melhor a altura inicial: usar `[0.5, 1]` como snap points padrão ou ajustar o `min-h` para um valor mais seguro
-- Alternativa mais simples: trocar `min-h-[40dvh]` por um valor que funcione melhor com teclado virtual, como `min-h-[50dvh]`, e garantir que o conteúdo interno tenha scroll adequado
+1. **Forçar câmera traseira** — trocar `{ ideal: "environment" }` por `{ exact: "environment" }` no fallback do scanner, com fallback para `ideal` caso o dispositivo não suporte `exact`
+2. **Adicionar lógica de retry com enumeração de câmeras** — se a primeira tentativa falhar, usar `navigator.mediaDevices.enumerateDevices()` para encontrar a câmera traseira explicitamente pelo label (geralmente contém "back", "rear", "traseira", "environment")
+3. **Aplicar resolução adequada** — manter `width/height ideal` para garantir foco e nitidez no barcode
 
-**3. Abordagem recomendada (mais robusta)**
-- No `DrawerContent`, usar a propriedade `data-vaul-no-drag` nos inputs para evitar conflitos de gesture
-- Remover `autoFocus` de todos os inputs dentro de drawers — deixar o usuário tocar no campo manualmente
-- Isso garante que o drawer termine sua animação de abertura antes do teclado aparecer
+**Arquivos: `src/components/dashboard/MobileDashboard.tsx`, `src/components/dashboard/AdminDashboard.tsx`, `src/components/dashboard/OperatorDashboard.tsx`**
 
-### Arquivos a alterar
-- `src/components/pix/PixKeyDialog.tsx` — remover `autoFocus`, ajustar padding
-- `src/components/ui/drawer.tsx` — ajuste fino no min-height se necessário
+4. **Mesmo ajuste no pre-acquired stream** — trocar `{ ideal: "environment" }` por `{ exact: "environment" }` com fallback, nos 3 dashboards que pré-adquirem o stream para iOS
+
+### Lógica de seleção de câmera (pseudocódigo)
+```text
+1. Tentar getUserMedia com facingMode: { exact: "environment" }
+2. Se falhar → enumerateDevices() e buscar deviceId da câmera traseira
+3. Se encontrar → getUserMedia com deviceId: { exact: id }
+4. Se não encontrar → getUserMedia com facingMode: { ideal: "environment" } (fallback atual)
+```
+
+### Resultado esperado
+- No smartphone, sempre abre a câmera traseira
+- Se o dispositivo não tiver câmera traseira (ex: desktop), degrada graciosamente para qualquer câmera disponível
 
