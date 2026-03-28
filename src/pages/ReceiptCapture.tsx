@@ -9,6 +9,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
+import { usePixPayment } from "@/hooks/usePixPayment";
 import {
   Camera,
   Upload,
@@ -43,6 +44,7 @@ export default function ReceiptCapture() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { currentCompany } = useAuth();
+  const { checkStatus } = usePixPayment();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const [categories, setCategories] = useState<CategoryRecord[]>([]);
@@ -55,39 +57,67 @@ export default function ReceiptCapture() {
   // Check transaction status — only allow receipt attachment if completed
   useEffect(() => {
     if (!transactionId) return;
+
+    let isMounted = true;
     setIsLoadingStatus(true);
 
-    const checkStatus = async () => {
+    const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
         .from("transactions")
         .select("status")
         .eq("id", transactionId)
         .single();
 
-      setTransactionStatus(data?.status || null);
+      const currentStatus = data?.status || null;
+
+      if (!isMounted) return currentStatus;
+
+      setTransactionStatus(currentStatus);
+
+      const shouldSyncProvider =
+        syncWithProvider &&
+        currentCompany?.id &&
+        currentStatus !== "completed" &&
+        currentStatus !== "failed" &&
+        currentStatus !== "cancelled";
+
+      if (shouldSyncProvider) {
+        const providerStatus = await checkStatus(transactionId, true);
+        const syncedStatus = providerStatus?.internal_status || currentStatus;
+
+        if (!isMounted) return syncedStatus;
+
+        if (syncedStatus && syncedStatus !== currentStatus) {
+          setTransactionStatus(syncedStatus);
+        }
+
+        setIsLoadingStatus(false);
+        return syncedStatus;
+      }
+
       setIsLoadingStatus(false);
+      return currentStatus;
     };
 
-    checkStatus();
+    loadTransactionStatus(true);
+
+    let pollCount = 0;
 
     // Poll every 3s if not yet completed
     const interval = setInterval(async () => {
-      const { data } = await supabase
-        .from("transactions")
-        .select("status")
-        .eq("id", transactionId)
-        .single();
+      pollCount += 1;
+      const status = await loadTransactionStatus(pollCount % 2 === 0);
 
-      if (data?.status) {
-        setTransactionStatus(data.status);
-        if (data.status === "completed" || data.status === "failed" || data.status === "cancelled") {
-          clearInterval(interval);
-        }
+      if (status === "completed" || status === "failed" || status === "cancelled") {
+        clearInterval(interval);
       }
     }, 3000);
 
-    return () => clearInterval(interval);
-  }, [transactionId]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [transactionId, currentCompany?.id, checkStatus]);
 
   useEffect(() => {
     if (!currentCompany) return;
