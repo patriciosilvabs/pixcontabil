@@ -88,7 +88,6 @@ Deno.serve(async (req) => {
     console.log(`[pix-auth] Getting token for company: ${company_id}, purpose: ${purpose || 'any'}`);
 
     // Get Pix config with purpose-aware lookup (admin client to bypass RLS)
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     let config: any = null;
     if (purpose) {
       const { data: specificConfig } = await supabaseAdmin
