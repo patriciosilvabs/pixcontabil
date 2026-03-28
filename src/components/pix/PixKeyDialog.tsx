@@ -207,9 +207,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     probePollingRef.current = setInterval(doPoll, 2000);
   };
 
-  // Step 5: Send real payment
+  // Step 6: Send real payment
   const handleConfirmRealPayment = async () => {
-    setStep(5);
+    setStep(6);
     const value = parseLocalizedNumber(amount);
 
     const result = await payByKey({
@@ -220,10 +220,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result?.transaction_id) {
       setRealTransactionId(result.transaction_id);
-      setStep(6);
+      setStep(7);
     } else {
       // Payment failed — go back to confirmation
-      setStep(4);
+      setStep(5);
     }
   };
 
