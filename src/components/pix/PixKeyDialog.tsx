@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard, ClipboardCheck } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,7 +19,25 @@ interface PixKeyDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
+
+type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
+
+const keyTypePlaceholders: Record<PixKeyType, string> = {
+  cpf: "000.000.000-00",
+  cnpj: "00.000.000/0000-00",
+  email: "exemplo@email.com",
+  phone: "+5511999999999",
+  random: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+};
+
+const keyTypeLabels: Record<PixKeyType, string> = {
+  cpf: "CPF",
+  cnpj: "CNPJ",
+  email: "E-mail",
+  phone: "Telefone",
+  random: "Chave aleatória",
+};
 
 function maskDocument(doc: string | null): string {
   if (!doc) return "";
@@ -37,6 +56,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess } = useAuth();
   const [step, setStep] = useState<Step>(1);
+  const [pixKeyType, setPixKeyType] = useState<PixKeyType>("cpf");
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
@@ -55,6 +75,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
   const handleClose = () => {
     stopProbePolling();
+    setPixKeyType("cpf");
     setPixKey("");
     setAmount("");
     setDescription("");
@@ -90,15 +111,15 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   }, [stopProbePolling]);
 
   const handleBack = () => {
-    if (step === 1 || step === 7) {
+    if (step === 1 || step === 6) {
       handleClose();
-    } else if (step === 4) {
+    } else if (step === 3) {
       // Can't go back during probe
       return;
+    } else if (step === 4) {
+      // Cancel after seeing beneficiary — go back to step 2
+      setStep(2);
     } else if (step === 5) {
-      // Cancel after seeing beneficiary — go back to step 3
-      setStep(3);
-    } else if (step === 6) {
       // Can't go back during real payment
       return;
     } else {
@@ -115,6 +136,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setStep(2);
   };
 
+  // Step 2 → directly triggers probe
   const handleStep2 = () => {
     const value = parseLocalizedNumber(amount);
     const validation = isValidPaymentAmount(value);
@@ -126,13 +148,12 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
-    // Go to step 3: confirmation summary
-    setStep(3);
+    startProbe();
   };
 
-  // Step 4: Send R$0.01 probe and poll for completion
+  // Step 3: Send R$0.01 probe and poll for completion
   const startProbe = async () => {
-    setStep(4);
+    setStep(3);
     setProbeError("");
     setBeneficiaryName(null);
     setBeneficiaryDocument(null);
@@ -166,7 +187,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
         if (statusResult?.is_completed || statusResult?.internal_status === "completed") {
           stopProbePolling();
-          // Fetch beneficiary from DB with retry (backend may still be writing)
           let bene: { name: string | null; document: string | null } | null = null;
           for (let retry = 0; retry < 5; retry++) {
             bene = await getTransactionBeneficiary(txId);
@@ -176,7 +196,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
           if (probeMountedRef.current) {
             setBeneficiaryName(bene?.name || null);
             setBeneficiaryDocument(bene?.document || null);
-            setStep(5);
+            setStep(4);
           }
           return;
         }
@@ -207,9 +227,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     probePollingRef.current = setInterval(doPoll, 2000);
   };
 
-  // Step 6: Send real payment
+  // Step 5: Send real payment
   const handleConfirmRealPayment = async () => {
-    setStep(6);
+    setStep(5);
     const value = parseLocalizedNumber(amount);
 
     const result = await payByKey({
@@ -220,10 +240,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result?.transaction_id) {
       setRealTransactionId(result.transaction_id);
-      setStep(7);
+      setStep(6);
     } else {
-      // Payment failed — go back to confirmation
-      setStep(5);
+      setStep(4);
     }
   };
 
@@ -233,31 +252,30 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const stepIcons = [Key, DollarSign, ClipboardCheck, ShieldCheck, UserCheck, CreditCard, CheckCircle2];
+  const stepIcons = [Key, DollarSign, ShieldCheck, UserCheck, CreditCard, CheckCircle2];
   const stepTitles = [
     "Pix com Chave",
     "Valor do Pagamento",
-    "Confirmar Dados",
     "Verificando Beneficiário",
     "Confirmar Beneficiário",
     "Processando Pagamento",
     "Status do Pagamento",
   ];
-  const totalSteps = 7;
+  const totalSteps = 6;
   const StepIcon = stepIcons[step - 1];
   const stepTitle = stepTitles[step - 1];
 
-  const showHeader = step !== 7;
+  const showHeader = step !== 6;
 
   return (
-    <Drawer open={open} onOpenChange={step >= 4 && step <= 6 ? undefined : handleClose}>
+    <Drawer open={open} onOpenChange={step >= 3 && step <= 5 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
           {showHeader && (
             <>
               <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
-                <button onClick={handleBack} className="p-1 -ml-1" disabled={step === 4 || step === 6}>
-                  <ArrowLeft className={`h-5 w-5 ${step === 4 || step === 6 ? "opacity-30" : ""}`} />
+                <button onClick={handleBack} className="p-1 -ml-1" disabled={step === 3 || step === 5}>
+                  <ArrowLeft className={`h-5 w-5 ${step === 3 || step === 5 ? "opacity-30" : ""}`} />
                 </button>
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
@@ -272,7 +290,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 {stepTitle}
               </DrawerDescription>
 
-              {/* Step indicators */}
               <div className="flex gap-1.5 mb-5">
                 {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
                   <div
@@ -286,16 +303,34 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </>
           )}
 
-          {/* Step 1: Pix Key */}
+          {/* Step 1: Key type + Pix Key */}
           {step === 1 && (
             <div className="space-y-5">
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Tipo de Chave
+                </Label>
+                <Select value={pixKeyType} onValueChange={(v) => setPixKeyType(v as PixKeyType)}>
+                  <SelectTrigger className="h-12 text-base" data-vaul-no-drag>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(keyTypeLabels) as PixKeyType[]).map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {keyTypeLabels[type]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="pix-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Chave Pix
                 </Label>
                 <Input
                   id="pix-key"
-                  placeholder="CPF, CNPJ, e-mail, telefone ou chave aleatória"
+                  placeholder={keyTypePlaceholders[pixKeyType]}
                   value={pixKey}
                   onChange={(e) => setPixKey(e.target.value)}
                   className="h-12 text-base"
@@ -375,53 +410,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 3: Confirmation summary before probe */}
+          {/* Step 3: Verifying beneficiary (probe R$0.01) */}
           {step === 3 && (
-            <div className="space-y-5">
-              <div className="rounded-lg border p-4 space-y-3">
-                <div className="flex items-center gap-3">
-                  <Key className="h-4 w-4 text-primary shrink-0" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Chave Pix</p>
-                    <p className="text-sm font-medium break-all">{pixKey}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <DollarSign className="h-4 w-4 text-primary shrink-0" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Valor</p>
-                    <p className="text-lg font-bold">{formattedAmount()}</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <ClipboardCheck className="h-4 w-4 text-primary shrink-0" />
-                  <div>
-                    <p className="text-xs text-muted-foreground">Descrição</p>
-                    <p className="text-sm font-medium">{description}</p>
-                  </div>
-                </div>
-              </div>
-
-              <Button
-                onClick={startProbe}
-                disabled={isProcessing}
-                className="w-full h-12 text-base font-bold uppercase tracking-wider"
-              >
-                Confirmar Pagamento
-              </Button>
-
-              <Button
-                variant="ghost"
-                onClick={() => setStep(2)}
-                className="w-full h-11 text-sm font-bold uppercase tracking-wider"
-              >
-                Voltar
-              </Button>
-            </div>
-          )}
-
-          {/* Step 4: Verifying beneficiary (probe R$0.01) */}
-          {step === 4 && (
             <div className="flex flex-col items-center gap-4 py-6">
               {probeError ? (
                 <>
@@ -462,8 +452,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 5: Confirm beneficiary */}
-          {step === 5 && (
+          {/* Step 4: Confirm beneficiary */}
+          {step === 4 && (
             <div className="flex flex-col items-center gap-5 py-4">
               <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <UserCheck className="h-9 w-9 text-primary" />
@@ -506,8 +496,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 6: Processing real payment */}
-          {step === 6 && (
+          {/* Step 5: Processing real payment */}
+          {step === 5 && (
             <div className="flex flex-col items-center gap-4 py-6">
               <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -521,8 +511,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 7: Status verification of real payment */}
-          {step === 7 && realTransactionId && (
+          {/* Step 6: Status verification of real payment */}
+          {step === 6 && realTransactionId && (
             <PaymentStatusScreen
               transactionId={realTransactionId}
               amount={parseLocalizedNumber(amount)}
