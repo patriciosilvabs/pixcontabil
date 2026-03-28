@@ -223,9 +223,11 @@ async function dispatchEvent(supabaseAdmin: any, eventId: string, appOrigin: str
 function extractBeneficiaryFromPayload(raw: any): { name: string; doc: string } {
   const data = raw?.data || raw || {};
   const name = data?.creditParty?.name || data?.creditor?.name || data?.receiver?.name
-    || data?.beneficiary?.name || data?.receiverName || data?.creditorName || '';
+    || data?.beneficiary?.name || data?.creditorAccount?.name
+    || data?.receiverName || data?.creditorName || '';
   const doc = data?.creditParty?.taxId || data?.creditor?.taxId || data?.receiver?.taxId
-    || data?.beneficiary?.document || data?.receiverDocument || data?.creditorTaxId || '';
+    || data?.beneficiary?.document || data?.creditorAccount?.document || data?.creditorAccount?.taxId
+    || data?.receiverDocument || data?.creditorTaxId || '';
   return { name: String(name).trim(), doc: String(doc).trim() };
 }
 
