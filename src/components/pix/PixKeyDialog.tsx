@@ -126,8 +126,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
-    // Go to step 3: send probe
-    startProbe();
+    // Go to step 3: confirmation summary
+    setStep(3);
   };
 
   // Step 3: Send R$0.01 probe and poll for completion
