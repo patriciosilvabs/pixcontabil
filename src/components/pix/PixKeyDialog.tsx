@@ -375,8 +375,53 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 3: Verifying beneficiary (probe R$0.01) */}
+          {/* Step 3: Confirmation summary before probe */}
           {step === 3 && (
+            <div className="space-y-5">
+              <div className="rounded-lg border p-4 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Key className="h-4 w-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Chave Pix</p>
+                    <p className="text-sm font-medium break-all">{pixKey}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <DollarSign className="h-4 w-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Valor</p>
+                    <p className="text-lg font-bold">{formattedAmount()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <ClipboardCheck className="h-4 w-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Descrição</p>
+                    <p className="text-sm font-medium">{description}</p>
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                onClick={startProbe}
+                disabled={isProcessing}
+                className="w-full h-12 text-base font-bold uppercase tracking-wider"
+              >
+                Confirmar Pagamento
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() => setStep(2)}
+                className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+              >
+                Voltar
+              </Button>
+            </div>
+          )}
+
+          {/* Step 4: Verifying beneficiary (probe R$0.01) */}
+          {step === 4 && (
             <div className="flex flex-col items-center gap-4 py-6">
               {probeError ? (
                 <>
@@ -417,8 +462,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 4: Confirm beneficiary — simple confirmation */}
-          {step === 4 && (
+          {/* Step 5: Confirm beneficiary */}
+          {step === 5 && (
             <div className="flex flex-col items-center gap-5 py-4">
               <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
                 <UserCheck className="h-9 w-9 text-primary" />
@@ -461,8 +506,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 5: Processing real payment */}
-          {step === 5 && (
+          {/* Step 6: Processing real payment */}
+          {step === 6 && (
             <div className="flex flex-col items-center gap-4 py-6">
               <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -476,8 +521,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 6: Status verification of real payment */}
-          {step === 6 && realTransactionId && (
+          {/* Step 7: Status verification of real payment */}
+          {step === 7 && realTransactionId && (
             <PaymentStatusScreen
               transactionId={realTransactionId}
               amount={parseLocalizedNumber(amount)}
