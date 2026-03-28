@@ -176,7 +176,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
           if (probeMountedRef.current) {
             setBeneficiaryName(bene?.name || null);
             setBeneficiaryDocument(bene?.document || null);
-            setStep(4);
+            setStep(5);
           }
           return;
         }
