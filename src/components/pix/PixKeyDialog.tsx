@@ -166,8 +166,13 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
         if (statusResult?.is_completed || statusResult?.internal_status === "completed") {
           stopProbePolling();
-          // Fetch beneficiary from DB
-          const bene = await getTransactionBeneficiary(txId);
+          // Fetch beneficiary from DB with retry (backend may still be writing)
+          let bene: { name: string | null; document: string | null } | null = null;
+          for (let retry = 0; retry < 5; retry++) {
+            bene = await getTransactionBeneficiary(txId);
+            if (bene?.name) break;
+            await new Promise(r => setTimeout(r, 1000));
+          }
           if (probeMountedRef.current) {
             setBeneficiaryName(bene?.name || null);
             setBeneficiaryDocument(bene?.document || null);
