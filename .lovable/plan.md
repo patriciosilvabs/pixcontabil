@@ -1,28 +1,39 @@
 
 
-# Simplificar fluxo Pix por chave — 6 steps + seletor de tipo de chave
+# Implementar probe de R$ 0,01 no NewPayment.tsx (desktop)
 
-## O que muda
+## Problema
 
-O fluxo atual tem 7 steps com uma tela intermediária de "Confirmar Dados" (step 3) que é desnecessária. O usuário quer que ao clicar "Continuar" no valor, o probe já dispare imediatamente.
+O fluxo de verificação de beneficiário (probe R$ 0,01) foi implementado apenas no `PixKeyDialog.tsx` (mobile). O usuário está usando a página desktop `NewPayment.tsx`, que ainda envia o valor original diretamente sem probe.
 
-Além disso, as screenshots mostram que o step 1 deve ter um seletor de **Tipo de chave** (CPF, CNPJ, E-mail, Telefone, Chave aleatória) antes do campo de chave.
+## Solução
 
-## Fluxo simplificado (6 steps)
+Adicionar a mesma lógica de probe no `NewPayment.tsx` para pagamentos por chave Pix:
 
-| Step | Conteúdo |
-|------|----------|
-| 1 | Tipo de chave (select) + Chave Pix (input) |
-| 2 | Valor (R$) + Descrição |
-| 3 | Loading — probe R$ 0,01 enviado automaticamente ao clicar "Continuar" no step 2 |
-| 4 | Popup com nome do beneficiário + botões Confirmar / Cancelar |
-| 5 | Loading — pagamento real com valor original |
-| 6 | PaymentStatusScreen |
+1. Quando o usuário clica "Confirmar Pagamento" com tipo `key`:
+   - Enviar probe R$ 0,01 via `payByKey` com `descricao: "Verificação de beneficiário"`
+   - Mostrar loading "Verificando beneficiário..."
+   - Fazer polling até o probe completar
+   - Buscar nome do beneficiário via `getTransactionBeneficiary`
 
-## Alterações em `src/components/pix/PixKeyDialog.tsx`
+2. Exibir um **Dialog/Modal** de confirmação com:
+   - Nome do beneficiário retornado
+   - Valor original que será transferido
+   - Botões "Confirmar e Pagar" / "Cancelar"
 
-1. **Adicionar seletor "Tipo de chave"** no step 1 com opções: CPF, CNPJ, E-mail, Telefone, Chave aleatória — com placeholder dinâmico no input conforme o tipo selecionado
-2. **Remover step 3 antigo** (tela de confirmação/resumo) — `handleStep2` agora chama `startProbe()` diretamente
-3. **Renumerar de 7 para 6 steps** — ajustar `type Step`, `stepIcons`, `stepTitles`, `handleBack`, indicadores de progresso
-4. Manter toda a lógica de probe, polling, retry de beneficiário e pagamento real sem alteração
+3. Se confirmar → executar `payByKey` com o valor original e navegar para receipt
+4. Se cancelar → fechar o dialog, não envia nada
+
+## Arquivos alterados
+
+| Arquivo | Alteração |
+|---|---|
+| `src/pages/NewPayment.tsx` | Adicionar estados de probe, dialog de confirmação, lógica de polling — mesma lógica do PixKeyDialog mas adaptada ao layout desktop com cards |
+
+## Detalhes técnicos
+
+- Reutilizar `getTransactionBeneficiary` e `checkStatus` do `usePixPayment` (já disponíveis)
+- Usar um `Dialog` (não Drawer) para o popup de confirmação no desktop
+- Manter o fluxo de boleto, copy/paste e QR code inalterados
+- O probe só se aplica ao tipo `key`
 
