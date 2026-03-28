@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck } from "lucide-react";
+import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useAuth } from "@/contexts/AuthContext";
@@ -18,24 +18,53 @@ interface PixKeyDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
+
+function maskDocument(doc: string | null): string {
+  if (!doc) return "";
+  const clean = doc.replace(/\D/g, "");
+  if (clean.length === 11) {
+    return `***${clean.slice(3, 6)}.${clean.slice(6, 9)}-**`;
+  }
+  if (clean.length === 14) {
+    return `**.***.${clean.slice(4, 7)}/${clean.slice(7, 11)}-**`;
+  }
+  return doc;
+}
+
 export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
-  const { payByKey, isProcessing } = usePixPayment();
+  const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess } = useAuth();
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
+  const [step, setStep] = useState<Step>(1);
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
   const [description, setDescription] = useState("");
-  const [transactionId, setTransactionId] = useState("");
+
+  // Probe state
+  const [probeTransactionId, setProbeTransactionId] = useState("");
+  const [probeError, setProbeError] = useState("");
+  const [beneficiaryName, setBeneficiaryName] = useState<string | null>(null);
+  const [beneficiaryDocument, setBeneficiaryDocument] = useState<string | null>(null);
+  const probePollingRef = useRef<NodeJS.Timeout | null>(null);
+  const probeMountedRef = useRef(true);
+
+  // Real payment state
+  const [realTransactionId, setRealTransactionId] = useState("");
 
   const handleClose = () => {
+    stopProbePolling();
     setPixKey("");
     setAmount("");
     setDescription("");
     setSaveFavorite(false);
     setStep(1);
-    setTransactionId("");
+    setProbeTransactionId("");
+    setProbeError("");
+    setBeneficiaryName(null);
+    setBeneficiaryDocument(null);
+    setRealTransactionId("");
     onOpenChange(false);
   };
 
@@ -45,11 +74,35 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     navigate(nextRoute);
   };
 
+  const stopProbePolling = useCallback(() => {
+    if (probePollingRef.current) {
+      clearInterval(probePollingRef.current);
+      probePollingRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    probeMountedRef.current = true;
+    return () => {
+      probeMountedRef.current = false;
+      stopProbePolling();
+    };
+  }, [stopProbePolling]);
+
   const handleBack = () => {
-    if (step === 1 || step === 4) {
+    if (step === 1 || step === 6) {
       handleClose();
+    } else if (step === 3) {
+      // Can't go back during probe
+      return;
+    } else if (step === 4) {
+      // Cancel after seeing beneficiary — go back to step 2
+      setStep(2);
+    } else if (step === 5) {
+      // Can't go back during real payment
+      return;
     } else {
-      setStep((s) => (s - 1) as 1 | 2 | 3 | 4);
+      setStep((s) => (s - 1) as Step);
     }
   };
 
@@ -73,11 +126,87 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
-    setStep(3);
+    // Go to step 3: send probe
+    startProbe();
   };
 
-  const handleConfirm = async () => {
+  // Step 3: Send R$0.01 probe and poll for completion
+  const startProbe = async () => {
+    setStep(3);
+    setProbeError("");
+    setBeneficiaryName(null);
+    setBeneficiaryDocument(null);
+
+    const result = await payByKey({
+      pix_key: pixKey.trim(),
+      valor: 0.01,
+      descricao: "Verificação de beneficiário",
+    });
+
+    if (!result?.transaction_id) {
+      setProbeError("Não foi possível verificar o beneficiário. Tente novamente.");
+      return;
+    }
+
+    setProbeTransactionId(result.transaction_id);
+    pollProbe(result.transaction_id);
+  };
+
+  const pollProbe = (txId: string) => {
+    let attempts = 0;
+    const maxAttempts = 90;
+
+    const doPoll = async () => {
+      if (!probeMountedRef.current) return;
+      attempts++;
+
+      try {
+        const statusResult = await checkStatus(txId, true);
+        if (!probeMountedRef.current) return;
+
+        if (statusResult?.is_completed || statusResult?.internal_status === "completed") {
+          stopProbePolling();
+          // Fetch beneficiary from DB
+          const bene = await getTransactionBeneficiary(txId);
+          if (probeMountedRef.current) {
+            setBeneficiaryName(bene?.name || null);
+            setBeneficiaryDocument(bene?.document || null);
+            setStep(4);
+          }
+          return;
+        }
+
+        if (statusResult?.internal_status === "failed") {
+          stopProbePolling();
+          if (probeMountedRef.current) {
+            setProbeError(statusResult.error_code || "A verificação falhou. Tente novamente.");
+          }
+          return;
+        }
+
+        if (attempts >= maxAttempts) {
+          stopProbePolling();
+          if (probeMountedRef.current) {
+            setProbeError("Tempo esgotado aguardando confirmação da verificação.");
+          }
+        }
+      } catch {
+        if (attempts >= maxAttempts && probeMountedRef.current) {
+          stopProbePolling();
+          setProbeError("Erro ao verificar status da transação de verificação.");
+        }
+      }
+    };
+
+    doPoll();
+    probePollingRef.current = setInterval(doPoll, 2000);
+  };
+
+  // Step 5: Send real payment
+  const handleConfirmRealPayment = async () => {
+    setStep(5);
     const value = parseLocalizedNumber(amount);
+
     const result = await payByKey({
       pix_key: pixKey.trim(),
       valor: value,
@@ -85,7 +214,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     });
 
     if (result?.transaction_id) {
-      setTransactionId(result.transaction_id);
+      setRealTransactionId(result.transaction_id);
+      setStep(6);
+    } else {
+      // Payment failed — go back to confirmation
       setStep(4);
     }
   };
@@ -96,21 +228,30 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const stepIcons = [Key, DollarSign, CheckCircle2, ShieldCheck];
-  const stepTitles = ["Pix com Chave", "Valor do Pagamento", "Confirmar Pagamento", "Verificando"];
-  const totalSteps = 4;
+  const stepIcons = [Key, DollarSign, ShieldCheck, UserCheck, CreditCard, CheckCircle2];
+  const stepTitles = [
+    "Pix com Chave",
+    "Valor do Pagamento",
+    "Verificando Beneficiário",
+    "Confirmar Beneficiário",
+    "Processando Pagamento",
+    "Status do Pagamento",
+  ];
+  const totalSteps = 6;
   const StepIcon = stepIcons[step - 1];
   const stepTitle = stepTitles[step - 1];
 
+  const showHeader = step !== 6;
+
   return (
-    <Drawer open={open} onOpenChange={step === 4 ? undefined : handleClose}>
+    <Drawer open={open} onOpenChange={step >= 3 && step <= 5 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
-          {step !== 4 && (
+          {showHeader && (
             <>
               <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
-                <button onClick={handleBack} className="p-1 -ml-1">
-                  <ArrowLeft className="h-5 w-5" />
+                <button onClick={handleBack} className="p-1 -ml-1" disabled={step === 3 || step === 5}>
+                  <ArrowLeft className={`h-5 w-5 ${step === 3 || step === 5 ? "opacity-30" : ""}`} />
                 </button>
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
@@ -177,7 +318,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 2: Amount */}
+          {/* Step 2: Amount + Description */}
           {step === 2 && (
             <div className="space-y-5">
               <div className="rounded-lg bg-secondary/50 p-3 flex items-center gap-3">
@@ -228,17 +369,69 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 3: Confirmation */}
+          {/* Step 3: Verifying beneficiary (probe R$0.01) */}
           {step === 3 && (
+            <div className="flex flex-col items-center gap-4 py-6">
+              {probeError ? (
+                <>
+                  <div className="h-14 w-14 rounded-full bg-destructive/10 flex items-center justify-center">
+                    <ShieldCheck className="h-8 w-8 text-destructive" />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-base font-bold">Falha na verificação</p>
+                    <p className="text-sm text-muted-foreground">{probeError}</p>
+                  </div>
+                  <Button
+                    onClick={() => { setProbeError(""); startProbe(); }}
+                    className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                  >
+                    Tentar Novamente
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    onClick={handleClose}
+                    className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+                  >
+                    Cancelar
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className="text-base font-bold">Verificando beneficiário</p>
+                    <p className="text-sm text-muted-foreground">
+                      Enviando micro-pagamento de R$ 0,01 para identificar o destinatário...
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Step 4: Confirm beneficiary */}
+          {step === 4 && (
             <div className="space-y-5">
               <div className="rounded-xl bg-secondary p-4 space-y-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Beneficiário Identificado</p>
+                  <p className="text-lg font-bold mt-1">{beneficiaryName || "Não identificado"}</p>
+                  {beneficiaryDocument && (
+                    <p className="text-sm text-muted-foreground mt-0.5">
+                      {beneficiaryDocument.replace(/\D/g, "").length === 11 ? "CPF" : "CNPJ"}: {maskDocument(beneficiaryDocument)}
+                    </p>
+                  )}
+                </div>
+                <div className="h-px bg-border" />
                 <div>
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chave Pix</p>
                   <p className="text-sm font-medium break-all mt-1">{pixKey}</p>
                 </div>
                 <div className="h-px bg-border" />
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</p>
+                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor a Transferir</p>
                   <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
                 </div>
                 {description.trim() && (
@@ -252,8 +445,12 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 )}
               </div>
 
+              <p className="text-xs text-muted-foreground text-center">
+                Uma verificação de R$ 0,01 já foi enviada para confirmar o destinatário.
+              </p>
+
               <Button
-                onClick={handleConfirm}
+                onClick={handleConfirmRealPayment}
                 disabled={isProcessing}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
@@ -266,15 +463,38 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   "Confirmar Pagamento"
                 )}
               </Button>
+
+              <Button
+                variant="ghost"
+                onClick={handleClose}
+                className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+              >
+                Cancelar
+              </Button>
             </div>
           )}
 
-          {/* Step 4: Status verification */}
-          {step === 4 && transactionId && (
+          {/* Step 5: Processing real payment */}
+          {step === 5 && (
+            <div className="flex flex-col items-center gap-4 py-6">
+              <div className="h-14 w-14 rounded-full bg-primary/10 flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+              <div className="text-center space-y-1">
+                <p className="text-base font-bold">Enviando pagamento</p>
+                <p className="text-sm text-muted-foreground">
+                  Processando {formattedAmount()} para {beneficiaryName || pixKey}...
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Step 6: Status verification of real payment */}
+          {step === 6 && realTransactionId && (
             <PaymentStatusScreen
-              transactionId={transactionId}
+              transactionId={realTransactionId}
               amount={parseLocalizedNumber(amount)}
-              beneficiaryName={pixKey}
+              beneficiaryName={beneficiaryName || pixKey}
               onClose={handleCloseAndNavigate}
               redirectToReceiptCapture={false}
             />
