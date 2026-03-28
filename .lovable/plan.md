@@ -1,116 +1,70 @@
 
-# Corrigir comprovante Pix sem nome do beneficiário
 
-## Diagnóstico
+# Pix com Verificação de Beneficiário via Micro-Pagamento (R$ 0,01)
 
-Confirmei o problema no banco para a transação `6cb83921-7554-4c56-9bb6-ba7d981624c4`:
+## Contexto
 
-- `transactions.status = completed`
-- `transactions.beneficiary_name = null`
-- `receipts.ocr_data.beneficiary = "-"`
+A API da ONZ não possui endpoint DICT para consultar o nome do beneficiário antes do pagamento. A solução é enviar um Pix de R$ 0,01 (probe), capturar o nome do beneficiário no retorno, mostrar ao usuário para confirmação e só então executar o pagamento real.
 
-Mas a resposta salva do provedor já contém o nome:
+## Fluxo proposto
 
 ```text
-pix_provider_response.creditorAccount.name = "Patricio Barbosa da Silva"
-pix_provider_response.creditorAccount.document = "00904831388"
+Usuário informa chave + valor + descrição
+→ Clica "Confirmar Pagamento"
+→ Sistema envia R$ 0,01 (probe) via pix-pay-dict
+→ Polling aguarda confirmação do probe
+→ Backend extrai beneficiary_name da resposta ONZ
+→ Tela mostra: "Beneficiário: Fulano de Tal — CPF: ***"
+→ Usuário confirma → sistema envia pagamento real (R$ 100,00)
+→ Usuário cancela → probe já foi liquidado (R$ 0,01 perdido)
 ```
 
-Ou seja: o nome existe no retorno da ONZ, porém o sistema não está extraindo esse campo.
+## Novo fluxo de steps no PixKeyDialog
 
-## Causa raiz
+Hoje: 4 steps (chave → valor → confirmação → status)
 
-Os extratores atuais de beneficiário nas funções backend olham apenas para campos como:
+Novo: 6 steps:
+1. **Chave Pix** (igual)
+2. **Valor + Descrição** (igual)
+3. **Verificando beneficiário** — envia probe R$ 0,01, polling aguarda completed, extrai nome
+4. **Confirmação com beneficiário real** — mostra nome + documento + valor original e pede confirmação
+5. **Processando pagamento real** — envia o valor cheio
+6. **Status do pagamento** — polling do pagamento real (igual ao step 4 atual)
 
-- `creditParty`
-- `creditor`
-- `receiver`
-- `beneficiary`
-- `receiverName`
-- `creditorName`
+## Implementação
 
-No payload real da ONZ desse caso, o nome veio em:
+### 1. Frontend — `src/components/pix/PixKeyDialog.tsx`
+- Expandir de 4 para 6 steps
+- Step 3 (novo): chama `payByKey` com `valor: 0.01` e `descricao: "Verificação de beneficiário"`, depois faz polling via `checkStatus` até completar. Quando completar, busca a transação no banco para pegar `beneficiary_name` e `beneficiary_document`
+- Step 4 (novo): tela de confirmação mostrando nome real, documento (mascarado), valor original (ex: R$ 100), com botões "Confirmar" e "Cancelar"
+- Step 5: executa `payByKey` com o valor real
+- Step 6: `PaymentStatusScreen` do pagamento real
 
-- `creditorAccount.name`
-- `creditorAccount.document`
+### 2. Frontend — `src/hooks/usePixPayment.ts`
+- Adicionar função `getTransactionDetails(transactionId)` que busca `beneficiary_name` e `beneficiary_document` da tabela `transactions` após o probe completar
 
-Como esse formato não está coberto:
-- a transação é marcada como `completed`
-- o nome do beneficiário continua vazio
-- o `generate-pix-receipt` gera o comprovante com `Beneficiário: -`
+### 3. Backend — `supabase/functions/pix-pay-dict/index.ts`
+- Marcar transações de probe (`valor === 0.01` e descrição contém "Verificação") com um campo ou flag para não poluir relatórios
+- Alternativa: adicionar campo `is_probe` na descrição ou metadata do `pix_provider_response`
 
-## Implementação proposta
+### 4. Tratamento de probe na tabela transactions
+- Adicionar coluna `is_probe` (boolean, default false) para distinguir o micro-pagamento dos pagamentos reais — ou simplesmente filtrar por `amount = 0.01` e `description LIKE '%Verificação%'` nos relatórios
 
-### 1. Ampliar a extração de beneficiário para ONZ
-Atualizar os helpers de extração nestes arquivos para incluir `creditorAccount`:
+## Decisão sobre a coluna `is_probe`
 
-- `supabase/functions/pix-pay-dict/index.ts`
-- `supabase/functions/pix-check-status/index.ts`
-- `supabase/functions/pix-webhook-gateway/index.ts`
-- `supabase/functions/internal-payment-webhook/index.ts`
-- `supabase/functions/pix-webhook/index.ts`
+Para manter os relatórios limpos e não exigir migração, vou usar a abordagem sem nova coluna: o probe será salvo normalmente com `description = 'Verificação de beneficiário'` e `amount = 0.01`. Nos relatórios e listagens, podemos filtrar esses registros se necessário no futuro.
 
-Nova prioridade de leitura:
-```text
-creditParty / creditor / receiver / beneficiary
-→ creditorAccount.name
-→ receiverName / creditorName
-```
+## Arquivos que serão alterados
 
-E para documento:
-```text
-creditParty.taxId / creditor.taxId / receiver.taxId / beneficiary.document
-→ creditorAccount.document
-→ receiverDocument / creditorTaxId
-```
+| Arquivo | Alteração |
+|---|---|
+| `src/components/pix/PixKeyDialog.tsx` | Novo fluxo de 6 steps com probe + confirmação |
+| `src/hooks/usePixPayment.ts` | Nova função `getTransactionBeneficiary()` |
 
-### 2. Corrigir a função `pix-webhook`
-No arquivo `supabase/functions/pix-webhook/index.ts`, há uso de `extractBeneficiaryFromOnz(data)`, mas o helper precisa estar consistente com os demais e cobrir `creditorAccount`.
+## Riscos e mitigações
 
-Vou padronizar essa extração para evitar divergência entre webhook, polling e gateway.
+- **R$ 0,01 perdido se cancelar**: valor insignificante, aceitável como custo de verificação
+- **Probe falha**: se o probe falhar, mostra erro e não avança — o usuário não perde nada além dos R$ 0,01
+- **Latência extra**: o probe adiciona ~5-15s ao fluxo total (tempo de liquidação)
+- **Idempotência**: o probe e o pagamento real terão `idempotency_key` diferentes, sem conflito
 
-### 3. Garantir backfill do nome antes do comprovante
-Manter o fluxo atual, mas com a extração corrigida:
-- `pix-check-status` salva `beneficiary_name`
-- depois dispara `generate-pix-receipt`
-
-Assim o comprovante novo já nasce com o nome correto.
-
-### 4. Regenerar comprovantes incompletos também quando o status já estiver correto
-Hoje `generate-pix-receipt` já aceita regeneração se o receipt auto-gerado estiver sem beneficiário.
-Vou preservar essa lógica e garantir que ela continue funcionando com o novo backfill:
-- receipt existente com `beneficiary = "-"` deve ser recriado
-- novo receipt deve usar `transaction.beneficiary_name`
-
-## Resultado esperado
-
-Para pagamentos Pix por chave via ONZ:
-
-```text
-Pagamento por chave
-→ ONZ retorna LIQUIDATED com creditorAccount.name
-→ backend extrai e salva beneficiary_name
-→ comprovante é gerado/regenerado
-→ campo “Beneficiário” passa a mostrar o nome real
-```
-
-## Arquivos que vou ajustar
-
-- `supabase/functions/pix-pay-dict/index.ts`
-- `supabase/functions/pix-check-status/index.ts`
-- `supabase/functions/pix-webhook-gateway/index.ts`
-- `supabase/functions/internal-payment-webhook/index.ts`
-- `supabase/functions/pix-webhook/index.ts`
-- validar `supabase/functions/generate-pix-receipt/index.ts` sem alterar o fluxo principal
-
-## Validação após implementação
-
-Vou validar estes pontos:
-1. Pix por chave ONZ salva `beneficiary_name` a partir de `creditorAccount.name`
-2. comprovante novo sai com nome do beneficiário
-3. comprovante antigo com `Beneficiário: -` é regenerado corretamente
-4. QR Code e outros provedores continuam funcionando sem regressão
-
-## Detalhe técnico
-
-O problema não é da tela nem do anexo em si. O erro está no parsing do payload do provedor no backend. O dado existe, mas está em outra estrutura do JSON da ONZ do que a função esperava.
