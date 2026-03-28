@@ -119,6 +119,18 @@ Deno.serve(async (req) => {
   }
 });
 
+// ========== BENEFICIARY EXTRACTION ==========
+function extractBeneficiaryFromOnz(data: any): { name: string; doc: string } {
+  const p = data || {};
+  const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
+    || p?.beneficiary?.name || p?.creditorAccount?.name
+    || p?.receiverName || p?.creditorName || '';
+  const doc = p?.creditParty?.taxId || p?.creditor?.taxId || p?.receiver?.taxId
+    || p?.beneficiary?.document || p?.creditorAccount?.document || p?.creditorAccount?.taxId
+    || p?.receiverDocument || p?.creditorTaxId || '';
+  return { name: String(name).trim(), doc: String(doc).trim() };
+}
+
 // ========== ONZ WEBHOOK HANDLERS ==========
 async function handleOnzWebhook(supabaseAdmin: any, type: string, data: any, ip_address: string) {
   const endToEndId = data.endToEndId || data.end_to_end_id || '';
