@@ -210,7 +210,6 @@ Deno.serve(async (req) => {
     let internalStatus = statusMap[rawStatus] || 'pending';
 
     if (transaction_id) {
-      const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       // Check current status to avoid overwriting completed/failed with pending
       const { data: currentTx } = await supabaseAdmin.from('transactions').select('status').eq('id', transaction_id).single();
       const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
