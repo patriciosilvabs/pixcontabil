@@ -631,6 +631,22 @@ export function usePixPayment() {
     };
   }, [stopPolling]);
 
+  // Get transaction beneficiary details from DB
+  const getTransactionBeneficiary = useCallback(async (txId: string): Promise<{ name: string | null; document: string | null } | null> => {
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('beneficiary_name, beneficiary_document')
+        .eq('id', txId)
+        .single();
+
+      if (error || !data) return null;
+      return { name: data.beneficiary_name, document: data.beneficiary_document };
+    } catch {
+      return null;
+    }
+  }, []);
+
   return {
     // State
     isProcessing,
