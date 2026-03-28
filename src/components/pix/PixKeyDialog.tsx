@@ -442,9 +442,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
                   <div className="text-center space-y-1">
-                    <p className="text-base font-bold">Verificando beneficiário</p>
+                    <p className="text-base font-bold">Consultando transação ...</p>
                     <p className="text-sm text-muted-foreground">
-                      Enviando micro-pagamento de R$ 0,01 para identificar o destinatário...
+                      Aguarde enquanto consultamos os dados da transação.
                     </p>
                   </div>
                 </>
