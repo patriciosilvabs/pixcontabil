@@ -41,6 +41,15 @@ function extractFirstTransferFromBatchPayload(payload: any): any | null {
   return null;
 }
 
+function extractBeneficiary(payload: any): { name: string; doc: string } {
+  const p = payload || {};
+  const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
+    || p?.beneficiary?.name || p?.receiverName || p?.creditorName || '';
+  const doc = p?.creditParty?.taxId || p?.creditor?.taxId || p?.receiver?.taxId
+    || p?.beneficiary?.document || p?.receiverDocument || p?.creditorTaxId || '';
+  return { name: String(name).trim(), doc: String(doc).trim() };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
