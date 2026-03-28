@@ -97,9 +97,11 @@ Deno.serve(async (req) => {
 function extractBeneficiary(payload: any): { name: string; doc: string } {
   const p = payload || {};
   const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
-    || p?.beneficiary?.name || p?.receiverName || p?.creditorName || '';
+    || p?.beneficiary?.name || p?.creditorAccount?.name
+    || p?.receiverName || p?.creditorName || '';
   const doc = p?.creditParty?.taxId || p?.creditor?.taxId || p?.receiver?.taxId
-    || p?.beneficiary?.document || p?.receiverDocument || p?.creditorTaxId || '';
+    || p?.beneficiary?.document || p?.creditorAccount?.document || p?.creditorAccount?.taxId
+    || p?.receiverDocument || p?.creditorTaxId || '';
   return { name: String(name).trim(), doc: String(doc).trim() };
 }
 
