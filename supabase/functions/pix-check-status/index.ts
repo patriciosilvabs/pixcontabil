@@ -142,7 +142,7 @@ Deno.serve(async (req) => {
       let internalStatus = statusMap[rawStatus] || 'pending';
 
       if (transaction_id) {
-        const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document').eq('id', transaction_id).single();
+        const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document, company_id').eq('id', transaction_id).single();
         const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
         if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
           console.log(`[pix-check-status] Skipping update: tx ${transaction_id} already ${currentTx.status}, not overwriting with ${internalStatus}`);
@@ -155,6 +155,15 @@ Deno.serve(async (req) => {
           if (ben.name && !currentTx?.beneficiary_name) updateData.beneficiary_name = ben.name;
           if (ben.doc && !currentTx?.beneficiary_document) updateData.beneficiary_document = ben.doc;
           await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
+
+          // Trigger receipt generation on completion (beneficiary is now saved)
+          if (internalStatus === 'completed' && currentTx?.company_id) {
+            fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+              body: JSON.stringify({ transaction_id, company_id: currentTx.company_id }),
+            }).catch(e => console.error('[pix-check-status] Auto-receipt failed:', e));
+          }
         }
       }
 
