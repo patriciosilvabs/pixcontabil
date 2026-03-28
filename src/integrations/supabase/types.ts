@@ -248,6 +248,39 @@ export type Database = {
           },
         ]
       }
+      ip_blocks: {
+        Row: {
+          blocked_at: string
+          blocked_by: string
+          created_at: string
+          expires_at: string | null
+          id: string
+          ip_address: string
+          is_active: boolean
+          reason: string
+        }
+        Insert: {
+          blocked_at?: string
+          blocked_by: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          ip_address: string
+          is_active?: boolean
+          reason: string
+        }
+        Update: {
+          blocked_at?: string
+          blocked_by?: string
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          ip_address?: string
+          is_active?: boolean
+          reason?: string
+        }
+        Relationships: []
+      }
       payment_registry: {
         Row: {
           app_origin: string
@@ -621,6 +654,106 @@ export type Database = {
             columns: ["transaction_id"]
             isOneToOne: false
             referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      security_alerts: {
+        Row: {
+          alert_type: string
+          company_id: string | null
+          created_at: string
+          description: string
+          id: string
+          related_event_ids: string[] | null
+          resolved_at: string | null
+          resolved_by: string | null
+          severity: string
+          source_ip: string | null
+          status: string
+          target_user_id: string | null
+          title: string
+        }
+        Insert: {
+          alert_type: string
+          company_id?: string | null
+          created_at?: string
+          description: string
+          id?: string
+          related_event_ids?: string[] | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          source_ip?: string | null
+          status?: string
+          target_user_id?: string | null
+          title: string
+        }
+        Update: {
+          alert_type?: string
+          company_id?: string | null
+          created_at?: string
+          description?: string
+          id?: string
+          related_event_ids?: string[] | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          severity?: string
+          source_ip?: string | null
+          status?: string
+          target_user_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "security_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      security_events: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          ip_address: string
+          metadata: Json
+          severity: string
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          ip_address: string
+          metadata?: Json
+          severity?: string
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          ip_address?: string
+          metadata?: Json
+          severity?: string
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "security_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
