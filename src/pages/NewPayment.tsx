@@ -734,9 +734,9 @@ export default function NewPayment() {
           </Card>
         )}
 
-        {/* Actions */}
-        <div className="flex gap-4 mt-6">
-          {step > 1 && (
+        {/* Actions for steps 2 and 3 */}
+        {step > 1 && (
+          <div className="flex gap-4 mt-6">
             <Button
               variant="outline"
               className="flex-1"
@@ -745,38 +745,30 @@ export default function NewPayment() {
               <ArrowLeft className="mr-2 h-4 w-4" />
               Voltar
             </Button>
-          )}
-          <Button
-            className={cn(
-              "flex-1 bg-gradient-primary hover:opacity-90 shadow-primary",
-              step === 1 && "w-full"
-            )}
-            onClick={handleNext}
-            disabled={isLoading || isPixProcessing || isBilletProcessing || isConsultingPaste || isConsultingBillet}
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processando...
-              </>
-            ) : pixData.type === "cash" && step === 1 ? (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                Registrar Pagamento
-              </>
-            ) : step === 3 ? (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                Confirmar Pagamento
-              </>
-            ) : (
-              <>
-                Continuar
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </>
-            )}
-          </Button>
-        </div>
+            <Button
+              className="flex-1 bg-gradient-primary hover:opacity-90 shadow-primary"
+              onClick={handleNext}
+              disabled={isLoading || isPixProcessing || isBilletProcessing || isConsultingPaste || isConsultingBillet}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processando...
+                </>
+              ) : step === 3 ? (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Confirmar Pagamento
+                </>
+              ) : (
+                <>
+                  Continuar
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </>
+              )}
+            </Button>
+          </div>
+        )}
       </div>
 
       <BarcodeScanner
