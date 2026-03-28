@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
@@ -27,6 +28,7 @@ import {
   Check,
   AlertCircle,
   Banknote,
+  UserCheck,
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
@@ -118,8 +120,119 @@ export default function NewPayment() {
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany, user } = useAuth();
-  const { payByKey, payByQRCode, getQRCodeInfo, isProcessing: isPixProcessing } = usePixPayment();
+  const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
+
+  // Probe states for beneficiary verification
+  const [probeLoading, setProbeLoading] = useState(false);
+  const [probeConfirmOpen, setProbeConfirmOpen] = useState(false);
+  const [probeBeneficiaryName, setProbeBeneficiaryName] = useState<string | null>(null);
+  const [probeExecutingReal, setProbeExecutingReal] = useState(false);
+  const probePollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup probe polling on unmount
+  useEffect(() => {
+    return () => {
+      if (probePollingRef.current) clearInterval(probePollingRef.current);
+    };
+  }, []);
+
+  const startProbePayment = useCallback(async () => {
+    const pixKey = pixData.key || '';
+    if (!pixKey) return;
+
+    setProbeLoading(true);
+
+    try {
+      const probeResult = await payByKey({
+        pix_key: pixKey,
+        valor: 0.01,
+        descricao: 'Verificação de beneficiário',
+      });
+
+      if (!probeResult) {
+        setProbeLoading(false);
+        return;
+      }
+
+      // Poll for probe completion and extract beneficiary name
+      let attempts = 0;
+      const maxAttempts = 30;
+
+      const poll = async () => {
+        attempts++;
+        try {
+          const status = await checkStatus(probeResult.end_to_end_id || probeResult.transaction_id, !probeResult.end_to_end_id);
+          
+          if (status?.is_completed || status?.is_liquidated || status?.internal_status === 'completed') {
+            if (probePollingRef.current) clearInterval(probePollingRef.current);
+            probePollingRef.current = null;
+
+            // Try to get beneficiary name from transaction
+            const beneficiary = await getTransactionBeneficiary(probeResult.transaction_id);
+            setProbeBeneficiaryName(beneficiary?.name || 'Nome não disponível');
+            setProbeLoading(false);
+            setProbeConfirmOpen(true);
+            return;
+          }
+
+          if (status?.status === 'CANCELED' || attempts >= maxAttempts) {
+            if (probePollingRef.current) clearInterval(probePollingRef.current);
+            probePollingRef.current = null;
+            setProbeLoading(false);
+            toast({
+              variant: "destructive",
+              title: "Erro na verificação",
+              description: "Não foi possível verificar o beneficiário. Tente novamente.",
+            });
+          }
+        } catch {
+          // continue polling
+        }
+      };
+
+      poll();
+      probePollingRef.current = setInterval(poll, 3000);
+
+    } catch (error) {
+      console.error('[NewPayment] Probe error:', error);
+      setProbeLoading(false);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha na verificação do beneficiário.",
+      });
+    }
+  }, [pixData.key, payByKey, checkStatus, getTransactionBeneficiary, toast]);
+
+  const handleConfirmAfterProbe = useCallback(async () => {
+    setProbeConfirmOpen(false);
+    setProbeExecutingReal(true);
+    setIsLoading(true);
+
+    try {
+      const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
+      const result = await payByKey({
+        pix_key: pixData.key || '',
+        valor: amount,
+        descricao: pixData.description?.trim() || 'Pagamento Pix',
+      });
+
+      if (result) {
+        navigate(`/pix/receipt/${result.transaction_id}`);
+      }
+    } catch (error) {
+      console.error('[NewPayment] Real payment error:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha ao processar o pagamento.",
+      });
+    } finally {
+      setIsLoading(false);
+      setProbeExecutingReal(false);
+    }
+  }, [pixData, payByKey, navigate, toast]);
 
   const handleNext = () => {
     // Validate current step
@@ -216,15 +329,10 @@ export default function NewPayment() {
           navigate(`/pix/receipt/${result.transaction_id}`);
         }
       } else if (pixData.type === 'key') {
-        const result = await payByKey({
-          pix_key: pixData.key || '',
-          valor: amount,
-          descricao: 'Pagamento Pix',
-        });
-
-        if (result) {
-          navigate(`/pix/receipt/${result.transaction_id}`);
-        }
+        // For key payments, use probe flow (R$ 0.01 first)
+        setIsLoading(false);
+        await startProbePayment();
+        return;
       } else if (pixData.type === 'copy_paste') {
         const result = await payByQRCode({
           qr_code: pixData.copyPaste || '',
@@ -857,6 +965,75 @@ export default function NewPayment() {
           setScannerOpen(false);
         }}
       />
+
+
+      {/* Probe loading overlay */}
+      {(probeLoading || probeExecutingReal) && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 p-8 rounded-2xl bg-card border shadow-lg">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            <p className="text-lg font-medium">
+              {probeExecutingReal ? "Processando pagamento..." : "Verificando beneficiário..."}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {probeExecutingReal
+                ? `Enviando ${formatCurrency(parseFloat(pixData.amount?.replace(",", ".") || "0"))}`
+                : "Enviando micro-pagamento de R$ 0,01 para confirmar o destinatário"}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Beneficiary confirmation dialog */}
+      <Dialog open={probeConfirmOpen} onOpenChange={setProbeConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <UserCheck className="h-5 w-5 text-primary" />
+              Confirmar Beneficiário
+            </DialogTitle>
+            <DialogDescription>
+              A verificação identificou o seguinte destinatário. Confirme para prosseguir com o pagamento.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="rounded-xl bg-muted/50 p-4 space-y-3">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase font-medium">Beneficiário</p>
+                <p className="text-lg font-bold">{probeBeneficiaryName || 'Nome não disponível'}</p>
+              </div>
+              <div className="border-t border-border pt-3">
+                <p className="text-xs text-muted-foreground uppercase font-medium">Valor a transferir</p>
+                <p className="text-2xl font-bold text-primary">
+                  {formatCurrency(parseFloat(pixData.amount?.replace(",", ".") || "0"))}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground uppercase font-medium">Chave Pix</p>
+                <p className="font-mono text-sm">{pixData.key}</p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={() => setProbeConfirmOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              className="flex-1 bg-gradient-primary hover:opacity-90"
+              onClick={handleConfirmAfterProbe}
+            >
+              <Check className="mr-2 h-4 w-4" />
+              Confirmar e Pagar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }
