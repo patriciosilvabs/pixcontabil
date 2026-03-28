@@ -130,9 +130,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setStep(3);
   };
 
-  // Step 3: Send R$0.01 probe and poll for completion
+  // Step 4: Send R$0.01 probe and poll for completion
   const startProbe = async () => {
-    setStep(3);
+    setStep(4);
     setProbeError("");
     setBeneficiaryName(null);
     setBeneficiaryDocument(null);
