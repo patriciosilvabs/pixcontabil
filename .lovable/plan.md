@@ -1,22 +1,34 @@
 
 
-# Corrigir erro de duplicação de variável no pix-auth
+# Corrigir Drawer instável ao abrir teclado virtual no mobile
 
 ## Problema
 
-O `pix-auth` não consegue inicializar (BootFailure) porque `supabaseAdmin` é declarado duas vezes com `const` — uma na linha 67 e outra na linha 91. Isso causa o erro `Identifier 'supabaseAdmin' has already been declared`, fazendo com que todas as funções que dependem de `pix-auth` (como `pix-pay-dict`) retornem 502.
+Quando o usuário toca nos inputs de chave Pix ou descrição dentro do Drawer (`PixKeyDialog`), o teclado virtual do celular abre e causa:
+- O Drawer sobe/desce descontroladamente
+- O conteúdo "desaparece" da tela
+- O usuário precisa arrastar manualmente para encontrar o campo
 
-## Correção
+Isso acontece porque o Vaul (biblioteca do Drawer) interpreta a mudança de viewport causada pelo teclado como um gesto de arrasto, e os inputs não estão protegidos contra isso.
 
-**Arquivo**: `supabase/functions/pix-auth/index.ts`
+## Correções
 
-Remover a segunda declaração duplicada na linha 91:
-```typescript
-// REMOVER esta linha:
-const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-```
+### 1. `src/components/pix/PixKeyDialog.tsx`
 
-O `supabaseAdmin` da linha 67 já é suficiente e será reutilizado em todo o resto da função.
+Adicionar `data-vaul-no-drag` em todos os inputs (Input e Textarea) para impedir que o Vaul interprete a interação como gesto de arrastar:
 
-Após a correção, reimplantar a Edge Function `pix-auth`.
+- Input da chave Pix (linha 149): adicionar `data-vaul-no-drag`
+- Input do valor (linha 191): adicionar `data-vaul-no-drag`
+- Textarea da descrição (linha 206): adicionar `data-vaul-no-drag`
+
+### 2. `src/components/ui/drawer.tsx`
+
+Adicionar `handleOnly` ao Drawer para que só o handle (barra superior) permita arrastar, evitando que toques nos inputs acionem o gesto de fechar:
+
+- Na `DrawerContent`, adicionar a prop `onInteractOutside` não é necessária — o fix principal é no `Drawer` root.
+- Alterar o componente `Drawer` para passar `handleOnly={true}` ao `DrawerPrimitive.Root`, garantindo que apenas o handle bar controle o arrasto.
+
+### Arquivos alterados
+- `src/components/pix/PixKeyDialog.tsx` — adicionar `data-vaul-no-drag` nos 3 inputs
+- `src/components/ui/drawer.tsx` — adicionar `handleOnly` ao Drawer root
 
