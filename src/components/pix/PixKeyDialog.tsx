@@ -166,8 +166,13 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
         if (statusResult?.is_completed || statusResult?.internal_status === "completed") {
           stopProbePolling();
-          // Fetch beneficiary from DB
-          const bene = await getTransactionBeneficiary(txId);
+          // Fetch beneficiary from DB with retry (backend may still be writing)
+          let bene: { name: string | null; document: string | null } | null = null;
+          for (let retry = 0; retry < 5; retry++) {
+            bene = await getTransactionBeneficiary(txId);
+            if (bene?.name) break;
+            await new Promise(r => setTimeout(r, 1000));
+          }
           if (probeMountedRef.current) {
             setBeneficiaryName(bene?.name || null);
             setBeneficiaryDocument(bene?.document || null);
@@ -411,66 +416,47 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </div>
           )}
 
-          {/* Step 4: Confirm beneficiary */}
+          {/* Step 4: Confirm beneficiary — simple confirmation */}
           {step === 4 && (
-            <div className="space-y-5">
-              <div className="rounded-xl bg-secondary p-4 space-y-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Beneficiário Identificado</p>
-                  <p className="text-lg font-bold mt-1">{beneficiaryName || "Não identificado"}</p>
-                  {beneficiaryDocument && (
-                    <p className="text-sm text-muted-foreground mt-0.5">
-                      {beneficiaryDocument.replace(/\D/g, "").length === 11 ? "CPF" : "CNPJ"}: {maskDocument(beneficiaryDocument)}
-                    </p>
-                  )}
-                </div>
-                <div className="h-px bg-border" />
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Chave Pix</p>
-                  <p className="text-sm font-medium break-all mt-1">{pixKey}</p>
-                </div>
-                <div className="h-px bg-border" />
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor a Transferir</p>
-                  <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
-                </div>
-                {description.trim() && (
-                  <>
-                    <div className="h-px bg-border" />
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Descrição</p>
-                      <p className="text-sm font-medium mt-1">{description.trim()}</p>
-                    </div>
-                  </>
-                )}
+            <div className="flex flex-col items-center gap-5 py-4">
+              <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                <UserCheck className="h-9 w-9 text-primary" />
               </div>
 
-              <p className="text-xs text-muted-foreground text-center">
-                Uma verificação de R$ 0,01 já foi enviada para confirmar o destinatário.
-              </p>
+              <div className="text-center space-y-2">
+                <p className="text-sm text-muted-foreground">O beneficiário desta chave é:</p>
+                <p className="text-xl font-bold">{beneficiaryName || "Não identificado"}</p>
+              </div>
 
-              <Button
-                onClick={handleConfirmRealPayment}
-                disabled={isProcessing}
-                className="w-full h-12 text-base font-bold uppercase tracking-wider"
-              >
-                {isProcessing ? (
-                  <>
-                    <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                    Processando...
-                  </>
-                ) : (
-                  "Confirmar Pagamento"
-                )}
-              </Button>
+              <div className="text-center space-y-1">
+                <p className="text-sm text-muted-foreground">Deseja prosseguir com o pagamento de</p>
+                <p className="text-2xl font-bold text-primary">{formattedAmount()}</p>
+              </div>
 
-              <Button
-                variant="ghost"
-                onClick={handleClose}
-                className="w-full h-11 text-sm font-bold uppercase tracking-wider"
-              >
-                Cancelar
-              </Button>
+              <div className="w-full space-y-2 mt-2">
+                <Button
+                  onClick={handleConfirmRealPayment}
+                  disabled={isProcessing}
+                  className="w-full h-12 text-base font-bold uppercase tracking-wider"
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                      Processando...
+                    </>
+                  ) : (
+                    "Confirmar e Pagar"
+                  )}
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  onClick={handleClose}
+                  className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+                >
+                  Cancelar
+                </Button>
+              </div>
             </div>
           )}
 
