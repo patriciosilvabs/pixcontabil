@@ -28,6 +28,7 @@ import {
   DollarSign,
   Link2,
   Activity,
+  Shield,
 } from "lucide-react";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
