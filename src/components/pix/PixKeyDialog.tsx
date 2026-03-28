@@ -90,15 +90,15 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   }, [stopProbePolling]);
 
   const handleBack = () => {
-    if (step === 1 || step === 6) {
+    if (step === 1 || step === 7) {
       handleClose();
-    } else if (step === 3) {
+    } else if (step === 4) {
       // Can't go back during probe
       return;
-    } else if (step === 4) {
-      // Cancel after seeing beneficiary — go back to step 2
-      setStep(2);
     } else if (step === 5) {
+      // Cancel after seeing beneficiary — go back to step 3
+      setStep(3);
+    } else if (step === 6) {
       // Can't go back during real payment
       return;
     } else {
