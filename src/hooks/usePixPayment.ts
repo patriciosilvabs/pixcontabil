@@ -220,12 +220,7 @@ export function usePixPayment() {
 
       setPaymentData(data);
       
-      // Auto-generate receipt in background (fallback for webhook)
-      if (data.transaction_id && currentCompany?.id) {
-        supabase.functions.invoke('generate-pix-receipt', {
-          body: { transaction_id: data.transaction_id, company_id: currentCompany.id },
-        }).catch(e => console.error('[usePixPayment] Auto-receipt generation failed:', e));
-      }
+      // Receipt generation is now handled by backend (webhook/polling) after payment is confirmed
 
       toast({
         title: "Pagamento iniciado!",

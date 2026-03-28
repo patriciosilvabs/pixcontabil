@@ -219,6 +219,16 @@ async function dispatchEvent(supabaseAdmin: any, eventId: string, appOrigin: str
   }
 }
 
+// ========== BENEFICIARY EXTRACTION ==========
+function extractBeneficiaryFromPayload(raw: any): { name: string; doc: string } {
+  const data = raw?.data || raw || {};
+  const name = data?.creditParty?.name || data?.creditor?.name || data?.receiver?.name
+    || data?.beneficiary?.name || data?.receiverName || data?.creditorName || '';
+  const doc = data?.creditParty?.taxId || data?.creditor?.taxId || data?.receiver?.taxId
+    || data?.beneficiary?.document || data?.receiverDocument || data?.creditorTaxId || '';
+  return { name: String(name).trim(), doc: String(doc).trim() };
+}
+
 // ========== PROCESS AND UPDATE INTERNAL TRANSACTION ==========
 async function updateInternalTransaction(supabaseAdmin: any, normalized: NormalizedEvent) {
   const { transaction_id, end_to_end_id, status } = normalized;
@@ -229,7 +239,7 @@ async function updateInternalTransaction(supabaseAdmin: any, normalized: Normali
   if (end_to_end_id) orFilters.push(`pix_e2eid.eq.${end_to_end_id}`);
 
   const { data: transactions } = await supabaseAdmin
-    .from('transactions').select('id, company_id, status, external_id, pix_e2eid')
+    .from('transactions').select('id, company_id, status, external_id, pix_e2eid, beneficiary_name, beneficiary_document')
     .or(orFilters.join(',')).limit(1);
 
   const tx = transactions?.[0];
@@ -241,15 +251,20 @@ async function updateInternalTransaction(supabaseAdmin: any, normalized: Normali
     return;
   }
 
+  // Extract beneficiary from raw payload before updating
+  const ben = extractBeneficiaryFromPayload(normalized.raw);
+
   const updateData: any = {
     status,
     pix_provider_response: normalized.raw,
     pix_e2eid: end_to_end_id || tx.pix_e2eid,
   };
   if (status === 'completed') updateData.paid_at = new Date().toISOString();
+  if (ben.name && !tx.beneficiary_name) updateData.beneficiary_name = ben.name;
+  if (ben.doc && !tx.beneficiary_document) updateData.beneficiary_document = ben.doc;
   await supabaseAdmin.from('transactions').update(updateData).eq('id', tx.id);
 
-  // Auto-generate receipt on completion
+  // Auto-generate receipt on completion (beneficiary is now saved)
   if (status === 'completed') {
     fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
       method: 'POST',

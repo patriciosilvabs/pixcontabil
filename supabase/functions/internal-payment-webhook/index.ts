@@ -145,7 +145,7 @@ async function handlePaymentConfirmed(supabase: any, event: any) {
 
   console.log("[internal-webhook] Transaction confirmed:", tx.id);
 
-  // Generate receipt
+  // Generate receipt with correct payload
   try {
     const resp = await fetch(
       `${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-pix-receipt`,
@@ -155,7 +155,7 @@ async function handlePaymentConfirmed(supabase: any, event: any) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
         },
-        body: JSON.stringify({ transactionId: tx.id }),
+        body: JSON.stringify({ transaction_id: tx.id, company_id: tx.company_id }),
       }
     );
     if (!resp.ok) console.warn("[internal-webhook] Receipt generation failed:", await resp.text());

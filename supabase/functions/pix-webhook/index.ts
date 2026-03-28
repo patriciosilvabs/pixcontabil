@@ -142,14 +142,14 @@ async function handleOnzWebhook(supabaseAdmin: any, type: string, data: any, ip_
 
     if (onzId) {
       const { data: txById } = await supabaseAdmin
-        .from('transactions').select('id, company_id, status, external_id')
+        .from('transactions').select('id, company_id, status, external_id, beneficiary_name, beneficiary_document')
         .or(`external_id.ilike.%${onzId}%`).limit(1);
       transaction = txById?.[0] || null;
     }
 
     if (!transaction && endToEndId) {
       const { data: txByE2e } = await supabaseAdmin
-        .from('transactions').select('id, company_id, status, external_id, pix_e2eid')
+        .from('transactions').select('id, company_id, status, external_id, pix_e2eid, beneficiary_name, beneficiary_document')
         .or(`pix_e2eid.eq.${endToEndId},external_id.ilike.%${endToEndId}%`).limit(1);
       transaction = txByE2e?.[0] || null;
     }
@@ -160,12 +160,16 @@ async function handleOnzWebhook(supabaseAdmin: any, type: string, data: any, ip_
       if (finalStatuses.includes(transaction.status) && !finalStatuses.includes(internalStatus)) {
         console.log(`[pix-webhook] Skipping: tx ${transaction.id} already ${transaction.status}`);
       } else {
+        // Extract beneficiary from ONZ payload
+        const ben = extractBeneficiaryFromOnz(data);
         const updateData: any = {
           status: internalStatus,
           pix_provider_response: data,
           pix_e2eid: endToEndId || transaction.pix_e2eid,
         };
         if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+        if (ben.name && !transaction.beneficiary_name) updateData.beneficiary_name = ben.name;
+        if (ben.doc && !transaction.beneficiary_document) updateData.beneficiary_document = ben.doc;
         await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction.id);
         console.log(`[pix-webhook] Updated tx ${transaction.id}: ${transaction.status} → ${internalStatus}`);
       }
