@@ -87,22 +87,23 @@ Deno.serve(async (req) => {
 
     console.log(`[pix-auth] Getting token for company: ${company_id}, purpose: ${purpose || 'any'}`);
 
-    // Get Pix config with purpose-aware lookup
+    // Get Pix config with purpose-aware lookup (admin client to bypass RLS)
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     let config: any = null;
     if (purpose) {
-      const { data: specificConfig } = await supabase
+      const { data: specificConfig } = await supabaseAdmin
         .from('pix_configs').select('*')
         .eq('company_id', company_id).eq('is_active', true).eq('purpose', purpose).single();
       config = specificConfig;
     }
     if (!config) {
-      const { data: bothConfig } = await supabase
+      const { data: bothConfig } = await supabaseAdmin
         .from('pix_configs').select('*')
         .eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
       config = bothConfig;
     }
     if (!config) {
-      const { data: anyConfig } = await supabase
+      const { data: anyConfig } = await supabaseAdmin
         .from('pix_configs').select('*')
         .eq('company_id', company_id).eq('is_active', true).limit(1).single();
       config = anyConfig;
