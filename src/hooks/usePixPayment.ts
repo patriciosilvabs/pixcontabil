@@ -669,6 +669,8 @@ export function usePixPayment() {
     downloadReceipt,
     shareReceipt,
     saveReceiptAsFile,
+    // Beneficiary lookup
+    getTransactionBeneficiary,
     // Refund
     requestRefund,
   };
