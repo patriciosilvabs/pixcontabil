@@ -130,7 +130,6 @@ Deno.serve(async (req) => {
 
     // IDEMPOTENCY CHECK
     if (idempotency_key) {
-      const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const { data: existing } = await supabaseAdmin.from('transactions')
         .select('id, status').eq('company_id', company_id).eq('pix_key', pix_key).eq('amount', valor).eq('created_by', userId)
