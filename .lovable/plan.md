@@ -1,24 +1,22 @@
 
 
-# Mover botão "Continuar" para antes dos Pagamentos Recentes
+# Corrigir erro de duplicação de variável no pix-auth
 
-## O que será feito
+## Problema
 
-No arquivo `src/pages/NewPayment.tsx`, reorganizar a ordem dos elementos no step 1 para que o bloco de ações (botão "Continuar") apareça **antes** da lista de pagamentos recentes.
+O `pix-auth` não consegue inicializar (BootFailure) porque `supabaseAdmin` é declarado duas vezes com `const` — uma na linha 67 e outra na linha 91. Isso causa o erro `Identifier 'supabaseAdmin' has already been declared`, fazendo com que todas as funções que dependem de `pix-auth` (como `pix-pay-dict`) retornem 502.
 
-## Alteração
+## Correção
 
-**Arquivo**: `src/pages/NewPayment.tsx`
+**Arquivo**: `supabase/functions/pix-auth/index.ts`
 
-Ordem atual:
-1. Card do formulário de pagamento
-2. `<RecentPayments />` (linha 592)
-3. Botão "Continuar" (linha 709)
+Remover a segunda declaração duplicada na linha 91:
+```typescript
+// REMOVER esta linha:
+const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+```
 
-Nova ordem:
-1. Card do formulário de pagamento
-2. Botão "Continuar" — mover o bloco de ações (linhas 709-751) para logo após o fechamento do Card do step 1 (linha 590), **dentro** da condição `step === 1`
-3. `<RecentPayments />` — mantido abaixo do botão
+O `supabaseAdmin` da linha 67 já é suficiente e será reutilizado em todo o resto da função.
 
-Na prática, o bloco `{/* Actions */}` será movido de sua posição atual (depois de todos os steps) para ficar entre o Card e o RecentPayments, condicionado ao step 1. Para os demais steps (2 e 3), o botão permanece na posição original abaixo dos respectivos Cards.
+Após a correção, reimplantar a Edge Function `pix-auth`.
 
