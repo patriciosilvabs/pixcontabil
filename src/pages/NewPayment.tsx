@@ -973,12 +973,12 @@ export default function NewPayment() {
           <div className="flex flex-col items-center gap-4 p-8 rounded-2xl bg-card border shadow-lg">
             <Loader2 className="h-10 w-10 animate-spin text-primary" />
             <p className="text-lg font-medium">
-              {probeExecutingReal ? "Processando pagamento..." : "Verificando beneficiário..."}
+              {probeExecutingReal ? "Processando pagamento..." : "Consultando transação ..."}
             </p>
             <p className="text-sm text-muted-foreground">
               {probeExecutingReal
                 ? `Enviando ${formatCurrency(parseFloat(pixData.amount?.replace(",", ".") || "0"))}`
-                : "Enviando micro-pagamento de R$ 0,01 para confirmar o destinatário"}
+                : "Aguarde enquanto consultamos os dados da transação."}
             </p>
           </div>
         </div>
