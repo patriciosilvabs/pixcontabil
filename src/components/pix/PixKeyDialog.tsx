@@ -152,6 +152,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   value={pixKey}
                   onChange={(e) => setPixKey(e.target.value)}
                   className="h-12 text-base"
+                  data-vaul-no-drag
                 />
               </div>
 
@@ -196,6 +197,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   className="h-14 text-2xl font-bold text-center"
+                  data-vaul-no-drag
                 />
               </div>
 
@@ -211,6 +213,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   className="text-sm resize-none"
                   rows={2}
                   maxLength={140}
+                  data-vaul-no-drag
                 />
                 <p className="text-xs text-muted-foreground text-right">{description.length}/140</p>
               </div>
