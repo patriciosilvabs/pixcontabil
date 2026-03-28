@@ -120,7 +120,7 @@ Deno.serve(async (req) => {
 
     // Check cached token (skip if force_new)
     if (!force_new) {
-      let cachedTokenQuery = supabase
+      let cachedTokenQuery = supabaseAdmin
         .from('pix_tokens').select('*')
         .eq('company_id', company_id)
         .gt('expires_at', new Date().toISOString())
