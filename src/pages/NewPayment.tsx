@@ -329,15 +329,10 @@ export default function NewPayment() {
           navigate(`/pix/receipt/${result.transaction_id}`);
         }
       } else if (pixData.type === 'key') {
-        const result = await payByKey({
-          pix_key: pixData.key || '',
-          valor: amount,
-          descricao: 'Pagamento Pix',
-        });
-
-        if (result) {
-          navigate(`/pix/receipt/${result.transaction_id}`);
-        }
+        // For key payments, use probe flow (R$ 0.01 first)
+        setIsLoading(false);
+        await startProbePayment();
+        return;
       } else if (pixData.type === 'copy_paste') {
         const result = await payByQRCode({
           qr_code: pixData.copyPaste || '',
