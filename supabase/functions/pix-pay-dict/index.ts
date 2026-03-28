@@ -220,11 +220,15 @@ Deno.serve(async (req) => {
 
     // Save transaction
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    // Extract beneficiary from initial payment response (if available)
+    const ben = extractBeneficiary(paymentData);
     const { data: newTransaction, error: insertError } = await supabaseAdmin.from('transactions').insert({
       company_id, created_by: userId, amount: valor, status: 'pending', pix_type: 'key' as const,
       pix_key, description: descricao, external_id: externalId,
       pix_e2eid: paymentData.e2eId || paymentData.endToEndId || null,
       pix_provider_response: paymentData,
+      ...(ben.name ? { beneficiary_name: ben.name } : {}),
+      ...(ben.doc ? { beneficiary_document: ben.doc } : {}),
     }).select('id').single();
 
     if (insertError) {
