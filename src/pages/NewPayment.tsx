@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
@@ -27,6 +28,7 @@ import {
   Check,
   AlertCircle,
   Banknote,
+  UserCheck,
 } from "lucide-react";
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
