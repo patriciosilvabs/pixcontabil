@@ -18,7 +18,7 @@ interface PixKeyDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type Step = 1 | 2 | 3 | 4 | 5 | 6;
+type Step = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
 function maskDocument(doc: string | null): string {
   if (!doc) return "";
