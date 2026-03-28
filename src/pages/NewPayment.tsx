@@ -589,6 +589,34 @@ export default function NewPayment() {
           </Card>
         )}
 
+        {/* Actions for step 1 - before recent payments */}
+        {step === 1 && (
+          <div className="flex gap-4 mt-6">
+            <Button
+              className="w-full bg-gradient-primary hover:opacity-90 shadow-primary"
+              onClick={handleNext}
+              disabled={isLoading || isPixProcessing || isBilletProcessing || isConsultingPaste || isConsultingBillet}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Processando...
+                </>
+              ) : pixData.type === "cash" ? (
+                <>
+                  <Check className="mr-2 h-4 w-4" />
+                  Registrar Pagamento
+                </>
+              ) : (
+                <>
+                  Continuar
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </>
+              )}
+            </Button>
+          </div>
+        )}
+
         {/* Recent Payments - only on step 1 */}
         {step === 1 && (
           <RecentPayments
