@@ -82,6 +82,15 @@ async function callOnzViaProxy(url: string, method: string, headers: Record<stri
   return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
 }
 
+function extractBeneficiary(payload: any): { name: string; doc: string } {
+  const p = payload || {};
+  const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
+    || p?.beneficiary?.name || p?.receiverName || p?.creditorName || '';
+  const doc = p?.creditParty?.taxId || p?.creditor?.taxId || p?.receiver?.taxId
+    || p?.beneficiary?.document || p?.receiverDocument || p?.creditorTaxId || '';
+  return { name: String(name).trim(), doc: String(doc).trim() };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -220,11 +229,15 @@ Deno.serve(async (req) => {
 
     // Save transaction
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    // Extract beneficiary from initial payment response (if available)
+    const ben = extractBeneficiary(paymentData);
     const { data: newTransaction, error: insertError } = await supabaseAdmin.from('transactions').insert({
       company_id, created_by: userId, amount: valor, status: 'pending', pix_type: 'key' as const,
       pix_key, description: descricao, external_id: externalId,
       pix_e2eid: paymentData.e2eId || paymentData.endToEndId || null,
       pix_provider_response: paymentData,
+      ...(ben.name ? { beneficiary_name: ben.name } : {}),
+      ...(ben.doc ? { beneficiary_document: ben.doc } : {}),
     }).select('id').single();
 
     if (insertError) {

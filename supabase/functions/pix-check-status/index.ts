@@ -41,6 +41,15 @@ function extractFirstTransferFromBatchPayload(payload: any): any | null {
   return null;
 }
 
+function extractBeneficiary(payload: any): { name: string; doc: string } {
+  const p = payload || {};
+  const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
+    || p?.beneficiary?.name || p?.receiverName || p?.creditorName || '';
+  const doc = p?.creditParty?.taxId || p?.creditor?.taxId || p?.receiver?.taxId
+    || p?.beneficiary?.document || p?.receiverDocument || p?.creditorTaxId || '';
+  return { name: String(name).trim(), doc: String(doc).trim() };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -133,7 +142,7 @@ Deno.serve(async (req) => {
 
       if (transaction_id) {
         const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-        const { data: currentTx } = await supabaseAdmin.from('transactions').select('status').eq('id', transaction_id).single();
+        const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document').eq('id', transaction_id).single();
         const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
         if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
           console.log(`[pix-check-status] Skipping update: tx ${transaction_id} already ${currentTx.status}, not overwriting with ${internalStatus}`);
@@ -141,6 +150,10 @@ Deno.serve(async (req) => {
         } else {
           const updateData: any = { status: internalStatus, pix_provider_response: statusData, pix_e2eid: e2eId };
           if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+          // Extract beneficiary from ONZ payload (only if not already set)
+          const ben = extractBeneficiary(statusData);
+          if (ben.name && !currentTx?.beneficiary_name) updateData.beneficiary_name = ben.name;
+          if (ben.doc && !currentTx?.beneficiary_document) updateData.beneficiary_document = ben.doc;
           await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
         }
       }

@@ -93,6 +93,16 @@ Deno.serve(async (req) => {
   }
 });
 
+// ========== HELPERS ==========
+function extractBeneficiary(payload: any): { name: string; doc: string } {
+  const p = payload || {};
+  const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
+    || p?.beneficiary?.name || p?.receiverName || p?.creditorName || '';
+  const doc = p?.creditParty?.taxId || p?.creditor?.taxId || p?.receiver?.taxId
+    || p?.beneficiary?.document || p?.receiverDocument || p?.creditorTaxId || '';
+  return { name: String(name).trim(), doc: String(doc).trim() };
+}
+
 // ========== EVENT HANDLERS ==========
 
 async function handlePaymentConfirmed(supabase: any, event: any) {
@@ -122,12 +132,16 @@ async function handlePaymentConfirmed(supabase: any, event: any) {
     return;
   }
 
-  // Update transaction to completed
-  await supabase.from("transactions").update({
+  // Extract beneficiary from webhook event
+  const ben = extractBeneficiary(event.raw || event);
+  const updateData: any = {
     status: "completed",
     paid_at: new Date().toISOString(),
     pix_e2eid: e2eid || undefined,
-  }).eq("id", tx.id);
+  };
+  if (ben.name) updateData.beneficiary_name = ben.name;
+  if (ben.doc) updateData.beneficiary_document = ben.doc;
+  await supabase.from("transactions").update(updateData).eq("id", tx.id);
 
   console.log("[internal-webhook] Transaction confirmed:", tx.id);
 
