@@ -192,6 +192,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email,
       password,
     });
+
+    // Register failed login as security event
+    if (error) {
+      try {
+        const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+        fetch(`https://${projectId}.supabase.co/functions/v1/security-analyze`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", apikey: import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY },
+          body: JSON.stringify({
+            event_type: "login_failed",
+            ip_address: "client",
+            severity: "medium",
+            metadata: { email, error: error.message },
+          }),
+        }).catch(() => {});
+      } catch {}
+    }
+
     return { error };
   }, []);
 

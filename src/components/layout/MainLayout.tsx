@@ -53,6 +53,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     { name: "Empresas", href: "/companies", icon: Building2, adminOnly: true, pageKey: "companies" },
     { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, adminOnly: true },
     { name: "Webhook Gateway", href: "/webhook-events", icon: Activity, adminOnly: true },
+    { name: "Central de Segurança", href: "/security", icon: Shield, adminOnly: true },
     { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },
   ];
 

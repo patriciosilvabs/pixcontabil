@@ -71,6 +71,7 @@ const App = () => (
             <Route path="/batch-payment" element={<AuthGuard requiredPage="new_payment"><BatchPayment /></AuthGuard>} />
             <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
             <Route path="/webhook-events" element={<AuthGuard requireAdmin><WebhookEvents /></AuthGuard>} />
+            <Route path="/security" element={<AuthGuard requireAdmin><Security /></AuthGuard>} />
 
             <Route path="*" element={<NotFound />} />
           </Routes>
