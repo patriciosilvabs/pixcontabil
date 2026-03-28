@@ -250,14 +250,14 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const showHeader = step !== 7;
 
   return (
-    <Drawer open={open} onOpenChange={step >= 3 && step <= 5 ? undefined : handleClose}>
+    <Drawer open={open} onOpenChange={step >= 4 && step <= 6 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
           {showHeader && (
             <>
               <DrawerHeader className="flex-row items-center gap-3 p-0 pb-5">
-                <button onClick={handleBack} className="p-1 -ml-1" disabled={step === 3 || step === 5}>
-                  <ArrowLeft className={`h-5 w-5 ${step === 3 || step === 5 ? "opacity-30" : ""}`} />
+                <button onClick={handleBack} className="p-1 -ml-1" disabled={step === 4 || step === 6}>
+                  <ArrowLeft className={`h-5 w-5 ${step === 4 || step === 6 ? "opacity-30" : ""}`} />
                 </button>
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center">
