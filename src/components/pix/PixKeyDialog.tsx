@@ -233,20 +233,21 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const stepIcons = [Key, DollarSign, ShieldCheck, UserCheck, CreditCard, CheckCircle2];
+  const stepIcons = [Key, DollarSign, ClipboardCheck, ShieldCheck, UserCheck, CreditCard, CheckCircle2];
   const stepTitles = [
     "Pix com Chave",
     "Valor do Pagamento",
+    "Confirmar Dados",
     "Verificando Beneficiário",
     "Confirmar Beneficiário",
     "Processando Pagamento",
     "Status do Pagamento",
   ];
-  const totalSteps = 6;
+  const totalSteps = 7;
   const StepIcon = stepIcons[step - 1];
   const stepTitle = stepTitles[step - 1];
 
-  const showHeader = step !== 6;
+  const showHeader = step !== 7;
 
   return (
     <Drawer open={open} onOpenChange={step >= 3 && step <= 5 ? undefined : handleClose}>
