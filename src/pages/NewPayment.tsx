@@ -120,8 +120,119 @@ export default function NewPayment() {
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany, user } = useAuth();
-  const { payByKey, payByQRCode, getQRCodeInfo, isProcessing: isPixProcessing } = usePixPayment();
+  const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
+
+  // Probe states for beneficiary verification
+  const [probeLoading, setProbeLoading] = useState(false);
+  const [probeConfirmOpen, setProbeConfirmOpen] = useState(false);
+  const [probeBeneficiaryName, setProbeBeneficiaryName] = useState<string | null>(null);
+  const [probeExecutingReal, setProbeExecutingReal] = useState(false);
+  const probePollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Cleanup probe polling on unmount
+  useEffect(() => {
+    return () => {
+      if (probePollingRef.current) clearInterval(probePollingRef.current);
+    };
+  }, []);
+
+  const startProbePayment = useCallback(async () => {
+    const pixKey = pixData.key || '';
+    if (!pixKey) return;
+
+    setProbeLoading(true);
+
+    try {
+      const probeResult = await payByKey({
+        pix_key: pixKey,
+        valor: 0.01,
+        descricao: 'Verificação de beneficiário',
+      });
+
+      if (!probeResult) {
+        setProbeLoading(false);
+        return;
+      }
+
+      // Poll for probe completion and extract beneficiary name
+      let attempts = 0;
+      const maxAttempts = 30;
+
+      const poll = async () => {
+        attempts++;
+        try {
+          const status = await checkStatus(probeResult.end_to_end_id || probeResult.transaction_id, !probeResult.end_to_end_id);
+          
+          if (status?.is_completed || status?.is_liquidated || status?.internal_status === 'completed') {
+            if (probePollingRef.current) clearInterval(probePollingRef.current);
+            probePollingRef.current = null;
+
+            // Try to get beneficiary name from transaction
+            const beneficiary = await getTransactionBeneficiary(probeResult.transaction_id);
+            setProbeBeneficiaryName(beneficiary?.name || 'Nome não disponível');
+            setProbeLoading(false);
+            setProbeConfirmOpen(true);
+            return;
+          }
+
+          if (status?.status === 'CANCELED' || attempts >= maxAttempts) {
+            if (probePollingRef.current) clearInterval(probePollingRef.current);
+            probePollingRef.current = null;
+            setProbeLoading(false);
+            toast({
+              variant: "destructive",
+              title: "Erro na verificação",
+              description: "Não foi possível verificar o beneficiário. Tente novamente.",
+            });
+          }
+        } catch {
+          // continue polling
+        }
+      };
+
+      poll();
+      probePollingRef.current = setInterval(poll, 3000);
+
+    } catch (error) {
+      console.error('[NewPayment] Probe error:', error);
+      setProbeLoading(false);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha na verificação do beneficiário.",
+      });
+    }
+  }, [pixData.key, payByKey, checkStatus, getTransactionBeneficiary, toast]);
+
+  const handleConfirmAfterProbe = useCallback(async () => {
+    setProbeConfirmOpen(false);
+    setProbeExecutingReal(true);
+    setIsLoading(true);
+
+    try {
+      const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
+      const result = await payByKey({
+        pix_key: pixData.key || '',
+        valor: amount,
+        descricao: pixData.description?.trim() || 'Pagamento Pix',
+      });
+
+      if (result) {
+        navigate(`/pix/receipt/${result.transaction_id}`);
+      }
+    } catch (error) {
+      console.error('[NewPayment] Real payment error:', error);
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Falha ao processar o pagamento.",
+      });
+    } finally {
+      setIsLoading(false);
+      setProbeExecutingReal(false);
+    }
+  }, [pixData, payByKey, navigate, toast]);
 
   const handleNext = () => {
     // Validate current step
