@@ -228,7 +228,7 @@ Deno.serve(async (req) => {
     console.log('[pix-pay-dict] Payment created:', JSON.stringify(paymentData));
 
     // Save transaction
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    // Save transaction
     // Extract beneficiary from initial payment response (if available)
     const ben = extractBeneficiary(paymentData);
     const { data: newTransaction, error: insertError } = await supabaseAdmin.from('transactions').insert({
