@@ -121,12 +121,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get config
+    // Get config (admin client to bypass RLS)
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     let config: any = null;
-    const { data: cashOutConfig } = await supabase.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
+    const { data: cashOutConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
     config = cashOutConfig;
     if (!config) {
-      const { data: bothConfig } = await supabase.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
+      const { data: bothConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
       config = bothConfig;
     }
     if (!config) return new Response(JSON.stringify({ error: 'Configuração Pix não encontrada' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

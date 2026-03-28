@@ -91,9 +91,10 @@ Deno.serve(async (req) => {
 
     if (!company_id) return new Response(JSON.stringify({ error: 'company_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     let config: any = null;
     for (const p of ['cash_out', 'both', 'cash_in']) {
-      const { data: c } = await supabase.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', p).single();
+      const { data: c } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', p).single();
       if (c) { config = c; break; }
     }
     if (!config) return new Response(JSON.stringify({ error: 'Pix configuration not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -141,7 +142,6 @@ Deno.serve(async (req) => {
       let internalStatus = statusMap[rawStatus] || 'pending';
 
       if (transaction_id) {
-        const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
         const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document').eq('id', transaction_id).single();
         const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
         if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
@@ -210,7 +210,6 @@ Deno.serve(async (req) => {
     let internalStatus = statusMap[rawStatus] || 'pending';
 
     if (transaction_id) {
-      const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       // Check current status to avoid overwriting completed/failed with pending
       const { data: currentTx } = await supabaseAdmin.from('transactions').select('status').eq('id', transaction_id).single();
       const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];

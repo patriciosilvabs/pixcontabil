@@ -117,19 +117,19 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: `Valor inválido. O valor deve estar entre R$ 0,01 e R$ ${MAX_PAYMENT_VALUE.toLocaleString('pt-BR')}.` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Get Pix config for cash-out
+    // Get Pix config for cash-out (use admin client to bypass RLS — pix_configs is admin-only)
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     let config: any = null;
-    const { data: cashOutConfig } = await supabase.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
+    const { data: cashOutConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
     config = cashOutConfig;
     if (!config) {
-      const { data: bothConfig } = await supabase.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
+      const { data: bothConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
       config = bothConfig;
     }
     if (!config) return new Response(JSON.stringify({ error: 'Pix configuration not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     // IDEMPOTENCY CHECK
     if (idempotency_key) {
-      const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
       const { data: existing } = await supabaseAdmin.from('transactions')
         .select('id, status').eq('company_id', company_id).eq('pix_key', pix_key).eq('amount', valor).eq('created_by', userId)
@@ -228,7 +228,7 @@ Deno.serve(async (req) => {
     console.log('[pix-pay-dict] Payment created:', JSON.stringify(paymentData));
 
     // Save transaction
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    // Save transaction
     // Extract beneficiary from initial payment response (if available)
     const ben = extractBeneficiary(paymentData);
     const { data: newTransaction, error: insertError } = await supabaseAdmin.from('transactions').insert({
