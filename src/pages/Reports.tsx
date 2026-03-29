@@ -17,7 +17,7 @@ import { ptBR } from "date-fns/locale";
 import { exportCSV, exportXLSX, exportPDF } from "@/utils/reportExports";
 import { toast } from "sonner";
 
-type PeriodFilter = "today" | "week" | "month" | "last3months";
+type PeriodFilter = "today" | "week" | "month" | "last3months" | "custom";
 type ClassificationFilter = "all" | "cost" | "expense";
 
 const COLORS = ["hsl(270, 91%, 55%)", "hsl(158, 64%, 52%)", "hsl(43, 96%, 56%)", "hsl(0, 84%, 60%)", "hsl(200, 70%, 50%)"];
