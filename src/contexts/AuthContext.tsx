@@ -263,6 +263,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const hasPageAccess = useCallback((pageKey: string): boolean => {
     if (!permissionsLoaded) return false;
     if (isAdmin) return true;
+    if (pagePermissions.length === 0) return true;
     return pagePermissions.includes(pageKey);
   }, [isAdmin, pagePermissions, permissionsLoaded]);
 
