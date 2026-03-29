@@ -892,6 +892,7 @@ export default function NewPayment() {
           </div>
         )}
       </div>
+      )}
 
       <BarcodeScanner
         mode={scannerMode}
