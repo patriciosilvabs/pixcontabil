@@ -33,6 +33,7 @@ import {
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { parseBoleto } from "@/utils/boletoParser";
+import { PaymentStatusScreen } from "@/components/pix/PaymentStatusScreen";
 
 type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto" | "cash";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
