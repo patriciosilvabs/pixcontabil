@@ -28,6 +28,7 @@ export default function Reports() {
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>("month");
+  const [customDate, setCustomDate] = useState<Date>(new Date());
   const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
 
