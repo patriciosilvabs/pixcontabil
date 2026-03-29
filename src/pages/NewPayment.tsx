@@ -33,6 +33,7 @@ import {
 import { RecentPayments, type RecentPayment } from "@/components/payment/RecentPayments";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { parseBoleto } from "@/utils/boletoParser";
+import { PaymentStatusScreen } from "@/components/pix/PaymentStatusScreen";
 
 type PaymentType = "key" | "copy_paste" | "qrcode" | "boleto" | "cash";
 type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
@@ -129,6 +130,7 @@ export default function NewPayment() {
   const [probeBeneficiaryName, setProbeBeneficiaryName] = useState<string | null>(null);
   const [probeExecutingReal, setProbeExecutingReal] = useState(false);
   const probePollingRef = useRef<NodeJS.Timeout | null>(null);
+  const [realTransactionId, setRealTransactionId] = useState<string | null>(null);
 
   // Cleanup probe polling on unmount
   useEffect(() => {
@@ -220,11 +222,7 @@ export default function NewPayment() {
 
       if (result) {
         invalidateDashboardCache();
-        toast({
-          title: "Pagamento enviado!",
-          description: "O comprovante será gerado automaticamente.",
-        });
-        navigate("/");
+        setRealTransactionId(result.transaction_id);
       }
     } catch (error) {
       console.error('[NewPayment] Real payment error:', error);
@@ -372,6 +370,17 @@ export default function NewPayment() {
 
   return (
     <MainLayout>
+      {realTransactionId ? (
+        <div className="p-6 lg:p-8 max-w-md mx-auto">
+          <PaymentStatusScreen
+            transactionId={realTransactionId}
+            amount={parseFloat(pixData.amount?.replace(",", ".") || "0")}
+            beneficiaryName={probeBeneficiaryName || pixData.key || ""}
+            onClose={() => navigate("/")}
+            redirectToReceiptCapture={false}
+          />
+        </div>
+      ) : (
       <div className="p-6 lg:p-8 max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
@@ -883,6 +892,7 @@ export default function NewPayment() {
           </div>
         )}
       </div>
+      )}
 
       <BarcodeScanner
         mode={scannerMode}
