@@ -62,10 +62,15 @@ Deno.serve(async (req) => {
     }
 
     // Delete in dependency order
+    console.log(`Deleting user ${user_id} - cleaning up dependent tables...`);
+    
+    await adminClient.from("user_feature_permissions").delete().eq("user_id", user_id);
     await adminClient.from("user_page_permissions").delete().eq("user_id", user_id);
     await adminClient.from("user_roles").delete().eq("user_id", user_id);
     await adminClient.from("company_members").delete().eq("user_id", user_id);
     await adminClient.from("profiles").delete().eq("user_id", user_id);
+    
+    console.log(`Dependent tables cleaned. Deleting auth user...`);
 
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(user_id);
     if (deleteError) {
