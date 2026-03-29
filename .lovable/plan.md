@@ -1,27 +1,36 @@
 
 
-# Pular tela de anexo de comprovante para pagamentos Pix por chave digitada
+# Adicionar filtro por usuário na página de Relatórios
 
-## Problema
+## Alteração
 
-Quando um pagamento Pix é feito por **chave digitada** (CPF, CNPJ, email, celular), o sistema já gera o comprovante automaticamente via `generate-pix-receipt`. Porém, no fluxo **desktop** (`NewPayment.tsx`), após o pagamento por chave, o usuário é redirecionado para a tela "Anexar Comprovante" — que fica travada em "Aguardando confirmação" (imagem enviada).
+Adicionar um `Select` de filtro por usuário (quem criou a transação) na barra de filtros do relatório, ao lado dos filtros de período e classificação.
 
-No mobile (`PixKeyDialog`), isso já está correto: `redirectToReceiptCapture={false}`.
+### `src/pages/Reports.tsx`
 
-## Correção
+1. Adicionar estado `userFilter` (default `"all"`)
+2. Gerar lista de usuários a partir do `profileMap` já carregado
+3. Adicionar `<Select>` com opção "Todos os Usuários" + cada usuário do `profileMap`
+4. Aplicar filtro no `filteredTransactions` — encadear com o filtro de classificação existente, filtrando por `t.created_by === userFilter`
+5. Também aplicar o filtro de usuário nos cálculos de totais (`totalAmount`, `totalCosts`, `totalExpenses`) e nos gráficos (`byCategory`, `pieData`)
 
-### `src/pages/NewPayment.tsx`
+### Posição do filtro
 
-Na função `handleConfirmAfterProbe` (~linha 222), em vez de redirecionar para `/pix/receipt/...`, mostrar a tela de status (`PaymentStatusScreen`) com polling — igual ao mobile. Ou, de forma mais simples, redirecionar para o dashboard com toast de sucesso:
+Na barra de filtros (linha 212-242), entre o select de classificação e o botão Exportar:
 
-```typescript
-// Linha 222: trocar navigate(`/pix/receipt/...`) por navigate("/") + toast de sucesso
-if (result) {
-  invalidateDashboardCache();
-  toast({ title: "Pagamento enviado!", description: "O comprovante será gerado automaticamente." });
-  navigate("/");
-}
+```tsx
+<Select value={userFilter} onValueChange={setUserFilter}>
+  <SelectTrigger className="w-full sm:w-[200px]"><SelectValue /></SelectTrigger>
+  <SelectContent>
+    <SelectItem value="all">Todos os Usuários</SelectItem>
+    {Object.entries(profileMap).map(([uid, name]) => (
+      <SelectItem key={uid} value={uid}>{name}</SelectItem>
+    ))}
+  </SelectContent>
+</Select>
 ```
 
-Isso alinha o desktop com o comportamento do mobile, onde pagamentos por chave digitada **nunca** pedem anexo manual — o comprovante é recuperado automaticamente do provedor.
+### Lógica de filtragem
+
+O `filteredTransactions` passará a considerar ambos os filtros (classificação + usuário). Os cards de resumo e gráficos também usarão os dados filtrados para manter consistência visual.
 
