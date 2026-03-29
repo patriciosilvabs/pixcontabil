@@ -304,7 +304,7 @@ Deno.serve(async (req) => {
 
     console.log('[pix-pay-qrc] Payment created:', JSON.stringify(paymentData));
 
-    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    // Reutiliza supabaseAdmin já declarado no início do try block
     const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
       company_id, created_by: userId, amount: paymentAmount,
       description: descricao || 'Pagamento via QR Code dinâmico', pix_type: 'qrcode',
