@@ -7,7 +7,10 @@ import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSu
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, FileText, Download, TrendingDown, DollarSign } from "lucide-react";
+import { Loader2, FileText, Download, TrendingDown, DollarSign, CalendarIcon } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { startOfMonth, endOfMonth, subMonths, format, startOfWeek, endOfWeek, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
