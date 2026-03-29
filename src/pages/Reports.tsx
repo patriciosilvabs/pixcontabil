@@ -228,6 +228,14 @@ export default function Reports() {
                   <SelectItem value="expense">Despesas</SelectItem>
                 </SelectContent>
               </Select>
+              <Select value={userFilter} onValueChange={setUserFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Usuários</SelectItem>
+                  {Object.entries(profileMap).map(([uid, name]) => (
+                    <SelectItem key={uid} value={uid}>{name}</SelectItem>
+                  ))}
+                </SelectContent>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" disabled={transactions.length === 0}>
