@@ -236,6 +236,7 @@ export default function Reports() {
                     <SelectItem key={uid} value={uid}>{name}</SelectItem>
                   ))}
                 </SelectContent>
+              </Select>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" disabled={transactions.length === 0}>
