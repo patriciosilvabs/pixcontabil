@@ -7,14 +7,17 @@ import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSu
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, FileText, Download, TrendingDown, DollarSign } from "lucide-react";
+import { Loader2, FileText, Download, TrendingDown, DollarSign, CalendarIcon } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { startOfMonth, endOfMonth, subMonths, format, startOfWeek, endOfWeek, startOfDay, endOfDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { exportCSV, exportXLSX, exportPDF } from "@/utils/reportExports";
 import { toast } from "sonner";
 
-type PeriodFilter = "today" | "week" | "month" | "last3months";
+type PeriodFilter = "today" | "week" | "month" | "last3months" | "custom";
 type ClassificationFilter = "all" | "cost" | "expense";
 
 const COLORS = ["hsl(270, 91%, 55%)", "hsl(158, 64%, 52%)", "hsl(43, 96%, 56%)", "hsl(0, 84%, 60%)", "hsl(200, 70%, 50%)"];
@@ -25,6 +28,7 @@ export default function Reports() {
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>("month");
+  const [customDate, setCustomDate] = useState<Date>(new Date());
   const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
 
@@ -35,8 +39,9 @@ export default function Reports() {
       case "week": return { start: startOfWeek(now, { locale: ptBR }), end: endOfWeek(now, { locale: ptBR }) };
       case "month": return { start: startOfMonth(now), end: endOfMonth(now) };
       case "last3months": return { start: startOfMonth(subMonths(now, 2)), end: endOfMonth(now) };
+      case "custom": return { start: startOfDay(customDate), end: endOfDay(customDate) };
     }
-  }, [period]);
+  }, [period, customDate]);
 
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
 
@@ -102,6 +107,7 @@ export default function Reports() {
     week: "Esta Semana",
     month: "Este Mês",
     last3months: "Últimos 3 Meses",
+    custom: customDate ? format(customDate, "dd/MM/yyyy") : "Data Específica",
   };
 
   const handleExportPDF = async () => {
@@ -218,8 +224,22 @@ export default function Reports() {
                   <SelectItem value="week">Esta Semana</SelectItem>
                   <SelectItem value="month">Este Mês</SelectItem>
                   <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
+                  <SelectItem value="custom">Data Específica</SelectItem>
                 </SelectContent>
               </Select>
+              {period === "custom" && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-full sm:w-[180px] justify-start text-left font-normal", !customDate && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customDate ? format(customDate, "dd/MM/yyyy") : "Selecione a data"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={customDate} onSelect={(d) => d && setCustomDate(d)} initialFocus className={cn("p-3 pointer-events-auto")} />
+                  </PopoverContent>
+                </Popover>
+              )}
               <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
                 <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
