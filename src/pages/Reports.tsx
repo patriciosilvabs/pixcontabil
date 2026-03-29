@@ -26,6 +26,7 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>("month");
   const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
+  const [userFilter, setUserFilter] = useState<string>("all");
 
   const dateRange = useMemo(() => {
     const now = new Date();
