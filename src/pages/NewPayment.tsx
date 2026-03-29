@@ -370,6 +370,17 @@ export default function NewPayment() {
 
   return (
     <MainLayout>
+      {realTransactionId ? (
+        <div className="p-6 lg:p-8 max-w-md mx-auto">
+          <PaymentStatusScreen
+            transactionId={realTransactionId}
+            amount={parseFloat(pixData.amount?.replace(",", ".") || "0")}
+            beneficiaryName={probeBeneficiaryName || pixData.key || ""}
+            onClose={() => navigate("/")}
+            redirectToReceiptCapture={false}
+          />
+        </div>
+      ) : (
       <div className="p-6 lg:p-8 max-w-2xl mx-auto">
         {/* Header */}
         <div className="flex items-center gap-4 mb-6">
