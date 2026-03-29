@@ -1,25 +1,40 @@
 
 
-# Corrigir erro de sintaxe na edge function `pix-pay-qrc`
+# Corrigir delete-user e garantir CRUD completo de usuários
 
 ## Problema
 
-A edge function `pix-pay-qrc` **não está funcionando** — ela nem inicia. Os logs mostram:
+A edge function `delete-user` retorna 400. A causa provável é que ela não limpa a tabela `user_feature_permissions` antes de deletar o usuário (essa tabela tem FK implícita via user_id), e a tabela `profiles` não permite DELETE via RLS (mesmo com service role, convém garantir). Além disso, o `adminClient.auth.admin.deleteUser` pode falhar se ainda houver registros dependentes.
+
+## Correções
+
+### 1. Edge Function `delete-user/index.ts`
+
+Adicionar limpeza de `user_feature_permissions` antes das outras tabelas, e adicionar logs para diagnóstico:
 
 ```
-ERROR worker boot error: Uncaught SyntaxError: Identifier 'supabaseAdmin' has already been declared
+await adminClient.from("user_feature_permissions").delete().eq("user_id", user_id);
+await adminClient.from("user_page_permissions").delete().eq("user_id", user_id);
+await adminClient.from("user_roles").delete().eq("user_id", user_id);
+await adminClient.from("company_members").delete().eq("user_id", user_id);
+await adminClient.from("profiles").delete().eq("user_id", user_id);
 ```
 
-A variável `const supabaseAdmin` é declarada na **linha 49** (início do `try` block) e novamente na **linha 307** (mesmo nível de escopo). O Deno rejeita isso e a função inteira falha, causando o erro "Conexão perdida" no frontend.
+Também adicionar `console.log` em pontos estratégicos para facilitar debug futuro.
 
-## Solução
+### 2. Verificação do CRUD existente
 
-Remover a redeclaração duplicada na linha 307 — reutilizar a variável `supabaseAdmin` já declarada na linha 49.
+O CRUD atual já cobre:
+- **Create**: `create-user` edge function + dialog "Adicionar" ✅
+- **Read**: `fetchMembers` com listagem em tabela ✅
+- **Update**: `handleSave` com edição de role, limite, permissões ✅
+- **Delete**: `delete-user` edge function + dialog de confirmação ✅ (com bug)
 
-### `supabase/functions/pix-pay-qrc/index.ts`
+O sistema já tem CRUD completo — o problema é apenas o bug no delete. A correção é adicionar a limpeza da tabela `user_feature_permissions` que foi criada depois da função de delete.
 
-- **Linha 307**: trocar `const supabaseAdmin = createClient(...)` por simplesmente reutilizar o `supabaseAdmin` já existente (remover o `const` e a chamada `createClient`)
-- Alternativa mais limpa: como o `supabaseAdmin` da linha 49 já é o mesmo client, basta **deletar** a linha 307 inteira
+### Arquivos alterados
 
-Nenhuma outra alteração necessária — o problema é puramente essa redeclaração.
+| Arquivo | Alteração |
+|---|---|
+| `supabase/functions/delete-user/index.ts` | Adicionar delete de `user_feature_permissions` + logs de diagnóstico |
 
