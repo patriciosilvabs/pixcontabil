@@ -1,40 +1,48 @@
 
 
-# Corrigir delete-user e garantir CRUD completo de usuários
+# Corrigir acesso de operadores a pagamentos no desktop
 
 ## Problema
 
-A edge function `delete-user` retorna 400. A causa provável é que ela não limpa a tabela `user_feature_permissions` antes de deletar o usuário (essa tabela tem FK implícita via user_id), e a tabela `profiles` não permite DELETE via RLS (mesmo com service role, convém garantir). Além disso, o `adminClient.auth.admin.deleteUser` pode falhar se ainda houver registros dependentes.
+Operadores não conseguem acessar a página de pagamento (`/pix/new`) no desktop. A causa raiz está na função `hasPageAccess` no `AuthContext`:
 
-## Correções
-
-### 1. Edge Function `delete-user/index.ts`
-
-Adicionar limpeza de `user_feature_permissions` antes das outras tabelas, e adicionar logs para diagnóstico:
-
-```
-await adminClient.from("user_feature_permissions").delete().eq("user_id", user_id);
-await adminClient.from("user_page_permissions").delete().eq("user_id", user_id);
-await adminClient.from("user_roles").delete().eq("user_id", user_id);
-await adminClient.from("company_members").delete().eq("user_id", user_id);
-await adminClient.from("profiles").delete().eq("user_id", user_id);
+```typescript
+// Código atual
+const hasPageAccess = (pageKey: string): boolean => {
+  if (!permissionsLoaded) return false;
+  if (isAdmin) return true;
+  return pagePermissions.includes(pageKey); // ← PROBLEMA
+};
 ```
 
-Também adicionar `console.log` em pontos estratégicos para facilitar debug futuro.
+Quando um operador **não tem nenhum registro** na tabela `user_page_permissions`, o array `pagePermissions` fica vazio e `includes("new_payment")` retorna `false`. O `AuthGuard` redireciona o operador para `/` antes mesmo de carregar a página.
 
-### 2. Verificação do CRUD existente
+Compare com `hasFeatureAccess` que **já tem a lógica correta**:
 
-O CRUD atual já cobre:
-- **Create**: `create-user` edge function + dialog "Adicionar" ✅
-- **Read**: `fetchMembers` com listagem em tabela ✅
-- **Update**: `handleSave` com edição de role, limite, permissões ✅
-- **Delete**: `delete-user` edge function + dialog de confirmação ✅ (com bug)
+```typescript
+const hasFeatureAccess = (featureKey: string): boolean => {
+  if (isAdmin) return true;
+  if (featurePermissions.length === 0) return true; // ← sem restrição = acesso total
+  return featurePermissions.includes(featureKey);
+};
+```
 
-O sistema já tem CRUD completo — o problema é apenas o bug no delete. A correção é adicionar a limpeza da tabela `user_feature_permissions` que foi criada depois da função de delete.
+## Correção
 
-### Arquivos alterados
+Aplicar a mesma lógica em `hasPageAccess`: se nenhuma permissão de página foi configurada para o operador (array vazio), ele tem acesso total por padrão.
 
-| Arquivo | Alteração |
-|---|---|
-| `supabase/functions/delete-user/index.ts` | Adicionar delete de `user_feature_permissions` + logs de diagnóstico |
+### `src/contexts/AuthContext.tsx`
+
+Na função `hasPageAccess` (~linha 263), adicionar a verificação de array vazio:
+
+```typescript
+const hasPageAccess = useCallback((pageKey: string): boolean => {
+  if (!permissionsLoaded) return false;
+  if (isAdmin) return true;
+  if (pagePermissions.length === 0) return true; // sem restrição = acesso total
+  return pagePermissions.includes(pageKey);
+}, [isAdmin, pagePermissions, permissionsLoaded]);
+```
+
+Nenhuma outra alteração necessária.
 
