@@ -39,8 +39,9 @@ export default function Reports() {
       case "week": return { start: startOfWeek(now, { locale: ptBR }), end: endOfWeek(now, { locale: ptBR }) };
       case "month": return { start: startOfMonth(now), end: endOfMonth(now) };
       case "last3months": return { start: startOfMonth(subMonths(now, 2)), end: endOfMonth(now) };
+      case "custom": return { start: startOfDay(customDate), end: endOfDay(customDate) };
     }
-  }, [period]);
+  }, [period, customDate]);
 
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
 
