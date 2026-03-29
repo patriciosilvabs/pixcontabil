@@ -219,7 +219,12 @@ export default function NewPayment() {
       });
 
       if (result) {
-        navigate(`/pix/receipt/${result.transaction_id}`);
+        invalidateDashboardCache();
+        toast({
+          title: "Pagamento enviado!",
+          description: "O comprovante será gerado automaticamente.",
+        });
+        navigate("/");
       }
     } catch (error) {
       console.error('[NewPayment] Real payment error:', error);
