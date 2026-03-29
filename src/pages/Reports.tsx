@@ -107,6 +107,7 @@ export default function Reports() {
     week: "Esta Semana",
     month: "Este Mês",
     last3months: "Últimos 3 Meses",
+    custom: customDate ? format(customDate, "dd/MM/yyyy") : "Data Específica",
   };
 
   const handleExportPDF = async () => {
