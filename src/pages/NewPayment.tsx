@@ -222,11 +222,7 @@ export default function NewPayment() {
 
       if (result) {
         invalidateDashboardCache();
-        toast({
-          title: "Pagamento enviado!",
-          description: "O comprovante será gerado automaticamente.",
-        });
-        navigate("/");
+        setRealTransactionId(result.transaction_id);
       }
     } catch (error) {
       console.error('[NewPayment] Real payment error:', error);
