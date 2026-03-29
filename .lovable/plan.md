@@ -1,48 +1,27 @@
 
 
-# Corrigir acesso de operadores a pagamentos no desktop
+# Pular tela de anexo de comprovante para pagamentos Pix por chave digitada
 
 ## Problema
 
-Operadores não conseguem acessar a página de pagamento (`/pix/new`) no desktop. A causa raiz está na função `hasPageAccess` no `AuthContext`:
+Quando um pagamento Pix é feito por **chave digitada** (CPF, CNPJ, email, celular), o sistema já gera o comprovante automaticamente via `generate-pix-receipt`. Porém, no fluxo **desktop** (`NewPayment.tsx`), após o pagamento por chave, o usuário é redirecionado para a tela "Anexar Comprovante" — que fica travada em "Aguardando confirmação" (imagem enviada).
 
-```typescript
-// Código atual
-const hasPageAccess = (pageKey: string): boolean => {
-  if (!permissionsLoaded) return false;
-  if (isAdmin) return true;
-  return pagePermissions.includes(pageKey); // ← PROBLEMA
-};
-```
-
-Quando um operador **não tem nenhum registro** na tabela `user_page_permissions`, o array `pagePermissions` fica vazio e `includes("new_payment")` retorna `false`. O `AuthGuard` redireciona o operador para `/` antes mesmo de carregar a página.
-
-Compare com `hasFeatureAccess` que **já tem a lógica correta**:
-
-```typescript
-const hasFeatureAccess = (featureKey: string): boolean => {
-  if (isAdmin) return true;
-  if (featurePermissions.length === 0) return true; // ← sem restrição = acesso total
-  return featurePermissions.includes(featureKey);
-};
-```
+No mobile (`PixKeyDialog`), isso já está correto: `redirectToReceiptCapture={false}`.
 
 ## Correção
 
-Aplicar a mesma lógica em `hasPageAccess`: se nenhuma permissão de página foi configurada para o operador (array vazio), ele tem acesso total por padrão.
+### `src/pages/NewPayment.tsx`
 
-### `src/contexts/AuthContext.tsx`
-
-Na função `hasPageAccess` (~linha 263), adicionar a verificação de array vazio:
+Na função `handleConfirmAfterProbe` (~linha 222), em vez de redirecionar para `/pix/receipt/...`, mostrar a tela de status (`PaymentStatusScreen`) com polling — igual ao mobile. Ou, de forma mais simples, redirecionar para o dashboard com toast de sucesso:
 
 ```typescript
-const hasPageAccess = useCallback((pageKey: string): boolean => {
-  if (!permissionsLoaded) return false;
-  if (isAdmin) return true;
-  if (pagePermissions.length === 0) return true; // sem restrição = acesso total
-  return pagePermissions.includes(pageKey);
-}, [isAdmin, pagePermissions, permissionsLoaded]);
+// Linha 222: trocar navigate(`/pix/receipt/...`) por navigate("/") + toast de sucesso
+if (result) {
+  invalidateDashboardCache();
+  toast({ title: "Pagamento enviado!", description: "O comprovante será gerado automaticamente." });
+  navigate("/");
+}
 ```
 
-Nenhuma outra alteração necessária.
+Isso alinha o desktop com o comportamento do mobile, onde pagamentos por chave digitada **nunca** pedem anexo manual — o comprovante é recuperado automaticamente do provedor.
 
