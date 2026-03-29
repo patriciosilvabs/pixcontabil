@@ -26,6 +26,7 @@ export default function Reports() {
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>("month");
   const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
+  const [userFilter, setUserFilter] = useState<string>("all");
 
   const dateRange = useMemo(() => {
     const now = new Date();
@@ -67,32 +68,32 @@ export default function Reports() {
     fetchData();
   }, [currentCompany, dateRange]);
 
-  const totalAmount = transactions.reduce((s, t) => s + Number(t.amount), 0);
-  const totalCosts = transactions.filter((t) => t.categories?.classification === "cost").reduce((s, t) => s + Number(t.amount), 0);
-  const totalExpenses = transactions.filter((t) => t.categories?.classification === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const filteredTransactions = useMemo(() => {
+    let filtered = transactions;
+    if (userFilter !== "all") filtered = filtered.filter(t => t.created_by === userFilter);
+    if (classificationFilter !== "all") filtered = filtered.filter(t => t.categories?.classification === classificationFilter);
+    return filtered;
+  }, [transactions, classificationFilter, userFilter]);
+
+  const totalAmount = filteredTransactions.reduce((s, t) => s + Number(t.amount), 0);
+  const totalCosts = filteredTransactions.filter((t) => t.categories?.classification === "cost").reduce((s, t) => s + Number(t.amount), 0);
+  const totalExpenses = filteredTransactions.filter((t) => t.categories?.classification === "expense").reduce((s, t) => s + Number(t.amount), 0);
 
   const byCategory = useMemo(() => {
     const map: Record<string, { name: string; value: number }> = {};
-    transactions.forEach((t) => {
+    filteredTransactions.forEach((t) => {
       const name = t.categories?.name || "Sem categoria";
       if (!map[name]) map[name] = { name, value: 0 };
       map[name].value += Number(t.amount);
     });
     return Object.values(map).sort((a, b) => b.value - a.value);
-  }, [transactions]);
+  }, [filteredTransactions]);
 
   const pieData = [
     { name: "Custos", value: totalCosts },
     { name: "Despesas", value: totalExpenses },
     { name: "Sem classificação", value: totalAmount - totalCosts - totalExpenses },
   ].filter((d) => d.value > 0);
-
-  const filteredTransactions = useMemo(() =>
-    classificationFilter === "all"
-      ? transactions
-      : transactions.filter(t => t.categories?.classification === classificationFilter),
-    [transactions, classificationFilter]
-  );
 
   const formatCurrency = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
@@ -225,6 +226,15 @@ export default function Reports() {
                   <SelectItem value="all">Todos</SelectItem>
                   <SelectItem value="cost">Custos</SelectItem>
                   <SelectItem value="expense">Despesas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={userFilter} onValueChange={setUserFilter}>
+                <SelectTrigger className="w-full sm:w-[200px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os Usuários</SelectItem>
+                  {Object.entries(profileMap).map(([uid, name]) => (
+                    <SelectItem key={uid} value={uid}>{name}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
               <DropdownMenu>
