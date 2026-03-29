@@ -130,6 +130,7 @@ export default function NewPayment() {
   const [probeBeneficiaryName, setProbeBeneficiaryName] = useState<string | null>(null);
   const [probeExecutingReal, setProbeExecutingReal] = useState(false);
   const probePollingRef = useRef<NodeJS.Timeout | null>(null);
+  const [realTransactionId, setRealTransactionId] = useState<string | null>(null);
 
   // Cleanup probe polling on unmount
   useEffect(() => {
