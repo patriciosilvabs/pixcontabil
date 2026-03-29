@@ -224,8 +224,22 @@ export default function Reports() {
                   <SelectItem value="week">Esta Semana</SelectItem>
                   <SelectItem value="month">Este Mês</SelectItem>
                   <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
+                  <SelectItem value="custom">Data Específica</SelectItem>
                 </SelectContent>
               </Select>
+              {period === "custom" && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className={cn("w-full sm:w-[180px] justify-start text-left font-normal", !customDate && "text-muted-foreground")}>
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {customDate ? format(customDate, "dd/MM/yyyy") : "Selecione a data"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0" align="start">
+                    <Calendar mode="single" selected={customDate} onSelect={(d) => d && setCustomDate(d)} initialFocus className={cn("p-3 pointer-events-auto")} />
+                  </PopoverContent>
+                </Popover>
+              )}
               <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
                 <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
