@@ -69,6 +69,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
         if (result.due_date) {
           setDueDate(result.due_date);
         }
+        // Auto-advance to step 2 if we have a value (from API or local parser)
         if ((result.total_updated_value && result.total_updated_value > 0) || (result.value && result.value > 0)) {
           setStep(2);
         }
