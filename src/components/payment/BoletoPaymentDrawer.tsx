@@ -377,6 +377,18 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
                   </>
                 )}
 
+                {/* When we have total_updated_value but no individual fine/interest breakdown */}
+                {calculatedCharges > 0 && !consultInfo?.fine_value && !consultInfo?.interest_value && (
+                  <>
+                    <div className="flex items-center gap-1.5">
+                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                      <p className="text-xs font-bold uppercase tracking-wider text-amber-600">Juros/Multa</p>
+                    </div>
+                    <p className="text-sm font-medium text-amber-600 -mt-2">+ {formatCurrency(calculatedCharges)}</p>
+                    <div className="h-px bg-border" />
+                  </>
+                )}
+
                 {hasDiscount && (
                   <>
                     <div>
