@@ -104,9 +104,10 @@ Deno.serve(async (req) => {
     const digitableCode = convertToLinhaDigitavel(cleanBarcode);
 
     if (config.provider === 'onz') {
-      // ========== ONZ: No dedicated consult endpoint ==========
-      // ONZ does NOT have a billet consult API. Interest/fines are calculated automatically at payment time.
-      // We parse the barcode locally to extract original value and due date.
+      // ========== ONZ: Use APPROVAL_REQUIRED to get adjusted amount ==========
+      // ONZ does NOT have a dedicated consult endpoint.
+      // We use POST /billets/payments with paymentFlow: APPROVAL_REQUIRED
+      // to get the adjusted amount (with interest/fines) without executing payment.
 
       const BASE_DATE = new Date(1997, 9, 7); // October 7, 1997
 
@@ -114,7 +115,6 @@ Deno.serve(async (req) => {
         const clean = code.replace(/[\s.\-]/g, '');
         const len = clean.length;
 
-        // Convênio (starts with 8)
         if (clean[0] === '8') {
           const valueId = clean[2];
           let amountCents = 0;
@@ -124,10 +124,8 @@ Deno.serve(async (req) => {
           return { amount: amountCents / 100, dueDate: null, isConvenio: true };
         }
 
-        // Bank boleto barcode (44 digits)
         let barcode44 = clean;
         if (len === 47) {
-          // Convert linha digitável to barcode
           barcode44 =
             clean.substring(0, 4) +
             clean[32] +
@@ -159,24 +157,83 @@ Deno.serve(async (req) => {
 
       console.log(`[billet-consult] ONZ local parse: amount=${parsed.amount}, dueDate=${parsed.dueDate}, isOverdue=${isOverdue}`);
 
+      // Try to get adjusted amount from ONZ via APPROVAL_REQUIRED
+      let onzAmount: number | undefined;
+      let onzRecipientName: string | undefined;
+      let onzRecipientDocument: string | undefined;
+      let onzDueDate: string | undefined;
+      let onzFineValue: number | undefined;
+      let onzInterestValue: number | undefined;
+
+      try {
+        // Get auth token for ONZ
+        const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+          method: 'POST',
+          headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+          body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+        });
+
+        if (authResponse.ok) {
+          const { access_token } = await authResponse.json();
+          const onzBody = {
+            digitableCode: digitableCode,
+            description: 'Consulta de boleto',
+            paymentFlow: 'APPROVAL_REQUIRED',
+          };
+
+          console.log(`[billet-consult] ONZ APPROVAL_REQUIRED request for: ${digitableCode}`);
+
+          const result = await callOnzViaProxy(
+            `${config.base_url}/api/v2/billets/payments`,
+            'POST',
+            {
+              'Authorization': `Bearer ${access_token}`,
+              'Content-Type': 'application/json',
+              'x-idempotency-key': crypto.randomUUID(),
+            },
+            JSON.stringify(onzBody),
+          );
+
+          console.log(`[billet-consult] ONZ APPROVAL_REQUIRED response status=${result.status}:`, JSON.stringify(result.data));
+
+          if (result.status < 400 && result.data) {
+            const d = result.data;
+            // ONZ returns amount with interest/fines calculated
+            onzAmount = toNumber(d.payment?.amount) || toNumber(d.amount);
+            onzRecipientName = d.creditor?.name || d.payment?.creditor?.name;
+            onzRecipientDocument = d.creditor?.document || d.payment?.creditor?.document;
+            onzDueDate = d.dueDate || d.payment?.dueDate;
+            
+            // Calculate interest/fine as difference between adjusted and original
+            if (onzAmount && parsed.amount > 0 && onzAmount > parsed.amount) {
+              const totalCharges = onzAmount - parsed.amount;
+              // ONZ doesn't separate fine vs interest, so we put it all as interest
+              onzInterestValue = Math.round(totalCharges * 100) / 100;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[billet-consult] ONZ APPROVAL_REQUIRED failed, using local parse only:`, e.message);
+      }
+
+      const finalAmount = onzAmount || (parsed.amount > 0 ? parsed.amount : undefined);
+      const originalValue = parsed.amount > 0 ? parsed.amount : undefined;
+
       return new Response(JSON.stringify({
         success: true,
-        value: parsed.amount > 0 ? parsed.amount : undefined,
-        total_updated_value: undefined, // ONZ calculates at payment time
-        due_date: parsed.dueDate,
-        fine_value: undefined,
-        interest_value: undefined,
+        value: originalValue,
+        total_updated_value: onzAmount && originalValue && onzAmount !== originalValue ? onzAmount : undefined,
+        due_date: onzDueDate || parsed.dueDate,
+        fine_value: onzFineValue,
+        interest_value: onzInterestValue,
         discount_value: undefined,
-        recipient_name: undefined,
-        recipient_document: undefined,
+        recipient_name: onzRecipientName,
+        recipient_document: onzRecipientDocument,
         type: parsed.isConvenio ? 'CONVENIO' : 'BOLETO',
         digitable_line: digitableCode,
         barcode: cleanBarcode,
         provider: 'onz',
         is_overdue: isOverdue,
-        note: isOverdue
-          ? 'Boleto vencido. Juros e multa serão calculados automaticamente no momento do pagamento.'
-          : 'ONZ calcula automaticamente juros e multas no momento do pagamento.',
         raw: null,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
