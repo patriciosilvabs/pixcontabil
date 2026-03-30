@@ -69,6 +69,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
         if (result.due_date) {
           setDueDate(result.due_date);
         }
+        // Auto-advance to step 2 if we have a value (from API or local parser)
         if ((result.total_updated_value && result.total_updated_value > 0) || (result.value && result.value > 0)) {
           setStep(2);
         }
@@ -390,6 +391,16 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
                   <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
                   <p className="text-xs text-amber-700 dark:text-amber-400">
                     Este boleto possui juros e/ou multa por atraso. O valor atualizado já inclui esses encargos.
+                  </p>
+                </div>
+              )}
+
+              {/* ONZ overdue boleto warning */}
+              {consultInfo && (consultInfo as any).is_overdue && !hasInterestOrFine && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <AlertTriangle className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Boleto vencido. O valor final poderá incluir juros e multa calculados automaticamente pelo provedor no momento do pagamento.
                   </p>
                 </div>
               )}
