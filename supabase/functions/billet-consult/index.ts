@@ -105,73 +105,78 @@ Deno.serve(async (req) => {
 
     if (config.provider === 'onz') {
       // ========== ONZ: No dedicated consult endpoint ==========
-      // ONZ pays with adjusted amount automatically. Return basic info from the barcode itself.
-      // We can try POST /api/v2/billets/payments with paymentFlow: APPROVAL_REQUIRED to get info,
-      // but this is not documented. For now, return a response indicating ONZ handles it at payment time.
-      
-      // Get auth token to try the info endpoint if available
-      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-        method: 'POST',
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-      });
+      // ONZ does NOT have a billet consult API. Interest/fines are calculated automatically at payment time.
+      // We parse the barcode locally to extract original value and due date.
 
-      if (!authResponse.ok) {
-        return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }),
-          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
+      const BASE_DATE = new Date(1997, 9, 7); // October 7, 1997
 
-      const { access_token } = await authResponse.json();
+      function parseBarcodeInfo(code: string): { amount: number; dueDate: string | null; isConvenio: boolean } {
+        const clean = code.replace(/[\s.\-]/g, '');
+        const len = clean.length;
 
-      // Try ONZ billet info endpoint
-      try {
-        const result = await callOnzViaProxy(
-          `${config.base_url}/api/v2/billets/consult`,
-          'POST',
-          {
-            'Authorization': `Bearer ${access_token}`,
-            'Content-Type': 'application/json',
-          },
-          JSON.stringify({ digitableCode }),
-        );
-
-        if (result.status < 400 && result.data) {
-          const billetInfo = result.data;
-          return new Response(JSON.stringify({
-            success: true,
-            value: toNumber(billetInfo.originalAmount || billetInfo.amount),
-            total_updated_value: toNumber(billetInfo.adjustedAmount || billetInfo.totalAmount || billetInfo.amount),
-            due_date: billetInfo.dueDate,
-            fine_value: toNumber(billetInfo.fineAmount),
-            interest_value: toNumber(billetInfo.interestAmount),
-            discount_value: toNumber(billetInfo.discountAmount),
-            recipient_name: billetInfo.recipientName || billetInfo.beneficiaryName,
-            recipient_document: billetInfo.recipientDocument || billetInfo.beneficiaryDocument,
-            type: billetInfo.type,
-            status: billetInfo.status,
-            digitable_line: billetInfo.digitableLine || cleanBarcode,
-            barcode: billetInfo.barcode || cleanBarcode,
-            provider: 'onz',
-            raw: billetInfo,
-          }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        // Convênio (starts with 8)
+        if (clean[0] === '8') {
+          const valueId = clean[2];
+          let amountCents = 0;
+          if (['6', '7', '8', '9'].includes(valueId)) {
+            amountCents = parseInt(clean.substring(4, 15), 10);
+          }
+          return { amount: amountCents / 100, dueDate: null, isConvenio: true };
         }
-      } catch (e) {
-        console.warn('[billet-consult] ONZ consult attempt failed:', e.message);
+
+        // Bank boleto barcode (44 digits)
+        let barcode44 = clean;
+        if (len === 47) {
+          // Convert linha digitável to barcode
+          barcode44 =
+            clean.substring(0, 4) +
+            clean[32] +
+            clean.substring(33, 37) +
+            clean.substring(37, 47) +
+            clean.substring(4, 9) +
+            clean.substring(10, 20) +
+            clean.substring(21, 31);
+        }
+
+        if (barcode44.length === 44) {
+          const dueFactor = parseInt(barcode44.substring(5, 9), 10);
+          const amountCents = parseInt(barcode44.substring(9, 19), 10);
+          let dueDate: string | null = null;
+          if (dueFactor > 0) {
+            const date = new Date(BASE_DATE);
+            date.setDate(date.getDate() + dueFactor);
+            dueDate = date.toISOString().split('T')[0];
+          }
+          return { amount: amountCents / 100, dueDate, isConvenio: false };
+        }
+
+        return { amount: 0, dueDate: null, isConvenio: false };
       }
 
-      // Fallback: return basic info indicating payment will use adjusted value
+      const parsed = parseBarcodeInfo(cleanBarcode);
+      const today = new Date().toISOString().split('T')[0];
+      const isOverdue = parsed.dueDate ? parsed.dueDate < today : false;
+
+      console.log(`[billet-consult] ONZ local parse: amount=${parsed.amount}, dueDate=${parsed.dueDate}, isOverdue=${isOverdue}`);
+
       return new Response(JSON.stringify({
         success: true,
-        value: undefined,
-        total_updated_value: undefined,
-        due_date: undefined,
+        value: parsed.amount > 0 ? parsed.amount : undefined,
+        total_updated_value: undefined, // ONZ calculates at payment time
+        due_date: parsed.dueDate,
+        fine_value: undefined,
+        interest_value: undefined,
+        discount_value: undefined,
         recipient_name: undefined,
         recipient_document: undefined,
-        type: 'BOLETO',
-        digitable_line: cleanBarcode,
+        type: parsed.isConvenio ? 'CONVENIO' : 'BOLETO',
+        digitable_line: digitableCode,
         barcode: cleanBarcode,
         provider: 'onz',
-        note: 'ONZ calcula automaticamente juros e multas no momento do pagamento.',
+        is_overdue: isOverdue,
+        note: isOverdue
+          ? 'Boleto vencido. Juros e multa serão calculados automaticamente no momento do pagamento.'
+          : 'ONZ calcula automaticamente juros e multas no momento do pagamento.',
         raw: null,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

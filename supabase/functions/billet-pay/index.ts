@@ -157,7 +157,10 @@ Deno.serve(async (req) => {
 
       const onzId = paymentData.id || '';
       const externalId = `onz:${onzId}`;
-      const amount = informedValue || parsePositiveAmount(paymentData.payment?.amount) || parsePositiveAmount(paymentData.amount) || 0;
+      // Prioritize ONZ adjusted amount (includes interest/fines) over user-informed value
+      const onzAmount = parsePositiveAmount(paymentData.payment?.amount) || parsePositiveAmount(paymentData.amount);
+      const amount = onzAmount || informedValue || 0;
+      console.log(`[billet-pay] ONZ amount resolution: onzAmount=${onzAmount}, informedValue=${informedValue}, final=${amount}`);
 
       // Save transaction
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
