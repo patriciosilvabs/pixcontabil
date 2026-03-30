@@ -202,8 +202,17 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     return val.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   };
 
-  const hasInterestOrFine = consultInfo && ((consultInfo.interest_value && consultInfo.interest_value > 0) || (consultInfo.fine_value && consultInfo.fine_value > 0));
+  const hasInterestOrFine = consultInfo && (
+    (consultInfo.interest_value && consultInfo.interest_value > 0) ||
+    (consultInfo.fine_value && consultInfo.fine_value > 0) ||
+    (consultInfo.total_updated_value && consultInfo.value && consultInfo.total_updated_value > consultInfo.value)
+  );
   const hasDiscount = consultInfo && consultInfo.discount_value && consultInfo.discount_value > 0;
+
+  // Calculate charges when individual fine/interest aren't provided but total_updated_value differs from value
+  const calculatedCharges = consultInfo?.total_updated_value && consultInfo?.value && consultInfo.total_updated_value > consultInfo.value
+    ? Math.round((consultInfo.total_updated_value - consultInfo.value) * 100) / 100
+    : 0;
 
   const stepIcon = step === 1 ? DollarSign : step === 2 ? CheckCircle2 : CheckCircle2;
   const stepTitle = step === 1 ? "Valor do Boleto" : step === 2 ? "Confirmar Pagamento" : "Verificando";

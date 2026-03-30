@@ -17,6 +17,8 @@ export interface BilletConsultResult {
   status?: string;
   digitable_line?: string;
   barcode?: string;
+  provider?: string;
+  is_overdue?: boolean;
   raw?: any;
 }
 
