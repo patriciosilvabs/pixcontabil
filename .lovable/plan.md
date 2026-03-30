@@ -1,57 +1,56 @@
 
 
-# Corrigir consulta de juros/multa para boletos vencidos (ONZ)
+# Puxar valor correto com juros antes do pagamento (ONZ)
 
-## Diagnóstico
+## Problema
 
-A API ONZ **não possui endpoint de consulta de boleto** (`/api/v2/billets/consult` não existe). O `billet-consult` tenta chamá-lo, falha silenciosamente no `catch` (linha 158), e retorna o fallback com todos os valores `undefined` — sem juros, multa, vencimento ou beneficiário.
+Para o provedor ONZ, a API **não possui endpoint de consulta de boleto**. Atualmente o sistema faz parsing local do código de barras (extrai valor original e vencimento), mas não consegue mostrar o valor atualizado com juros/multa antes do pagamento.
 
-A documentação oficial ONZ confirma que existem apenas 4 endpoints de boleto:
-- `POST /billets/payments` — pagar
-- `GET /billets` — listar
-- `GET /billets/{id}` — detalhe
-- `GET /billets/payments/receipt/{id}` — comprovante
+## Solução: Usar `paymentFlow: 'APPROVAL_REQUIRED'`
 
-A ONZ diz explicitamente: **"Payment will always be made using an adjusted amount (interest and fines)"** — ou seja, juros e multa são calculados automaticamente no momento do pagamento.
+A API ONZ suporta dois fluxos: `INSTANT` (executa imediatamente) e `APPROVAL_REQUIRED` (cria o pagamento pendente sem executar). Ao usar `APPROVAL_REQUIRED` na etapa de consulta, a ONZ retorna o valor ajustado (com juros e multa) sem efetuar o pagamento.
 
-Além disso, há um segundo bug em `billet-pay`: na linha 160, `informedValue` (valor informado pelo usuário/parser, sem juros) tem prioridade sobre `paymentData.payment?.amount` (valor ajustado pela ONZ). Isso faz com que a transação seja salva com o valor original, sem juros.
+### Fluxo proposto
 
-## Correções
-
-### 1. `supabase/functions/billet-consult/index.ts` — Melhorar fallback ONZ
-
-Em vez de tentar um endpoint inexistente, usar o parser local de código de barras para extrair valor original e vencimento, e sinalizar que juros serão calculados automaticamente:
-
-- Remover a tentativa de chamar `/api/v2/billets/consult`
-- Implementar parsing inline do código de barras (extrair valor e vencimento do código 44/47 dígitos)
-- Calcular se está vencido comparando `dueDate < hoje`
-- Retornar `value`, `due_date`, `is_overdue: true` e uma nota explicativa
-- Adicionar logging para debug
-
-### 2. `supabase/functions/billet-pay/index.ts` — Corrigir prioridade do valor
-
-Na linha 160, inverter a prioridade para que o valor ajustado da ONZ tenha precedência sobre o valor informado:
-
-```typescript
-// ANTES (bug):
-const amount = informedValue || parsePositiveAmount(paymentData.payment?.amount) || ...
-
-// DEPOIS (correto):
-const amount = parsePositiveAmount(paymentData.payment?.amount) || informedValue || ...
+```text
+[1] Usuário escaneia boleto
+        │
+[2] billet-consult (ONZ)
+    POST /billets/payments  { paymentFlow: "APPROVAL_REQUIRED" }
+    → ONZ retorna valor ajustado + billet ID
+        │
+[3] Frontend exibe valor com juros para confirmação
+        │
+[4] billet-pay (ONZ)
+    POST /billets/payments  { paymentFlow: "INSTANT" }  (novo pagamento)
+    → Pagamento executado com o valor correto
 ```
 
-Isso garante que o valor gravado na transação inclua juros e multa calculados pela ONZ.
+O pagamento APPROVAL_REQUIRED criado na consulta ficará pendente e expirará automaticamente (não é executado).
 
-### 3. `src/components/payment/BoletoPaymentDrawer.tsx` — Exibir aviso de boleto vencido
+## Alterações
 
-Quando o `consultData` retornar `is_overdue: true` e `provider: 'onz'`:
-- Mostrar alerta informando que juros e multa serão calculados automaticamente pelo provedor
-- Exibir o valor original e vencimento extraídos do código de barras
-- Na tela de confirmação (step 2), mostrar aviso: "O valor final pode incluir juros e multa calculados automaticamente"
+### 1. `supabase/functions/billet-consult/index.ts` (ONZ path)
 
-## Resultado esperado
+- Em vez de apenas parsing local, chamar `POST {base_url}/billets/payments` com `paymentFlow: 'APPROVAL_REQUIRED'` e o digitableCode
+- Extrair da resposta ONZ: `amount` (valor ajustado com juros), `payment.amount`, `dueDate`, `creditor`
+- Retornar `total_updated_value` com o valor ajustado da ONZ, `value` com o valor original do parser local, e `fine_value`/`interest_value` se disponíveis
+- Manter o fallback do parser local caso a chamada falhe (por ex. boleto de convênio)
+- Retornar `recipient_name` e `recipient_document` do creditor da ONZ
 
-- Boletos vencidos mostram aviso claro de que juros/multa serão aplicados
-- Valor original e vencimento são extraídos do código de barras
-- Transação é salva com o valor real pago (incluindo juros), não o valor original
+### 2. `src/components/payment/BoletoPaymentDrawer.tsx`
+
+- Remover o warning genérico de "juros serão calculados automaticamente" (não será mais necessário pois o valor já virá correto)
+- Quando `total_updated_value` existir e for diferente de `value`, mostrar o valor original, o acréscimo (juros+multa), e o valor final atualizado
+- Calcular `interest+fine = total_updated_value - value` quando os campos individuais não vierem separados
+
+### 3. `src/hooks/useBilletPayment.ts`
+
+- Adicionar campos `is_overdue`, `provider`, `note` ao tipo `BilletConsultResult` para consistência com o que o backend retorna
+
+## Resultado
+
+- Boletos vencidos mostram o **valor real com juros** calculado pela ONZ antes da confirmação
+- Usuário vê breakdown: valor original + encargos = valor final
+- Boletos em dia continuam funcionando normalmente (valor original = valor ajustado)
 
