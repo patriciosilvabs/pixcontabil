@@ -21,6 +21,7 @@ export function usePixBalance() {
     message: null,
     error: null,
   });
+  const [isRefetching, setIsRefetching] = useState(false);
 
   const fetchBalance = useCallback(async () => {
     if (!currentCompany?.id) {
@@ -80,14 +81,13 @@ export function usePixBalance() {
 
   useEffect(() => {
     fetchBalance();
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchBalance();
-      }
-    }, 60000);
-
-    return () => clearInterval(interval);
   }, [fetchBalance]);
 
-  return { ...state, refetch: fetchBalance };
+  const manualRefetch = useCallback(async () => {
+    setIsRefetching(true);
+    await fetchBalance();
+    setIsRefetching(false);
+  }, [fetchBalance]);
+
+  return { ...state, refetch: manualRefetch, isRefetching };
 }

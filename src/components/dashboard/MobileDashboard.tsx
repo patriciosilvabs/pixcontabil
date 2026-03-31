@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle, Banknote } from "lucide-react";
+import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle, Banknote, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
@@ -29,6 +29,8 @@ interface MobileDashboardProps {
   dataLoading?: boolean;
   canViewBalance?: boolean;
   onOpenBarcodeScanner?: () => void;
+  onRefreshBalance?: () => void;
+  balanceRefetching?: boolean;
 }
 
 const quickActions = [
@@ -45,7 +47,7 @@ const quickActions = [
 
 const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }).toUpperCase();
 
-export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], missingReceipts = [], dataLoading, canViewBalance = false, onOpenBarcodeScanner }: MobileDashboardProps) {
+export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], missingReceipts = [], dataLoading, canViewBalance = false, onOpenBarcodeScanner, onRefreshBalance, balanceRefetching }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
@@ -89,9 +91,20 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
       {canViewBalance && (
         <Card className="overflow-hidden shadow-md">
           <CardContent className="p-5">
-            <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-              Saldo Disponível
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                Saldo Disponível
+              </span>
+              {onRefreshBalance && (
+                <button
+                  onClick={onRefreshBalance}
+                  disabled={balanceRefetching}
+                  className="h-7 w-7 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 text-muted-foreground ${balanceRefetching ? 'animate-spin' : ''}`} />
+                </button>
+              )}
+            </div>
             {balanceLoading ? (
               <Skeleton className="h-9 w-32 mt-1" />
             ) : (
