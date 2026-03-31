@@ -31,7 +31,8 @@ export function OperatorDashboard() {
   const isMobile = useIsMobile();
   const { balanceVisible, toggleBalance } = useBalanceVisibility();
   const { summary, recentTransactions, missingReceipts, isLoading: dataLoading } = useDashboardData();
-  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = usePixBalance();
+  const pixBalance = usePixBalance({ enabled: canViewBalance });
+  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = pixBalance;
 
   const [barcodeScannerOpen, setBarcodeScannerOpen] = React.useState(false);
   const [scannedBarcode, setScannedBarcode] = React.useState("");

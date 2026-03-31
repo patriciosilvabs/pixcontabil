@@ -225,6 +225,10 @@ export function useDashboardData() {
     };
 
     fetchData();
+
+    return () => {
+      invalidateDashboardCache();
+    };
   }, [currentCompany?.id, isAdmin, user?.id]);
 
   return { summary, categoryData, recentTransactions, missingReceipts, isLoading };
