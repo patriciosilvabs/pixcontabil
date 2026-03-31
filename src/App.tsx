@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { BalanceVisibilityProvider } from "@/contexts/BalanceVisibilityContext";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { Loader2 } from "lucide-react";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Lazy-loaded pages for code splitting — reduces initial bundle
 const Auth = lazy(() => import("./pages/Auth"));
