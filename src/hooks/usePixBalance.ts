@@ -81,14 +81,13 @@ export function usePixBalance() {
 
   useEffect(() => {
     fetchBalance();
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchBalance();
-      }
-    }, 60000);
-
-    return () => clearInterval(interval);
   }, [fetchBalance]);
 
-  return { ...state, refetch: fetchBalance };
+  const manualRefetch = useCallback(async () => {
+    setIsRefetching(true);
+    await fetchBalance();
+    setIsRefetching(false);
+  }, [fetchBalance]);
+
+  return { ...state, refetch: manualRefetch, isRefetching };
 }

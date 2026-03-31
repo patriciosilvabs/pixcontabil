@@ -141,9 +141,18 @@ export function AdminDashboard() {
                 <div className="h-10 w-10 rounded-lg bg-white/20 flex items-center justify-center">
                   <Wallet className="h-5 w-5" />
                 </div>
-                <span className="text-xs bg-white/20 px-2 py-1 rounded-full">
-                  Saldo atual
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs bg-white/20 px-2 py-1 rounded-full">
+                    Saldo atual
+                  </span>
+                  <button
+                    onClick={refetchBalance}
+                    disabled={balanceRefetching}
+                    className="h-7 w-7 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${balanceRefetching ? 'animate-spin' : ''}`} />
+                  </button>
+                </div>
               </div>
               {balanceLoading ? (
                 <Skeleton className="h-9 w-40 bg-white/20" />

@@ -91,9 +91,20 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
       {canViewBalance && (
         <Card className="overflow-hidden shadow-md">
           <CardContent className="p-5">
-            <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
-              Saldo Disponível
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+                Saldo Disponível
+              </span>
+              {onRefreshBalance && (
+                <button
+                  onClick={onRefreshBalance}
+                  disabled={balanceRefetching}
+                  className="h-7 w-7 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 text-muted-foreground ${balanceRefetching ? 'animate-spin' : ''}`} />
+                </button>
+              )}
+            </div>
             {balanceLoading ? (
               <Skeleton className="h-9 w-32 mt-1" />
             ) : (
