@@ -11,7 +11,8 @@ interface PixBalanceState {
   error: string | null;
 }
 
-export function usePixBalance() {
+export function usePixBalance(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const { currentCompany } = useAuth();
   const [state, setState] = useState<PixBalanceState>({
     balance: null,
