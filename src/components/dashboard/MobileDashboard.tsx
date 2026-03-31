@@ -8,7 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
-import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle, Banknote } from "lucide-react";
+import { QrCode, Key, ClipboardPaste, Star, CalendarClock, FileText, ArrowUpRight, Wallet, DollarSign, Inbox, ChevronRight, AlertTriangle, Banknote, RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
