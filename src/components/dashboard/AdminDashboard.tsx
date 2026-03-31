@@ -31,7 +31,7 @@ export function AdminDashboard() {
   const { profile, currentCompany, canViewBalance } = useAuth();
   const isMobile = useIsMobile();
   const { balanceVisible, toggleBalance } = useBalanceVisibility();
-  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = usePixBalance();
+  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider, refetch: refetchBalance, isRefetching: balanceRefetching } = usePixBalance();
   const { summary, categoryData, recentTransactions, missingReceipts, isLoading: dataLoading } = useDashboardData();
 
   const [barcodeScannerOpen, setBarcodeScannerOpen] = React.useState(false);
