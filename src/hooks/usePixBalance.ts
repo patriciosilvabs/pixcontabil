@@ -21,6 +21,7 @@ export function usePixBalance() {
     message: null,
     error: null,
   });
+  const [isRefetching, setIsRefetching] = useState(false);
 
   const fetchBalance = useCallback(async () => {
     if (!currentCompany?.id) {
