@@ -29,6 +29,8 @@ interface MobileDashboardProps {
   dataLoading?: boolean;
   canViewBalance?: boolean;
   onOpenBarcodeScanner?: () => void;
+  onRefreshBalance?: () => void;
+  balanceRefetching?: boolean;
 }
 
 const quickActions = [
