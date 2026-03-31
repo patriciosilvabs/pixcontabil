@@ -81,8 +81,12 @@ export function usePixBalance(options?: { enabled?: boolean }) {
   }, [currentCompany?.id]);
 
   useEffect(() => {
-    fetchBalance();
-  }, [fetchBalance]);
+    if (enabled) {
+      fetchBalance();
+    } else {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [fetchBalance, enabled]);
 
   const manualRefetch = useCallback(async () => {
     setIsRefetching(true);
