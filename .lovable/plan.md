@@ -1,56 +1,34 @@
 
 
-# Puxar valor correto com juros antes do pagamento (ONZ)
+# Remover polling de saldo e adicionar botão manual de atualização
 
-## Problema
+## Resumo
 
-Para o provedor ONZ, a API **não possui endpoint de consulta de boleto**. Atualmente o sistema faz parsing local do código de barras (extrai valor original e vencimento), mas não consegue mostrar o valor atualizado com juros/multa antes do pagamento.
-
-## Solução: Usar `paymentFlow: 'APPROVAL_REQUIRED'`
-
-A API ONZ suporta dois fluxos: `INSTANT` (executa imediatamente) e `APPROVAL_REQUIRED` (cria o pagamento pendente sem executar). Ao usar `APPROVAL_REQUIRED` na etapa de consulta, a ONZ retorna o valor ajustado (com juros e multa) sem efetuar o pagamento.
-
-### Fluxo proposto
-
-```text
-[1] Usuário escaneia boleto
-        │
-[2] billet-consult (ONZ)
-    POST /billets/payments  { paymentFlow: "APPROVAL_REQUIRED" }
-    → ONZ retorna valor ajustado + billet ID
-        │
-[3] Frontend exibe valor com juros para confirmação
-        │
-[4] billet-pay (ONZ)
-    POST /billets/payments  { paymentFlow: "INSTANT" }  (novo pagamento)
-    → Pagamento executado com o valor correto
-```
-
-O pagamento APPROVAL_REQUIRED criado na consulta ficará pendente e expirará automaticamente (não é executado).
+Remover o `setInterval` de 60s do `usePixBalance` e adicionar um botão de "Atualizar Saldo" nos cards de saldo (mobile e desktop). O saldo só será buscado na montagem inicial e quando o usuário clicar no botão.
 
 ## Alterações
 
-### 1. `supabase/functions/billet-consult/index.ts` (ONZ path)
+### 1. `src/hooks/usePixBalance.ts`
 
-- Em vez de apenas parsing local, chamar `POST {base_url}/billets/payments` com `paymentFlow: 'APPROVAL_REQUIRED'` e o digitableCode
-- Extrair da resposta ONZ: `amount` (valor ajustado com juros), `payment.amount`, `dueDate`, `creditor`
-- Retornar `total_updated_value` com o valor ajustado da ONZ, `value` com o valor original do parser local, e `fine_value`/`interest_value` se disponíveis
-- Manter o fallback do parser local caso a chamada falhe (por ex. boleto de convênio)
-- Retornar `recipient_name` e `recipient_document` do creditor da ONZ
+- Remover o `setInterval` do `useEffect` — manter apenas a chamada inicial `fetchBalance()`
+- Adicionar estado `isRefetching` para diferenciar loading inicial de refresh manual
+- Expor `isRefetching` no retorno do hook
 
-### 2. `src/components/payment/BoletoPaymentDrawer.tsx`
+### 2. `src/components/dashboard/MobileDashboard.tsx` — Card de saldo mobile
 
-- Remover o warning genérico de "juros serão calculados automaticamente" (não será mais necessário pois o valor já virá correto)
-- Quando `total_updated_value` existir e for diferente de `value`, mostrar o valor original, o acréscimo (juros+multa), e o valor final atualizado
-- Calcular `interest+fine = total_updated_value - value` quando os campos individuais não vierem separados
+- Adicionar prop `onRefreshBalance` e `balanceRefetching`
+- Ao lado do título "Saldo Disponível", adicionar um botão com ícone `RefreshCw` que chama `onRefreshBalance`
+- Mostrar ícone girando (`animate-spin`) quando `balanceRefetching` for true
 
-### 3. `src/hooks/useBilletPayment.ts`
+### 3. `src/components/dashboard/AdminDashboard.tsx` — Card de saldo desktop
 
-- Adicionar campos `is_overdue`, `provider`, `note` ao tipo `BilletConsultResult` para consistência com o que o backend retorna
+- Obter `refetch` e `isRefetching` do `usePixBalance()`
+- No card de saldo desktop, adicionar botão `RefreshCw` similar ao mobile
+- Passar `onRefreshBalance={refetch}` e `balanceRefetching={isRefetching}` para `MobileDashboard`
 
 ## Resultado
 
-- Boletos vencidos mostram o **valor real com juros** calculado pela ONZ antes da confirmação
-- Usuário vê breakdown: valor original + encargos = valor final
-- Boletos em dia continuam funcionando normalmente (valor original = valor ajustado)
+- Zero chamadas automáticas de saldo após o carregamento inicial
+- Usuário com permissão `can_view_balance` atualiza manualmente clicando no botão
+- Redução significativa no consumo de Edge Functions
 
