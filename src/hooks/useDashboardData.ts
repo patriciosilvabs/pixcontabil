@@ -63,7 +63,7 @@ const CHART_COLORS = [
 
 // Simple in-memory cache to avoid re-fetching on every navigation
 let dashboardCache: { key: string; data: any; timestamp: number } | null = null;
-const CACHE_TTL = 3 * 60 * 1000; // 3 minutes
+const CACHE_TTL = 1 * 60 * 1000; // 1 minute
 
 export function invalidateDashboardCache() {
   dashboardCache = null;
