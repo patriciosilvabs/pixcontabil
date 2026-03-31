@@ -1,34 +1,41 @@
 
 
-# Remover polling de saldo e adicionar botão manual de atualização
+# Corrigir tela branca após várias transações
 
-## Resumo
+## Diagnóstico
 
-Remover o `setInterval` de 60s do `usePixBalance` e adicionar um botão de "Atualizar Saldo" nos cards de saldo (mobile e desktop). O saldo só será buscado na montagem inicial e quando o usuário clicar no botão.
+O erro `"Should have a queue"` é um bug interno do React que ocorre quando o estado dos hooks fica corrompido — geralmente após navegações intensas ou acúmulo de estado em memória. O problema é agravado porque o projeto **não possui ErrorBoundary** — qualquer crash no React resulta em tela branca irrecuperável, obrigando o usuário a recarregar manualmente.
+
+Fatores contribuintes:
+- **Sem ErrorBoundary**: crash em qualquer componente = tela branca total
+- **Cache em memória no `useDashboardData`**: variável global `dashboardCache` acumula dados entre navegações
+- **`OperatorDashboard` ainda instancia `usePixBalance` sem usar refetch**: chamada desnecessária de Edge Function
 
 ## Alterações
 
-### 1. `src/hooks/usePixBalance.ts`
+### 1. Criar `src/components/ErrorBoundary.tsx`
 
-- Remover o `setInterval` do `useEffect` — manter apenas a chamada inicial `fetchBalance()`
-- Adicionar estado `isRefetching` para diferenciar loading inicial de refresh manual
-- Expor `isRefetching` no retorno do hook
+- Class component com `componentDidCatch` que captura erros de renderização
+- Exibe mensagem amigável ("Algo deu errado") com botão "Recarregar página"
+- Faz `window.location.reload()` ao clicar
 
-### 2. `src/components/dashboard/MobileDashboard.tsx` — Card de saldo mobile
+### 2. Envolver o app com ErrorBoundary em `src/App.tsx`
 
-- Adicionar prop `onRefreshBalance` e `balanceRefetching`
-- Ao lado do título "Saldo Disponível", adicionar um botão com ícone `RefreshCw` que chama `onRefreshBalance`
-- Mostrar ícone girando (`animate-spin`) quando `balanceRefetching` for true
+- Adicionar `<ErrorBoundary>` ao redor das `<Routes>` dentro do `<Suspense>`
+- Garante que qualquer crash mostra tela de recuperação em vez de branco
 
-### 3. `src/components/dashboard/AdminDashboard.tsx` — Card de saldo desktop
+### 3. Limpar cache do dashboard ao navegar para fora
 
-- Obter `refetch` e `isRefetching` do `usePixBalance()`
-- No card de saldo desktop, adicionar botão `RefreshCw` similar ao mobile
-- Passar `onRefreshBalance={refetch}` e `balanceRefetching={isRefetching}` para `MobileDashboard`
+- Em `useDashboardData`, chamar `invalidateDashboardCache()` no cleanup do `useEffect` (return) para evitar acúmulo de dados stale
+- Reduzir TTL do cache de 3 min para 1 min
+
+### 4. Corrigir `OperatorDashboard` — remover `usePixBalance` quando não há `canViewBalance`
+
+- Só chamar `usePixBalance()` quando o operador tem permissão de ver saldo (mover para condicional ou lazy)
 
 ## Resultado
 
-- Zero chamadas automáticas de saldo após o carregamento inicial
-- Usuário com permissão `can_view_balance` atualiza manualmente clicando no botão
-- Redução significativa no consumo de Edge Functions
+- Crashes do React mostram tela de recuperação com botão de recarregar (nunca mais tela branca)
+- Menor acúmulo de memória no cache do dashboard
+- Menos chamadas desnecessárias de Edge Functions para operadores sem permissão de saldo
 
