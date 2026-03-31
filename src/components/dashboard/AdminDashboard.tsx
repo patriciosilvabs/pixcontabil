@@ -83,6 +83,8 @@ export function AdminDashboard() {
       dataLoading={dataLoading}
       canViewBalance={canViewBalance}
       onOpenBarcodeScanner={acquireStreamAndOpenBarcode}
+      onRefreshBalance={refetchBalance}
+      balanceRefetching={balanceRefetching}
     />
   ) : (
     <div className="p-6 lg:p-8 space-y-6">
