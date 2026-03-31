@@ -11,7 +11,8 @@ interface PixBalanceState {
   error: string | null;
 }
 
-export function usePixBalance() {
+export function usePixBalance(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   const { currentCompany } = useAuth();
   const [state, setState] = useState<PixBalanceState>({
     balance: null,
@@ -80,8 +81,12 @@ export function usePixBalance() {
   }, [currentCompany?.id]);
 
   useEffect(() => {
-    fetchBalance();
-  }, [fetchBalance]);
+    if (enabled) {
+      fetchBalance();
+    } else {
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  }, [fetchBalance, enabled]);
 
   const manualRefetch = useCallback(async () => {
     setIsRefetching(true);
