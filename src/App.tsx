@@ -56,6 +56,7 @@ const App = () => (
         <AuthProvider>
           <BalanceVisibilityProvider>
           <Suspense fallback={<PageFallback />}>
+          <ErrorBoundary>
           <Routes>
             <Route path="/auth" element={<Auth />} />
 
