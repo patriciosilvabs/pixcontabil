@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { useQuickTags } from "@/hooks/useQuickTags";
+import { Badge } from "@/components/ui/badge";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -125,6 +127,15 @@ export default function NewPayment() {
   const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
+  const { tags: quickTags } = useQuickTags();
+
+  // Quick tag state for key payments
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [orderNumber, setOrderNumber] = useState("");
+  const [receiptRequired, setReceiptRequired] = useState(true);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
 
   // Probe states for beneficiary verification
   const [probeLoading, setProbeLoading] = useState(false);
@@ -216,10 +227,14 @@ export default function NewPayment() {
 
     try {
       const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
+      let finalDescription = pixData.description?.trim() || 'Pagamento Pix';
+      if (orderNumber.trim()) {
+        finalDescription = `${finalDescription} #${orderNumber.trim()}`;
+      }
       const result = await payByKey({
         pix_key: pixData.key || '',
         valor: amount,
-        descricao: pixData.description?.trim() || 'Pagamento Pix',
+        descricao: finalDescription,
       });
 
       if (result) {
@@ -290,6 +305,17 @@ export default function NewPayment() {
           description: "Informe um valor válido",
         });
         return;
+      }
+      // Validate quick tags for key payments
+      if (pixData.type === "key") {
+        if (quickTags.length > 0 && !selectedTagId) {
+          toast({ variant: "destructive", title: "Erro", description: "Selecione uma tag" });
+          return;
+        }
+        if (descriptionRequired && !pixData.description?.trim()) {
+          toast({ variant: "destructive", title: "Erro", description: "Informe a descrição do pagamento" });
+          return;
+        }
       }
     }
 
@@ -390,7 +416,8 @@ export default function NewPayment() {
             amount={parseFloat(pixData.amount?.replace(",", ".") || "0")}
             beneficiaryName={probeBeneficiaryName || pixData.key || ""}
             onClose={() => navigate("/")}
-            redirectToReceiptCapture={true}
+            redirectToReceiptCapture={receiptRequired}
+            skipReceiptCapture={!receiptRequired}
           />
         </div>
       ) : (
@@ -797,6 +824,77 @@ export default function NewPayment() {
                   />
                 </div>
               </div>
+
+              {/* Quick Tags - only for key payments */}
+              {pixData.type === "key" && quickTags.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Tags Rápidas
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {quickTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => {
+                          if (selectedTagId === tag.id) {
+                            setSelectedTagId(null);
+                            setShowOrderInput(false);
+                            setReceiptRequired(true);
+                            setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                            setDescriptionRequired(true);
+                          } else {
+                            setSelectedTagId(tag.id);
+                            setShowOrderInput(tag.request_order_number);
+                            setReceiptRequired(tag.receipt_required);
+                            setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+                            setDescriptionRequired(tag.description_required);
+                          }
+                        }}
+                        className={`h-10 px-4 rounded-full font-medium text-sm border transition-all ${
+                          selectedTagId === tag.id
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                        }`}
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Order Number Input */}
+              {pixData.type === "key" && showOrderInput && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Nº do Pedido
+                  </Label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ex: 1234"
+                    value={orderNumber}
+                    onChange={(e) => setOrderNumber(e.target.value)}
+                    className="h-12 text-base"
+                  />
+                </div>
+              )}
+
+              {/* Description - for key payments */}
+              {pixData.type === "key" && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Descrição {descriptionRequired ? "*" : "(opcional)"}
+                  </Label>
+                  <Textarea
+                    placeholder={descriptionPlaceholder}
+                    value={pixData.description || ""}
+                    onChange={(e) => setPixData({ ...pixData, description: e.target.value })}
+                    className="min-h-[80px]"
+                  />
+                </div>
+              )}
 
             </CardContent>
           </Card>
