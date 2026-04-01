@@ -52,6 +52,7 @@ export default function QuickTags() {
     setFormRequestOrder(tag.request_order_number);
     setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
+    setFormPlaceholder(tag.description_placeholder || "");
     setDialogOpen(true);
   };
 
