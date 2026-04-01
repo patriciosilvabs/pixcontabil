@@ -96,6 +96,10 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   };
 
   const handleConfirm = async () => {
+    if (!companyName.trim()) {
+      toast.error("Informe o nome da empresa que está recebendo o pagamento");
+      return;
+    }
     if (!description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
@@ -111,7 +115,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
       try {
         await supabase
           .from("transactions")
-          .update({ description: description.trim() } as any)
+          .update({ description: description.trim(), beneficiary_name: companyName.trim() } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixQrPaymentDrawer] Failed to update transaction metadata:", e);
