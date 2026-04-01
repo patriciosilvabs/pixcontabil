@@ -23,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2, KeyRound, Check, X } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
