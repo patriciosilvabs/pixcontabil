@@ -1,41 +1,31 @@
 
 
-# Corrigir tela branca após várias transações
+# Melhorar UI dos templates de perfil
 
-## Diagnóstico
-
-O erro `"Should have a queue"` é um bug interno do React que ocorre quando o estado dos hooks fica corrompido — geralmente após navegações intensas ou acúmulo de estado em memória. O problema é agravado porque o projeto **não possui ErrorBoundary** — qualquer crash no React resulta em tela branca irrecuperável, obrigando o usuário a recarregar manualmente.
-
-Fatores contribuintes:
-- **Sem ErrorBoundary**: crash em qualquer componente = tela branca total
-- **Cache em memória no `useDashboardData`**: variável global `dashboardCache` acumula dados entre navegações
-- **`OperatorDashboard` ainda instancia `usePixBalance` sem usar refetch**: chamada desnecessária de Edge Function
+## Problemas
+1. Descrições dos templates estão com texto pequeno e desorganizado
+2. Ao selecionar um template, não há indicação visual de qual perfil está ativo
 
 ## Alterações
 
-### 1. Criar `src/components/ErrorBoundary.tsx`
+### `src/pages/Users.tsx`
 
-- Class component com `componentDidCatch` que captura erros de renderização
-- Exibe mensagem amigável ("Algo deu errado") com botão "Recarregar página"
-- Faz `window.location.reload()` ao clicar
+**1. Adicionar estado `selectedTemplate`** para rastrear qual template foi selecionado:
+- `const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)`
+- No `openEdit`, detectar automaticamente qual template corresponde às permissões carregadas (comparar com cada template) ou deixar `null`
+- Ao clicar num template, setar `selectedTemplate` com a key
 
-### 2. Envolver o app com ErrorBoundary em `src/App.tsx`
+**2. Melhorar visual dos botões de template:**
+- Quando `selectedTemplate === key`, aplicar borda colorida (`border-primary bg-primary/5`) e mostrar um Badge "Ativo" no canto
+- Reformatar descrições: usar frases curtas em lista com ícones (✓ Saldo, ✗ Configurações) em vez de texto corrido
+- Aumentar padding e espaçamento para melhor legibilidade
 
-- Adicionar `<ErrorBoundary>` ao redor das `<Routes>` dentro do `<Suspense>`
-- Garante que qualquer crash mostra tela de recuperação em vez de branco
-
-### 3. Limpar cache do dashboard ao navegar para fora
-
-- Em `useDashboardData`, chamar `invalidateDashboardCache()` no cleanup do `useEffect` (return) para evitar acúmulo de dados stale
-- Reduzir TTL do cache de 3 min para 1 min
-
-### 4. Corrigir `OperatorDashboard` — remover `usePixBalance` quando não há `canViewBalance`
-
-- Só chamar `usePixBalance()` quando o operador tem permissão de ver saldo (mover para condicional ou lazy)
+**3. Mostrar Badge do perfil ativo** acima da seção de ajustes individuais:
+- Quando um template está selecionado, exibir um `Badge` com o nome do perfil (ex: "Perfil: Operacional") com cor diferenciada
+- Texto informativo: "Ajustes abaixo sobrescrevem o template selecionado"
 
 ## Resultado
-
-- Crashes do React mostram tela de recuperação com botão de recarregar (nunca mais tela branca)
-- Menor acúmulo de memória no cache do dashboard
-- Menos chamadas desnecessárias de Edge Functions para operadores sem permissão de saldo
+- Templates com visual claro e organizado
+- Usuário sabe exatamente qual perfil está aplicado ao membro
+- Descrições legíveis com destaques visuais do que cada perfil inclui/exclui
 
