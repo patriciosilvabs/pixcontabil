@@ -421,6 +421,12 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   onChange={(e) => setAmount(e.target.value)}
                   className="h-14 text-2xl font-bold text-center"
                   data-vaul-no-drag
+                  onFocus={(e) => {
+                    const el = e.target;
+                    setTimeout(() => {
+                      el.scrollIntoView({ block: "center", behavior: "smooth" });
+                    }, 400);
+                  }}
                 />
               </div>
 
