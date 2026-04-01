@@ -803,32 +803,32 @@ export default function Users() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <Dialog open={passwordDialog} onOpenChange={(open) => { setPasswordDialog(open); if (!open) setNewPassword(""); }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Nova Senha</DialogTitle>
-              <DialogDescription>
+        <ResponsiveDialog open={passwordDialog} onOpenChange={(open) => { setPasswordDialog(open); if (!open) setNewPassword(""); }}>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Nova Senha</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>
                 Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
+              </ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-2 ${isMobile ? "px-4" : ""}`}>
               <Label>Nova Senha</Label>
               <Input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
-                autoFocus
+                data-vaul-no-drag
               />
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setPasswordDialog(false); setNewPassword(""); }}>Cancelar</Button>
-              <Button onClick={handleResetPassword} disabled={isResettingPassword || newPassword.length < 6}>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => { setPasswordDialog(false); setNewPassword(""); }} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleResetPassword} disabled={isResettingPassword || newPassword.length < 6} className="min-h-[44px]">
                 {isResettingPassword && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
       </div>
     </MainLayout>
   );
