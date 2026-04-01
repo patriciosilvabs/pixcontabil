@@ -670,23 +670,44 @@ export default function ReceiptCapture() {
         )}
 
         {/* Submit button */}
-        <Button
-          className="w-full bg-gradient-accent hover:opacity-90 shadow-accent text-lg h-14"
-          disabled={!canSubmit || isSubmitting}
-          onClick={handleSubmit}
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Salvando...
-            </>
-          ) : (
-            <>
-              <Check className="mr-2 h-5 w-5" />
-              Salvar Comprovante
-            </>
+        <div className="space-y-3">
+          <Button
+            className="w-full bg-gradient-accent hover:opacity-90 shadow-accent text-lg h-14"
+            disabled={!canSubmit || isSubmitting}
+            onClick={handleSubmit}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              <>
+                <Check className="mr-2 h-5 w-5" />
+                Salvar Comprovante
+              </>
+            )}
+          </Button>
+
+          {/* Contingency: save without photo */}
+          {!receiptData.file && canSaveWithoutReceipt && (
+            <Button
+              variant="outline"
+              className="w-full h-12 text-sm"
+              disabled={isSubmitting}
+              onClick={handleSaveWithoutReceipt}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar classificação sem comprovante"
+              )}
+            </Button>
           )}
-        </Button>
+        </div>
           </>
         )}
       </div>
