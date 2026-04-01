@@ -63,6 +63,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     consultBillet(barcode).then((result) => {
       if (result) {
         setConsultInfo(result);
+        if (result.recipient_name) setCompanyName(result.recipient_name);
         if (result.total_updated_value && result.total_updated_value > 0) {
           setAmount(result.total_updated_value.toFixed(2).replace(".", ","));
         } else if (result.value && result.value > 0) {
