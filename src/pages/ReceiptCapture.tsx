@@ -547,6 +547,7 @@ export default function ReceiptCapture() {
                       <span className="font-bold">DESPESA</span>
                     </Button>
                   </div>
+                  )}
 
                   {/* Subcategories */}
                   {receiptData.classification && (
