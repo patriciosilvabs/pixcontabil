@@ -425,7 +425,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                       <button
                         key={tag.id}
                         type="button"
-                        onClick={() => {
+                      onClick={() => {
                           const separator = description.trim() ? " | " : "";
                           setDescription((prev) => (prev.trim() + separator + tag.name).slice(0, 140));
                           if (tag.suggested_classification) {
@@ -436,6 +436,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                           }
                           if (!tag.receipt_required) {
                             setReceiptRequired(false);
+                          }
+                          if (tag.description_placeholder) {
+                            setDescriptionPlaceholder(tag.description_placeholder);
                           }
                         }}
                         className="h-10 px-4 rounded-full bg-primary/10 text-primary font-medium text-sm border border-primary/20 hover:bg-primary/20 active:scale-95 transition-all"
