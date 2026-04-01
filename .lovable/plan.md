@@ -1,33 +1,51 @@
 
+# Corrigir bug: transação com tag ainda vira “comprovante pendente”
 
-# Tags = Sem Comprovante Manual
+## O bug real encontrado
+A regra da tag hoje está aplicada só na interface, não na persistência:
 
-## Resumo
+- `src/pages/NewPayment.tsx` esconde o botão “Anexar Comprovante”, mas não salva a transação com `receipt_required = false`
+- `src/components/pix/PixKeyDialog.tsx` tenta corrigir isso depois do pagamento com um `update`, mas isso é frágil e não pode ser a regra principal
+- `supabase/functions/pix-pay-dict/index.ts` cria a transação sem informar `receipt_required`, então o banco usa o padrão `true`
 
-Quando uma Quick Tag é utilizada na transação, o comprovante manual (foto de NF) não deve ser exigido. O auto-comprovante da API é suficiente. Isso se aplica a **todas** as tags, pois representam pagamentos a pessoas físicas (motoboy, gás, etc.) onde não há nota fiscal.
+Por isso, na próxima transação, o sistema lê a transação anterior como pendente. O `usePendingReceipts` não está errado; ele só está lendo um dado salvo errado.
 
-## Alterações
+## Plano de correção
+1. `src/hooks/usePixPayment.ts`
+   - ampliar `payByKey` para aceitar `receipt_required?: boolean`
+   - enviar esse campo para a function `pix-pay-dict`
 
-### 1. `src/components/pix/PixKeyDialog.tsx`
-- Quando qualquer tag é selecionada, forçar `receiptRequired = false` (ignorar o campo `receipt_required` da tag)
-- Remover lógica que lê `tag.receipt_required` para definir `receiptRequired`
+2. `supabase/functions/pix-pay-dict/index.ts`
+   - ler `receipt_required` do body
+   - salvar a transação já no `insert` com `receipt_required: receipt_required ?? true`
+   - manter `true` como padrão para pagamentos sem tag
 
-### 2. `src/pages/NewPayment.tsx`
-- Mesma lógica: ao selecionar uma tag, forçar `receiptRequired = false`
+3. `src/pages/NewPayment.tsx`
+   - no pagamento real com tag, chamar `payByKey(..., receipt_required: false)`
+   - não enviar esse campo na transação de verificação de R$ 0,01
+   - manter um fallback silencioso pós-retorno do `transaction_id` para atualizar `receipt_required = false`, cobrindo duplicate/retry
 
-### 3. `src/pages/QuickTags.tsx` (admin)
-- Remover o switch "Exige Comprovante" (`receipt_required`) do formulário de criação/edição de tags, já que agora todas as tags dispensam comprovante por definição
+4. `src/components/pix/PixKeyDialog.tsx`
+   - aplicar a mesma regra do desktop
+   - deixar de depender só do `update` pós-pagamento
+   - usar o `update` local apenas como proteção extra, não como fonte principal da regra
 
-### 4. Comportamento resultante
-- Após pagamento confirmado, a tela de status mostra apenas "Voltar ao Início" (sem botão "Anexar Comprovante")
-- A transaction é salva com `receipt_required = false`
-- O auto-comprovante da API permanece acessível normalmente
+5. Consistência administrativa
+   - `src/pages/QuickTags.tsx`
+   - `src/hooks/useQuickTags.ts`
+   - remover o uso real de `receipt_required` no cadastro/edição de tags, porque hoje toda tag dispensa comprovante manual por definição
+   - isso evita nova confusão entre configuração da tag e comportamento real do sistema
 
-## Arquivos modificados
+## Resultado esperado
+- pagamento com tag nasce no banco com `receipt_required = false`
+- a tela final continua sem “Anexar Comprovante”
+- ao iniciar um novo pagamento, o sistema não bloqueia nem cobra o comprovante da transação anterior
+- `usePendingReceipts` e os bloqueios do backend passam a funcionar corretamente sem gambiarra
 
-| Arquivo | Alteração |
-|---|---|
-| `src/components/pix/PixKeyDialog.tsx` | Tag selecionada → `receiptRequired = false` sempre |
-| `src/pages/NewPayment.tsx` | Idem |
-| `src/pages/QuickTags.tsx` | Remover switch "Exige Comprovante" |
+## Detalhes técnicos
+- não precisa migration: a coluna `transactions.receipt_required` já existe
+- não vou mexer no `usePendingReceipts`, porque ele já está correto
+- fluxo afetado: Pix por chave com Quick Tag
 
+## Observação importante
+Isso corrige a causa do bug para as próximas transações. A transação já criada com o flag errado pode continuar pendente, porque hoje ela não guarda qual tag foi usada; então esse histórico antigo não dá para corrigir automaticamente com segurança.
