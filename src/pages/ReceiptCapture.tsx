@@ -420,8 +420,10 @@ export default function ReceiptCapture() {
     });
   };
 
-  const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
-  const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing;
+  const canSubmit = hasNoClassificationAccess
+    ? receiptData.file && !receiptData.isProcessing
+    : receiptData.file && receiptData.classification && !receiptData.isProcessing;
+  const canSaveWithoutReceipt = !hasNoClassificationAccess && receiptData.classification && !receiptData.isProcessing;
 
   // Guard: auto-redirect for probe transactions (R$ 0,01)
   const isProbeTransaction = transactionInfo.amount != null && transactionInfo.amount <= 0.01;
