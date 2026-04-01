@@ -324,6 +324,22 @@ export default function QuickTags() {
                 </div>
               </div>
 
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="description-required"
+                  checked={formDescriptionRequired}
+                  onCheckedChange={(v) => setFormDescriptionRequired(v === true)}
+                />
+                <div>
+                  <Label htmlFor="description-required" className="cursor-pointer">
+                    Descrição Obrigatória
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Desmarque para tags onde a descrição é opcional
+                  </p>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label>Placeholder da Descrição</Label>
                 <Input
