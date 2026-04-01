@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 interface MobileHeaderProps {
   balanceVisible: boolean;
   onToggleBalance: () => void;
+  pendingReceiptsCount?: number;
 }
 
 export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderProps) {
