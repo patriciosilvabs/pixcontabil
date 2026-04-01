@@ -175,6 +175,7 @@ export default function ReceiptCapture() {
   // Permission-based classification
   const canClassifyCost = isAdmin || hasFeatureAccess("classificar_insumo");
   const canClassifyExpense = isAdmin || hasFeatureAccess("classificar_despesa");
+  const hasNoClassificationAccess = !canClassifyCost && !canClassifyExpense;
   const hasBothClassifications = canClassifyCost && canClassifyExpense;
   const hasOnlyOneClassification = (canClassifyCost || canClassifyExpense) && !hasBothClassifications;
   const autoClassification: ClassificationType | null = hasOnlyOneClassification
@@ -311,11 +312,20 @@ export default function ReceiptCapture() {
   };
 
   const handleSubmit = async () => {
-    if (!receiptData.file || !receiptData.classification) {
+    if (!receiptData.file) {
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Anexe um comprovante e selecione a classificação.",
+        description: "Anexe um comprovante.",
+      });
+      return;
+    }
+
+    if (!hasNoClassificationAccess && !receiptData.classification) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Selecione a classificação.",
       });
       return;
     }
@@ -410,8 +420,10 @@ export default function ReceiptCapture() {
     });
   };
 
-  const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
-  const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing;
+  const canSubmit = hasNoClassificationAccess
+    ? receiptData.file && !receiptData.isProcessing
+    : receiptData.file && receiptData.classification && !receiptData.isProcessing;
+  const canSaveWithoutReceipt = !hasNoClassificationAccess && receiptData.classification && !receiptData.isProcessing;
 
   // Guard: auto-redirect for probe transactions (R$ 0,01)
   const isProbeTransaction = transactionInfo.amount != null && transactionInfo.amount <= 0.01;
@@ -604,6 +616,21 @@ export default function ReceiptCapture() {
             </Card>
 
             {/* Classification */}
+            {hasNoClassificationAccess ? (
+              <Card className="mb-6 border-primary/30 bg-primary/5">
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <FileText className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Classificação pendente</p>
+                    <p className="text-sm text-muted-foreground">
+                      A classificação contábil será realizada pelo gestor. Anexe o comprovante para prosseguir.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
             <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>Classificar Pagamento</CardTitle>
@@ -745,6 +772,7 @@ export default function ReceiptCapture() {
                   )}
                 </CardContent>
             </Card>
+            )}
           </>
         )}
         {/* Description field */}
