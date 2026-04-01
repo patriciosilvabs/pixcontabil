@@ -32,6 +32,8 @@ export function usePendingReceipts() {
     try {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      // Use whichever is more recent: 30-day window or cutoff date
+      const effectiveSince = thirtyDaysAgo > RECEIPT_CUTOFF_DATE ? thirtyDaysAgo : RECEIPT_CUTOFF_DATE;
 
       // Get completed transactions without manual receipt
       const { data: completedData } = await supabase
