@@ -24,6 +24,7 @@ const Settings = lazy(() => import("./pages/Settings"));
 const PixIntegration = lazy(() => import("./pages/settings/PixIntegration"));
 const BatchPayment = lazy(() => import("./pages/BatchPayment"));
 const MobileMenu = lazy(() => import("./pages/MobileMenu"));
+const QuickTags = lazy(() => import("./pages/QuickTags"));
 const WebhookEvents = lazy(() => import("./pages/WebhookEvents"));
 const Security = lazy(() => import("./pages/Security"));
 const NotFound = lazy(() => import("./pages/NotFound"));
