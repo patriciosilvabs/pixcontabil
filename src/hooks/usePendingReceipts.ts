@@ -9,6 +9,7 @@ export interface PendingReceipt {
   pix_type: string;
   created_at: string;
   description: string | null;
+  status: string;
 }
 
 /**
