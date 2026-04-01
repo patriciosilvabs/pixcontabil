@@ -1,75 +1,40 @@
 
 
-# Inteligência de Tags — Dispensa de Comprovante por Tag
+# Fix: Drawer sobe e conteúdo desaparece quando teclado virtual abre no mobile
 
-## Resumo
+## Problema
 
-Adicionar campo `receipt_required` à tabela `quick_tags` e usá-lo para dispensar automaticamente a obrigatoriedade de foto em transações marcadas com tags que não exigem comprovante (ex: "Troco Cliente"). Isso elimina pendências eternas para pagamentos triviais.
+Quando o usuário toca no campo "Chave Pix" no Step 1 do PixKeyDialog, o teclado virtual do celular abre e empurra o Drawer para cima, fazendo o conteúdo ficar invisível/inacessível. O usuário precisa arrastar manualmente para ver os campos.
 
-## 1. Banco de Dados — Migration
+## Causa raiz
 
-```sql
-ALTER TABLE public.quick_tags
-  ADD COLUMN receipt_required boolean NOT NULL DEFAULT true;
+O viewport meta tag usa o comportamento padrão que redimensiona o layout viewport quando o teclado abre. O Drawer está fixado com `bottom-0` e `max-h-[85dvh]` — quando o teclado abre, o `dvh` muda e o drawer se reposiciona de forma errada.
+
+## Solução
+
+Duas alterações coordenadas:
+
+### 1. Adicionar `interactive-widget=resizes-content` ao viewport meta — `index.html`
+
+Isso instrui o browser a manter o layout viewport estável quando o teclado virtual abre, redimensionando apenas o conteúdo visual. Evita que elementos `fixed` (como o Drawer) sejam reposicionados.
+
+```html
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
 ```
 
-Adicionar também a coluna `receipt_required` na tabela `transactions` para registrar a decisão no momento do pagamento:
+### 2. Ajustar DrawerContent para usar `max-h` baseado em visual viewport — `src/components/ui/drawer.tsx`
 
-```sql
-ALTER TABLE public.transactions
-  ADD COLUMN receipt_required boolean NOT NULL DEFAULT true;
-```
+Adicionar um hook que escuta `visualViewport.resize` e ajusta o `max-height` do drawer dinamicamente, garantindo que o conteúdo sempre caiba na área visível acima do teclado.
 
-## 2. Admin — `QuickTags.tsx` + `useQuickTags.ts`
+### 3. Garantir scroll automático ao campo focado — `src/components/pix/PixKeyDialog.tsx`
 
-- Adicionar checkbox "Exige Comprovante (Foto)" no formulário de criação/edição de tags (default: true)
-- Atualizar o hook `useQuickTagsAdmin` para incluir o novo campo em `createTag` e `updateTag`
-- Atualizar a interface `QuickTag` com o campo `receipt_required`
-
-## 3. Fluxo de Pagamento — `PixKeyDialog.tsx`
-
-- Rastrear no state se a tag selecionada tem `receipt_required = false`
-- Passar essa informação para `handleConfirmRealPayment`
-- Ao enviar o pagamento, incluir `receipt_required` nos dados enviados ao backend (via description metadata ou campo direto na transação)
-- Após pagamento confirmado, se `receipt_required = false`: marcar `classified_at = now()` na transação via UPDATE direto
-
-## 4. Tela de Status — `PaymentStatusScreen.tsx`
-
-- Adicionar prop `skipReceiptCapture?: boolean`
-- Quando `skipReceiptCapture = true` e status é "completed": NÃO mostrar botão "Anexar Comprovante", mostrar apenas "Voltar ao Início"
-- Aplicar em todos os callers: `PixKeyDialog`, `PixCopyPasteDrawer`, `PixQrPaymentDrawer`, `NewPayment`
-
-## 5. Pendências — `usePendingReceipts.ts`
-
-- Alterar a query de transações completadas para filtrar apenas `receipt_required = true`
-- Adicionar `.eq("receipt_required", true)` nas duas queries (completed e stuck)
-
-## 6. Edge Functions — Server-side pendency check
-
-Atualizar as 4 edge functions (`pix-pay-dict`, `pix-pay-qrc`, `billet-pay`, `batch-pay`) para incluir `.eq("receipt_required", true)` no check de pendências server-side, garantindo que transações dispensadas não bloqueiem novos pagamentos.
+Adicionar `onFocus` no input da chave Pix para fazer `scrollIntoView({ block: 'center' })` após breve delay, garantindo que o campo fique visível após o teclado abrir.
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| Migration SQL | `ALTER TABLE quick_tags ADD COLUMN receipt_required`; `ALTER TABLE transactions ADD COLUMN receipt_required` |
-| `src/hooks/useQuickTags.ts` | Incluir `receipt_required` na interface e CRUD |
-| `src/pages/QuickTags.tsx` | Checkbox "Exige Comprovante" no form |
-| `src/components/pix/PixKeyDialog.tsx` | Rastrear `receipt_required` da tag selecionada, passar para status screen, marcar transação como dispensada |
-| `src/components/pix/PaymentStatusScreen.tsx` | Nova prop `skipReceiptCapture`, condicionar botão "Anexar Comprovante" |
-| `src/components/pix/PixCopyPasteDrawer.tsx` | Passar `skipReceiptCapture` quando aplicável |
-| `src/components/pix/PixQrPaymentDrawer.tsx` | Passar `skipReceiptCapture` quando aplicável |
-| `src/pages/NewPayment.tsx` | Passar `skipReceiptCapture` quando aplicável |
-| `src/hooks/usePendingReceipts.ts` | Filtrar `.eq("receipt_required", true)` |
-| `supabase/functions/pix-pay-dict/index.ts` | Filtrar `receipt_required = true` na pendency check |
-| `supabase/functions/pix-pay-qrc/index.ts` | Idem |
-| `supabase/functions/billet-pay/index.ts` | Idem |
-| `supabase/functions/batch-pay/index.ts` | Idem |
-
-## Resultado esperado
-
-- Tags como "Troco Cliente" dispensam foto automaticamente
-- Transações dispensadas não geram pendência e não bloqueiam novos pagamentos
-- Tela de confirmação mostra apenas "Voltar ao Início" para transações dispensadas
-- Admin controla quais tags exigem ou não comprovante
+| `index.html` | Adicionar `interactive-widget=resizes-content` ao viewport meta |
+| `src/components/ui/drawer.tsx` | Hook de visual viewport para max-height dinâmico |
+| `src/components/pix/PixKeyDialog.tsx` | `scrollIntoView` nos inputs do Step 1 |
 
