@@ -137,7 +137,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
       )}
 
       {/* Missing receipts notification */}
-      {missingReceipts.length > 0 && (
+      {pendingCount > 0 && (
         <Card className="border-warning/50 bg-warning/5 shadow-sm">
           <CardContent className="p-3">
             <div className="flex items-center gap-3">
