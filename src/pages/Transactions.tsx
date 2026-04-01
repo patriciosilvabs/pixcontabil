@@ -202,6 +202,15 @@ export default function Transactions() {
                   <SelectItem value="expense">Despesas</SelectItem>
                 </SelectContent>
               </Select>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showProbes}
+                  onChange={(e) => setShowProbes(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Mostrar verificações
+              </label>
             </div>
           </CardContent>
         </Card>
