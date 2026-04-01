@@ -416,7 +416,8 @@ export default function NewPayment() {
             amount={parseFloat(pixData.amount?.replace(",", ".") || "0")}
             beneficiaryName={probeBeneficiaryName || pixData.key || ""}
             onClose={() => navigate("/")}
-            redirectToReceiptCapture={true}
+            redirectToReceiptCapture={receiptRequired}
+            skipReceiptCapture={!receiptRequired}
           />
         </div>
       ) : (
