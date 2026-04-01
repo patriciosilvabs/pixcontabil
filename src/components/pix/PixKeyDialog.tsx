@@ -450,10 +450,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                             setDescriptionPlaceholder("Ex: Pagamento fornecedor");
                             setDescriptionRequired(true);
                           } else {
-                            setSelectedTagId(tag.id);
+                          setSelectedTagId(tag.id);
                             setSuggestedClassification(tag.suggested_classification || null);
                             setShowOrderInput(tag.request_order_number);
-                            setReceiptRequired(tag.receipt_required);
+                            setReceiptRequired(false);
                             setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
                             setDescriptionRequired(tag.description_required);
                           }

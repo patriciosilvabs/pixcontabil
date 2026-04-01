@@ -308,21 +308,6 @@ export default function QuickTags() {
                 </Label>
               </div>
 
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="receipt-required"
-                  checked={formReceiptRequired}
-                  onCheckedChange={(v) => setFormReceiptRequired(v === true)}
-                />
-                <div>
-                  <Label htmlFor="receipt-required" className="cursor-pointer">
-                    Exige Comprovante (Foto)
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Desmarque para tags como "Troco" que não precisam de nota fiscal
-                  </p>
-                </div>
-              </div>
 
               <div className="flex items-center gap-3">
                 <Checkbox
