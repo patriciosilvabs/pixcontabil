@@ -241,6 +241,16 @@ export default function NewPayment() {
       if (result) {
         invalidateDashboardCache();
         setRealTransactionId(result.transaction_id);
+        // Fallback: ensure receipt_required=false for tagged payments (covers duplicates/retries)
+        if (selectedTagId) {
+          supabase
+            .from("transactions")
+            .update({ receipt_required: false } as any)
+            .eq("id", result.transaction_id)
+            .then(({ error }) => {
+              if (error) console.error("[NewPayment] Fallback receipt_required update failed:", error);
+            });
+        }
       }
     } catch (error) {
       console.error('[NewPayment] Real payment error:', error);

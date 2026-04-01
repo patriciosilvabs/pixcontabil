@@ -266,6 +266,7 @@ Deno.serve(async (req) => {
       pix_key, description: descricao, external_id: externalId,
       pix_e2eid: paymentData.e2eId || paymentData.endToEndId || null,
       pix_provider_response: paymentData,
+      receipt_required: receipt_required ?? true,
       ...(ben.name ? { beneficiary_name: ben.name } : {}),
       ...(ben.doc ? { beneficiary_document: ben.doc } : {}),
     }).select('id').single();

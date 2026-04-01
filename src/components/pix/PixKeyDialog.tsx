@@ -260,6 +260,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       pix_key: pixKey.trim(),
       valor: value,
       descricao: fullDescription || undefined,
+      receipt_required: selectedTagId ? false : true,
     });
 
     if (result?.transaction_id) {
