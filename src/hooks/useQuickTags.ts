@@ -95,6 +95,7 @@ export function useQuickTagsAdmin() {
         receipt_required: tag.receipt_required ?? true,
         sort_order: tag.sort_order ?? tags.length,
         description_placeholder: tag.description_placeholder || null,
+        description_required: tag.description_required ?? true,
       } as any);
     if (error) throw error;
     await fetchAll();
