@@ -29,6 +29,7 @@ export default function QuickTags() {
   const [formName, setFormName] = useState("");
   const [formClassification, setFormClassification] = useState<string>("none");
   const [formRequestOrder, setFormRequestOrder] = useState(false);
+  const [formReceiptRequired, setFormReceiptRequired] = useState(true);
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [saving, setSaving] = useState(false);
 
