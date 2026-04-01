@@ -59,7 +59,37 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
-  const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
+  const { pending: pendingReceipts, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const stuckTransactions = pendingReceipts.filter(p => p.status === "pending");
+
+  const handleSyncStuck = async () => {
+    if (stuckTransactions.length === 0) return;
+    setIsSyncing(true);
+    try {
+      const { supabase } = await import("@/integrations/supabase/client");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      for (const tx of stuckTransactions) {
+        try {
+          await supabase.functions.invoke("pix-check-status", {
+            body: { transaction_id: tx.id },
+          });
+        } catch (e) {
+          console.warn(`[sync] Failed to check ${tx.id}:`, e);
+        }
+      }
+      await refreshPending();
+      toast.success("Sincronização concluída!");
+    } catch (err) {
+      console.error("[sync] Error:", err);
+      toast.error("Erro ao sincronizar transações.");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const checkPendencyAndBlock = (): boolean => {
     if (pendingCount > 0) {
