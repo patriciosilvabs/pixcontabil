@@ -93,6 +93,7 @@ export function useQuickTagsAdmin() {
         request_order_number: tag.request_order_number ?? false,
         receipt_required: tag.receipt_required ?? true,
         sort_order: tag.sort_order ?? tags.length,
+        description_placeholder: tag.description_placeholder || null,
       } as any);
     if (error) throw error;
     await fetchAll();
