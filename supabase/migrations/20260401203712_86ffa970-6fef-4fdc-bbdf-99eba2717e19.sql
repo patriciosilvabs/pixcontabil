@@ -1,0 +1,1 @@
+ALTER TABLE public.quick_tags ADD COLUMN description_placeholder text DEFAULT NULL;
