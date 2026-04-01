@@ -1,45 +1,69 @@
 
-
-# Marco Zero (Cut-off) para Comprovantes
+# Limpeza Total de Pendências + Marco Zero em 01/04/2026
 
 ## Resumo
 
-Criar uma constante `RECEIPT_CUTOFF_DATE` e aplicá-la em todos os pontos de verificação de pendência (frontend e server-side), ignorando transações anteriores a essa data.
+Atualizar o marco zero para hoje (01/04/2026), regularizar todas as 655 transações pendentes via UPDATE em massa, garantir filtro de R$ 0,01 em todos os pontos, e forçar refresh imediato do cache.
 
 ## Alterações
 
-### 1. `src/constants/app.ts` — Constante de cut-off
+### 1. Atualizar constante de cut-off — `src/constants/app.ts`
 
-Adicionar:
-```typescript
-export const RECEIPT_CUTOFF_DATE = '2025-05-22T00:00:00Z';
+Mudar `RECEIPT_CUTOFF_DATE` de `"2025-05-22T00:00:00Z"` para `"2026-04-01T00:00:00Z"`.
+
+### 2. Atualizar cut-off nas Edge Functions — `pix-pay-dict`, `pix-pay-qrc`, `billet-pay`
+
+Substituir `'2025-05-22T00:00:00Z'` por `'2026-04-01T00:00:00Z'` na query de pendência server-side de cada uma das 3 funções. Redesplotar as 3 funções.
+
+### 3. Script de regularização em massa (SQL INSERT tool)
+
+Executar via insert tool (pois é UPDATE):
+
+```sql
+UPDATE public.transactions
+SET classified_at = now(),
+    description = COALESCE(NULLIF(description, ''), 'Histórico regularizado')
+WHERE status = 'completed'
+  AND created_at < '2026-04-01T00:00:00Z'
+  AND classified_at IS NULL;
 ```
 
-### 2. `src/hooks/usePendingReceipts.ts` — Filtro por cut-off
+Isso marca ~655 transações antigas como "resolvidas", removendo-as da fila de bloqueio mesmo que o filtro de data falhe.
 
-Substituir `.gte("created_at", thirtyDaysAgo)` por `.gte("created_at", RECEIPT_CUTOFF_DATE)` nas duas queries (completed e stuck). O filtro de 30 dias se torna redundante se o cut-off for mais recente; manter o `Math.max` entre ambos para futuro-proofing.
+### 4. Verificar filtro `.gt("amount", 0.01)` em todos os pontos
 
-### 3. `src/hooks/useDashboardData.ts` — Filtro por cut-off
+Já confirmado presente em:
+- `usePendingReceipts.ts` (linhas 45, 57) ✅
+- `pix-pay-dict` (linha 133) ✅
+- `pix-pay-qrc` (linha 59) ✅
+- `billet-pay` (linha 107) ✅
 
-No `eligibleForManualReceipt`, adicionar condição `new Date(t.created_at) >= new Date(RECEIPT_CUTOFF_DATE)` para excluir transações antigas dos missing receipts do dashboard.
+Falta verificar e adicionar no `batch-pay/index.ts` — este **não tem** o check de pendência. Adicionar.
 
-### 4. Edge Functions (`pix-pay-dict`, `pix-pay-qrc`, `billet-pay`) — Filtro server-side
+### 5. Forçar invalidação de cache — `usePendingReceipts.ts`
 
-Adicionar `.gte('created_at', '2025-05-22T00:00:00Z')` na query de pendência de cada função, para que transações antigas não bloqueiem novos pagamentos.
+Adicionar um `cacheVersion` baseado no `RECEIPT_CUTOFF_DATE` como dependência do `useCallback`, garantindo que ao publicar a nova constante, o hook re-execute automaticamente. O hook atual já depende de `user?.id` e `currentCompany?.id`, e como a constante muda no build, o refresh é automático.
 
-### 5. Toast de boas-vindas (opcional) — `src/components/dashboard/MobileDashboard.tsx`
+Adicionalmente, invalidar o dashboard cache via `invalidateDashboardCache()` no `MobileDashboard` ao montar, para garantir dados frescos.
 
-Exibir toast uma única vez (flag no `localStorage`) informando: "Sistema atualizado. Novas regras de comprovação ativas a partir de hoje."
+### 6. Adicionar pendency check em `batch-pay/index.ts`
+
+O `batch-pay` não tem verificação de pendência. Adicionar o mesmo bloco server-side antes de processar o lote.
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `src/constants/app.ts` | Adicionar `RECEIPT_CUTOFF_DATE` |
-| `src/hooks/usePendingReceipts.ts` | Usar cut-off no `.gte()` |
-| `src/hooks/useDashboardData.ts` | Filtrar eligibleForManualReceipt por cut-off |
-| `supabase/functions/pix-pay-dict/index.ts` | `.gte('created_at', CUTOFF)` na query |
-| `supabase/functions/pix-pay-qrc/index.ts` | Mesmo filtro |
-| `supabase/functions/billet-pay/index.ts` | Mesmo filtro |
-| `src/components/dashboard/MobileDashboard.tsx` | Toast one-time de atualização |
+| `src/constants/app.ts` | `RECEIPT_CUTOFF_DATE = "2026-04-01T00:00:00Z"` |
+| `supabase/functions/pix-pay-dict/index.ts` | Cutoff → `2026-04-01` |
+| `supabase/functions/pix-pay-qrc/index.ts` | Cutoff → `2026-04-01` |
+| `supabase/functions/billet-pay/index.ts` | Cutoff → `2026-04-01` |
+| `supabase/functions/batch-pay/index.ts` | Adicionar pendency check completo |
+| SQL (insert tool) | UPDATE em massa para regularizar transações antigas |
 
+## Resultado esperado
+
+- 655 transações pendentes deixam de bloquear instantaneamente (cutoff + UPDATE)
+- Novos pagamentos só são bloqueados por transações criadas a partir de hoje
+- Probes de R$ 0,01 continuam isentos
+- batch-pay agora tem a mesma trava que os outros endpoints
