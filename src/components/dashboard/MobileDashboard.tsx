@@ -16,6 +16,8 @@ import { ptBR } from "date-fns/locale";
 import type { RecentTransaction, MissingReceiptTransaction } from "@/hooks/useDashboardData";
 import { useAuth } from "@/contexts/AuthContext";
 import { CashPaymentDrawer } from "@/components/payment/CashPaymentDrawer";
+import { usePendingReceipts } from "@/hooks/usePendingReceipts";
+import { toast } from "sonner";
 
 interface MobileDashboardProps {
   balanceVisible: boolean;
