@@ -7,6 +7,8 @@ export interface PendingReceipt {
   beneficiary_name: string | null;
   amount: number;
   pix_type: string;
+  created_at: string;
+  description: string | null;
 }
 
 /**
