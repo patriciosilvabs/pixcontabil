@@ -31,7 +31,7 @@ export function usePendingReceipts() {
       // Get ALL completed transactions by the current user (including pix_type='key')
       const { data } = await supabase
         .from("transactions")
-        .select("id, beneficiary_name, amount, pix_type, receipts(id, ocr_data)")
+        .select("id, beneficiary_name, amount, pix_type, created_at, description, receipts(id, ocr_data)")
         .eq("company_id", currentCompany.id)
         .eq("created_by", user.id)
         .eq("status", "completed")
