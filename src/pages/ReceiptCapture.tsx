@@ -257,6 +257,15 @@ export default function ReceiptCapture() {
       return;
     }
 
+    if (!paymentDescription.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Descrição obrigatória",
+        description: "Descreva o que foi pago para poder anexar o comprovante depois.",
+      });
+      return;
+    }
+
     if (!transactionId || !currentCompany) {
       toast({ variant: "destructive", title: "Erro", description: "Transação ou empresa não encontrada." });
       return;
