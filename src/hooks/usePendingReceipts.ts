@@ -43,7 +43,7 @@ export function usePendingReceipts() {
         .eq("created_by", user.id)
         .eq("status", "completed")
         .gt("amount", 0.01)
-        .gte("created_at", thirtyDaysAgo)
+        .gte("created_at", effectiveSince)
         .order("created_at", { ascending: false })
         .limit(100);
 
