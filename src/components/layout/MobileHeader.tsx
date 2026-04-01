@@ -22,7 +22,7 @@ interface MobileHeaderProps {
   pendingReceiptsCount?: number;
 }
 
-export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderProps) {
+export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance, pendingReceiptsCount = 0 }: MobileHeaderProps) {
   const { profile, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
   const navigate = useNavigate();
 
