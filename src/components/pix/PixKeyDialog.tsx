@@ -451,7 +451,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                             setDescriptionRequired(tag.description_required);
                           }
                         }}
-                        }}
                         className={`h-10 px-4 rounded-full font-medium text-sm border active:scale-95 transition-all ${
                           selectedTagId === tag.id
                             ? "bg-primary text-primary-foreground border-primary"
