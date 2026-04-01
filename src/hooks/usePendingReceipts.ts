@@ -56,7 +56,7 @@ export function usePendingReceipts() {
         .eq("status", "pending")
         .gt("amount", 0.01)
         .lte("created_at", fiveMinAgo)
-        .gte("created_at", thirtyDaysAgo)
+        .gte("created_at", effectiveSince)
         .order("created_at", { ascending: false })
         .limit(20);
 

@@ -138,8 +138,9 @@ export function useDashboardData() {
         }));
 
         // Missing receipt/classification — ALL payment types require manual receipt
+        const cutoffDate = new Date(RECEIPT_CUTOFF_DATE);
         const eligibleForManualReceipt = transactions.filter(
-          (t) => (t.status === "completed" || t.status === "pending") && Number(t.amount) > 0.01
+          (t) => (t.status === "completed" || t.status === "pending") && Number(t.amount) > 0.01 && new Date(t.created_at) >= cutoffDate
         );
 
         const missingReceiptTxs: MissingReceiptTransaction[] = eligibleForManualReceipt
