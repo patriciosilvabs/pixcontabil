@@ -105,7 +105,7 @@ Deno.serve(async (req) => {
         .eq('company_id', company_id)
         .eq('status', 'completed')
         .gt('amount', 0.01)
-        .gte('created_at', '2025-05-22T00:00:00Z')
+        .gte('created_at', '2026-04-01T00:00:00Z')
         .limit(50);
 
       if (completedTxs) {
