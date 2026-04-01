@@ -33,6 +33,7 @@ import {
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
+import { usePendingReceipts } from "@/hooks/usePendingReceipts";
 
 interface MainLayoutProps {
   children: React.ReactNode;
