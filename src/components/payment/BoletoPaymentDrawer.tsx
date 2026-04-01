@@ -43,6 +43,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   useEffect(() => {
     if (!open || !barcode) return;
     setDescription("");
+    setCompanyName("");
     setConsultInfo(null);
     setTransactionId("");
     setStatusState("polling");
