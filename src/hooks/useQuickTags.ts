@@ -83,7 +83,7 @@ export function useQuickTagsAdmin() {
     fetchAll();
   }, [fetchAll]);
 
-  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; receipt_required?: boolean; sort_order?: number; description_placeholder?: string | null }) => {
+  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; receipt_required?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean }) => {
     if (!currentCompany?.id) return;
     const { error } = await supabase
       .from("quick_tags" as any)
