@@ -175,13 +175,22 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       digitable_code: barcode,
       description: description || "Pagamento de boleto",
       amount: value,
-      beneficiary_name: companyName.trim(),
     });
 
     if (result) {
       invalidateDashboardCache();
       const txId = (result as any).transaction_id || (result as any).id;
       if (txId) {
+        // Save beneficiary_name
+        try {
+          const { supabase } = await import("@/integrations/supabase/client");
+          await supabase
+            .from("transactions")
+            .update({ beneficiary_name: companyName.trim() } as any)
+            .eq("id", txId);
+        } catch (e) {
+          console.error("[BoletoPaymentDrawer] Failed to update beneficiary_name:", e);
+        }
         setTransactionId(txId);
         setStep(3);
         startPolling(txId);
