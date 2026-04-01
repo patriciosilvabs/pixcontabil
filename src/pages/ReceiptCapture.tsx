@@ -358,21 +358,23 @@ export default function ReceiptCapture() {
 
       // Status is already set by the payment provider confirmation — do not override here
 
-      // Update category on transaction if selected
+      // Update category and description on transaction
+      const txUpdate: Record<string, any> = {};
+      if (paymentDescription.trim()) {
+        txUpdate.description = paymentDescription.trim();
+      }
       if (receiptData.subcategory) {
         const selectedCategory = categories.find(
           (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
         );
         if (selectedCategory) {
-          await supabase
-            .from("transactions")
-            .update({
-              category_id: selectedCategory.id,
-              classified_by: user.id,
-              classified_at: new Date().toISOString(),
-            })
-            .eq("id", transactionId);
+          txUpdate.category_id = selectedCategory.id;
+          txUpdate.classified_by = user.id;
+          txUpdate.classified_at = new Date().toISOString();
         }
+      }
+      if (Object.keys(txUpdate).length > 0) {
+        await supabase.from("transactions").update(txUpdate).eq("id", transactionId);
       }
 
       invalidateDashboardCache();

@@ -146,11 +146,13 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold uppercase tracking-wider text-warning">
-                  {missingReceipts.length} comprovante{missingReceipts.length > 1 ? "s" : ""} pendente{missingReceipts.length > 1 ? "s" : ""}
+                  {pendingCount} comprovante{pendingCount > 1 ? "s" : ""} pendente{pendingCount > 1 ? "s" : ""}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                  {missingReceipts[0].beneficiary}
-                  {missingReceipts.length > 1 ? ` e mais ${missingReceipts.length - 1}` : ""}
+                  {pendingReceipts[0].beneficiary_name ?? "Sem nome"}
+                  {pendingReceipts[0].amount ? ` — ${formatCurrency(pendingReceipts[0].amount)}` : ""}
+                  {pendingReceipts[0].description ? ` — ${pendingReceipts[0].description}` : ""}
+                  {pendingCount > 1 ? ` e mais ${pendingCount - 1}` : ""}
                 </p>
               </div>
               <Button
