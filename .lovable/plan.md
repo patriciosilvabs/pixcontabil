@@ -1,39 +1,32 @@
 
 
-# Descrição Obrigatória/Opcional por Tag
+# Corrigir Drawer Pix deslocado ao abrir teclado no mobile
 
-## Resumo
+## Problema
 
-Adicionar campo `description_required` (boolean) na tabela `quick_tags` para que o gestor escolha, ao criar/editar cada tag, se o preenchimento da descrição será obrigatório ou não. No fluxo de pagamento, validar conforme essa configuração.
+Quando o usuário toca no campo "Chave Pix" no Step 1 do drawer, o teclado virtual empurra o conteúdo para cima e o drawer fica inacessível — o usuário precisa arrastar manualmente para ver o input.
 
-## Alterações
+Isso ocorre porque o drawer usa `fixed bottom-0`, mas quando o teclado abre, o `bottom-0` refere-se ao viewport do layout (não o visual), fazendo o conteúdo ficar atrás do teclado.
 
-### 1. Migration SQL
-```sql
-ALTER TABLE public.quick_tags
-  ADD COLUMN description_required boolean NOT NULL DEFAULT true;
-```
+## Solução
 
-### 2. `src/hooks/useQuickTags.ts`
-- Adicionar `description_required: boolean` na interface `QuickTag`
-- Incluir no `createTag` e `updateTag`
+### 1. `src/components/ui/drawer.tsx` — Ajustar posicionamento com Visual Viewport
 
-### 3. `src/pages/QuickTags.tsx`
-- Novo state `formDescriptionRequired` (default `true`)
-- Switch no formulário: "Descrição obrigatória?"
-- Passar no `createTag` / `updateTag`
+Atualizar o hook `useVisualViewportHeight` para também retornar o `offsetTop` do visual viewport e aplicar como `bottom` dinâmico no `DrawerContent`, garantindo que o drawer se reposicione quando o teclado abre:
 
-### 4. `src/components/pix/PixKeyDialog.tsx`
-- Ao selecionar uma tag, ler `description_required` e guardar em state
-- Na validação do step (handleStep2/handleConfirm), só exigir descrição preenchida se `descriptionRequired === true`
-- Indicar visualmente no campo se é obrigatório (ex: label "Descrição *" vs "Descrição (opcional)")
+- Capturar `visualViewport.offsetTop` para calcular a posição correta do `bottom`
+- Aplicar `bottom` via `style` inline no `DrawerPrimitive.Content` para compensar o deslocamento do teclado
+- Manter `maxHeight` dinâmico já existente
+
+### 2. `src/components/pix/PixKeyDialog.tsx` — Melhorar scrollIntoView
+
+- Aumentar o delay do `scrollIntoView` de 300ms para 400ms para dar tempo ao reposicionamento do drawer
+- Aplicar `scrollIntoView` também nos inputs de Step 2 (valor, descrição) que sofrem do mesmo problema
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| Migration SQL | `ADD COLUMN description_required boolean DEFAULT true` |
-| `src/hooks/useQuickTags.ts` | Campo na interface + CRUD |
-| `src/pages/QuickTags.tsx` | Switch "Descrição obrigatória" no form |
-| `src/components/pix/PixKeyDialog.tsx` | Validação condicional da descrição |
+| `src/components/ui/drawer.tsx` | Hook retorna `bottom` offset; DrawerContent aplica posição dinâmica |
+| `src/components/pix/PixKeyDialog.tsx` | Melhorar timing do scrollIntoView nos inputs |
 
