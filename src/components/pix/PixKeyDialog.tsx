@@ -71,6 +71,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [receiptRequired, setReceiptRequired] = useState(true);
   const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
@@ -96,6 +97,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setReceiptRequired(true);
     setDescriptionPlaceholder("Ex: Pagamento fornecedor");
     setSelectedTagId(null);
+    setDescriptionRequired(true);
     setProbeTransactionId("");
     setProbeError("");
     setBeneficiaryName(null);
@@ -163,7 +165,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error("Selecione uma tag");
       return;
     }
-    if (!description.trim()) {
+    if (descriptionRequired && !description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
@@ -434,23 +436,19 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                         type="button"
                       onClick={() => {
                           if (selectedTagId === tag.id) {
-                            // Deselect
                             setSelectedTagId(null);
                             setSuggestedClassification(null);
                             setShowOrderInput(false);
                             setReceiptRequired(true);
                             setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                            setDescriptionRequired(true);
                           } else {
-                            // Select
                             setSelectedTagId(tag.id);
-                            if (tag.suggested_classification) {
-                              setSuggestedClassification(tag.suggested_classification);
-                            } else {
-                              setSuggestedClassification(null);
-                            }
+                            setSuggestedClassification(tag.suggested_classification || null);
                             setShowOrderInput(tag.request_order_number);
                             setReceiptRequired(tag.receipt_required);
                             setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+                            setDescriptionRequired(tag.description_required);
                           }
                         }}
                         className={`h-10 px-4 rounded-full font-medium text-sm border active:scale-95 transition-all ${
@@ -488,7 +486,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <div className="space-y-2">
                 <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição *
+                  Descrição {descriptionRequired ? "*" : "(opcional)"}
                 </Label>
                 <Textarea
                   id="pix-description"
@@ -505,7 +503,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <Button
                 onClick={handleStep2}
-                disabled={!amount || parseLocalizedNumber(amount) <= 0 || !description.trim()}
+                disabled={!amount || parseLocalizedNumber(amount) <= 0 || (descriptionRequired && !description.trim())}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar

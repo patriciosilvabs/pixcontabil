@@ -592,6 +592,7 @@ export type Database = {
           company_id: string
           created_at: string
           description_placeholder: string | null
+          description_required: boolean
           id: string
           is_active: boolean
           name: string
@@ -605,6 +606,7 @@ export type Database = {
           company_id: string
           created_at?: string
           description_placeholder?: string | null
+          description_required?: boolean
           id?: string
           is_active?: boolean
           name: string
@@ -618,6 +620,7 @@ export type Database = {
           company_id?: string
           created_at?: string
           description_placeholder?: string | null
+          description_required?: boolean
           id?: string
           is_active?: boolean
           name?: string

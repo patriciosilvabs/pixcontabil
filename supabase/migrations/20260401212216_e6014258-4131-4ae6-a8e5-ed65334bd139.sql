@@ -1,0 +1,1 @@
+ALTER TABLE public.quick_tags ADD COLUMN description_required boolean NOT NULL DEFAULT true;

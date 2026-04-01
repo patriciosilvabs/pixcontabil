@@ -32,6 +32,7 @@ export default function QuickTags() {
   const [formReceiptRequired, setFormReceiptRequired] = useState(true);
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [formPlaceholder, setFormPlaceholder] = useState("");
+  const [formDescriptionRequired, setFormDescriptionRequired] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const openCreate = () => {
@@ -42,6 +43,7 @@ export default function QuickTags() {
     setFormReceiptRequired(true);
     setFormSortOrder(tags.length);
     setFormPlaceholder("");
+    setFormDescriptionRequired(true);
     setDialogOpen(true);
   };
 
@@ -53,6 +55,7 @@ export default function QuickTags() {
     setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
     setFormPlaceholder(tag.description_placeholder || "");
+    setFormDescriptionRequired(tag.description_required);
     setDialogOpen(true);
   };
 
@@ -73,6 +76,7 @@ export default function QuickTags() {
           receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
           description_placeholder: placeholder,
+          description_required: formDescriptionRequired,
         });
         toast.success("Tag atualizada");
       } else {
@@ -83,6 +87,7 @@ export default function QuickTags() {
           receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
           description_placeholder: placeholder,
+          description_required: formDescriptionRequired,
         });
         toast.success("Tag criada");
       }
@@ -315,6 +320,22 @@ export default function QuickTags() {
                   </Label>
                   <p className="text-xs text-muted-foreground">
                     Desmarque para tags como "Troco" que não precisam de nota fiscal
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="description-required"
+                  checked={formDescriptionRequired}
+                  onCheckedChange={(v) => setFormDescriptionRequired(v === true)}
+                />
+                <div>
+                  <Label htmlFor="description-required" className="cursor-pointer">
+                    Descrição Obrigatória
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Desmarque para tags onde a descrição é opcional
                   </p>
                 </div>
               </div>
