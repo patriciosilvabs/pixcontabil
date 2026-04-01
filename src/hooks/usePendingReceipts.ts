@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { RECEIPT_CUTOFF_DATE } from "@/constants/app";
 
 export interface PendingReceipt {
   id: string;
@@ -31,6 +32,8 @@ export function usePendingReceipts() {
     try {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      // Use whichever is more recent: 30-day window or cutoff date
+      const effectiveSince = thirtyDaysAgo > RECEIPT_CUTOFF_DATE ? thirtyDaysAgo : RECEIPT_CUTOFF_DATE;
 
       // Get completed transactions without manual receipt
       const { data: completedData } = await supabase
@@ -40,7 +43,7 @@ export function usePendingReceipts() {
         .eq("created_by", user.id)
         .eq("status", "completed")
         .gt("amount", 0.01)
-        .gte("created_at", thirtyDaysAgo)
+        .gte("created_at", effectiveSince)
         .order("created_at", { ascending: false })
         .limit(100);
 
@@ -53,7 +56,7 @@ export function usePendingReceipts() {
         .eq("status", "pending")
         .gt("amount", 0.01)
         .lte("created_at", fiveMinAgo)
-        .gte("created_at", thirtyDaysAgo)
+        .gte("created_at", effectiveSince)
         .order("created_at", { ascending: false })
         .limit(20);
 

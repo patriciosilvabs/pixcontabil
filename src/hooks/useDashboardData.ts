@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { startOfMonth, startOfDay, formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { RECEIPT_CUTOFF_DATE } from "@/constants/app";
 
 interface TransactionWithCategory {
   id: string;
@@ -137,8 +138,9 @@ export function useDashboardData() {
         }));
 
         // Missing receipt/classification — ALL payment types require manual receipt
+        const cutoffDate = new Date(RECEIPT_CUTOFF_DATE);
         const eligibleForManualReceipt = transactions.filter(
-          (t) => (t.status === "completed" || t.status === "pending") && Number(t.amount) > 0.01
+          (t) => (t.status === "completed" || t.status === "pending") && Number(t.amount) > 0.01 && new Date(t.created_at) >= cutoffDate
         );
 
         const missingReceiptTxs: MissingReceiptTransaction[] = eligibleForManualReceipt
