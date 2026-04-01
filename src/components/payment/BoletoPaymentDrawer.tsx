@@ -26,6 +26,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [consultInfo, setConsultInfo] = useState<BilletConsultResult | null>(null);
   const [transactionId, setTransactionId] = useState("");
 
