@@ -31,6 +31,7 @@ export default function QuickTags() {
   const [formRequestOrder, setFormRequestOrder] = useState(false);
   const [formReceiptRequired, setFormReceiptRequired] = useState(true);
   const [formSortOrder, setFormSortOrder] = useState(0);
+  const [formPlaceholder, setFormPlaceholder] = useState("");
   const [saving, setSaving] = useState(false);
 
   const openCreate = () => {
@@ -40,6 +41,7 @@ export default function QuickTags() {
     setFormRequestOrder(false);
     setFormReceiptRequired(true);
     setFormSortOrder(tags.length);
+    setFormPlaceholder("");
     setDialogOpen(true);
   };
 
@@ -50,6 +52,7 @@ export default function QuickTags() {
     setFormRequestOrder(tag.request_order_number);
     setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
+    setFormPlaceholder(tag.description_placeholder || "");
     setDialogOpen(true);
   };
 
@@ -61,6 +64,7 @@ export default function QuickTags() {
     setSaving(true);
     try {
       const classification = formClassification === "none" ? null : formClassification;
+      const placeholder = formPlaceholder.trim() || null;
       if (editingTag) {
         await updateTag(editingTag.id, {
           name: formName.trim(),
@@ -68,6 +72,7 @@ export default function QuickTags() {
           request_order_number: formRequestOrder,
           receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
+          description_placeholder: placeholder,
         });
         toast.success("Tag atualizada");
       } else {
@@ -77,6 +82,7 @@ export default function QuickTags() {
           request_order_number: formRequestOrder,
           receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
+          description_placeholder: placeholder,
         });
         toast.success("Tag criada");
       }
@@ -311,6 +317,19 @@ export default function QuickTags() {
                     Desmarque para tags como "Troco" que não precisam de nota fiscal
                   </p>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Placeholder da Descrição</Label>
+                <Input
+                  placeholder="Ex: Digite o nome do motoboy"
+                  value={formPlaceholder}
+                  onChange={(e) => setFormPlaceholder(e.target.value)}
+                  data-vaul-no-drag
+                />
+                <p className="text-xs text-muted-foreground">
+                  Texto de orientação exibido no campo Descrição ao usar esta tag
+                </p>
               </div>
 
               <div className="space-y-2">
