@@ -147,6 +147,7 @@ export default function Users() {
   const [passwordMember, setPasswordMember] = useState<MemberRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const fetchMembers = async () => {
     if (!currentCompany) return;
