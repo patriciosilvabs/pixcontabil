@@ -1,33 +1,47 @@
 
 
-# Exigir foto para TODOS os tipos de pagamento (incluindo PIX Chave)
+# Âncora de Memória e Identificação para Pendências
 
 ## Resumo
 
-Revogar a exceção do PIX por chave digitada: agora TODAS as transações exigem foto de nota fiscal. O comprovante automático da API continua sendo gerado, mas não substitui a foto manual. A lógica de contingência (pendência impeditiva) permanece.
+Adicionar dados do beneficiário na tela de captura, campo obrigatório "O que foi pago?" ao salvar sem foto, e melhorar a tela de pendências com contexto completo.
 
 ## Alterações
 
-### 1. `src/hooks/usePendingReceipts.ts` — Incluir PIX key na pendência
-- Remover `.neq("pix_type", "key")` da query
-- Atualizar comentário do JSDoc
-- Agora TODAS as transações completed sem receipt manual geram pendência
+### 1. `src/pages/ReceiptCapture.tsx` — Exibir dados da transação + campo descrição
 
-### 2. `src/hooks/useDashboardData.ts` (linha ~141) — Incluir PIX key no missingReceipts
-- Remover filtro `t.pix_type !== "key"` de `eligibleForManualReceipt`
+- No `useEffect` que carrega o status da transação (linha ~67), expandir o `select` para incluir `beneficiary_name, amount, created_at, description`
+- Exibir card com: "Pendente: Nota Fiscal para **[NOME]** - R$ [VALOR]" e data/hora
+- Adicionar campo de texto "O que foi pago?" (Textarea ou Input)
+- **Se foto anexada**: campo descrição é opcional
+- **Se "Salvar sem comprovante"**: campo descrição é OBRIGATÓRIO — validar antes de salvar
+- No `handleSaveWithoutReceipt`: salvar descrição na transação (`description`) via update
+- No `handleSubmit`: salvar descrição se preenchida
 
-### 3. `src/pages/Transactions.tsx` (linha ~122) — Unificar verificação de receipt
-- Remover tratamento especial `pix_type === "key"` — todos os tipos exigem receipt manual (`hasManualReceipt`)
+### 2. `src/hooks/usePendingReceipts.ts` — Incluir mais dados
 
-### 4. `src/components/pix/PixKeyDialog.tsx` (linha ~521) — Redirecionar para captura
-- Mudar `redirectToReceiptCapture={false}` para `redirectToReceiptCapture={true}`
-- Após PIX por chave, redireciona para tela de comprovante (com opção de contingência)
+- Expandir select para incluir `created_at, description` no retorno
+- Atualizar interface `PendingReceipt` com `created_at: string`, `description: string | null`
 
-### 5. `src/pages/NewPayment.tsx` (linha ~393) — Redirecionar para captura
-- Mudar `redirectToReceiptCapture={false}` para `redirectToReceiptCapture={true}`
+### 3. `src/components/dashboard/MobileDashboard.tsx` — Melhorar exibição de pendências
+
+- Onde o badge de pendência redireciona, exibir na lista: nome do beneficiário, valor, e a descrição digitada pelo usuário
+- Formato: "**Nome** — R$ Valor — *Compra de tomate*"
+
+### 4. Validação cruzada no `handleSubmit`
+
+- "Salvar Comprovante" só funciona se: foto presente E (descrição preenchida OU subcategoria selecionada)
+- Atualizar `canSubmit` para incluir check de descrição/classificação
+
+## Detalhes técnicos
+
+- Campo `description` já existe na tabela `transactions` — não precisa de migração
+- A descrição serve como "lembrete" para quando o usuário for anexar a foto depois
+- O card de identificação usa dados já disponíveis na query existente, apenas expandindo os campos selecionados
 
 ## Resultado
-- Toda transação sem foto manual gera pendência, independente do método
-- PIX por chave agora redireciona para tela de comprovante após confirmação
-- Contingência continua funcionando: pode salvar sem foto, mas fica bloqueado para próxima transação
+
+- Usuário sabe exatamente para quem pagou ao abrir a tela de captura
+- Ao pular foto, é obrigado a descrever o que pagou
+- Na lista de pendências, vê nome + valor + descrição para localizar a foto correta
 
