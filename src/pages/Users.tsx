@@ -468,7 +468,60 @@ export default function Users() {
               <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : members.length === 0 ? (
               <div className="text-center text-muted-foreground p-8">Nenhum membro encontrado</div>
+            ) : isMobile ? (
+              /* Mobile: Card list */
+              <div className="p-3 space-y-3">
+                {members.map((m) => (
+                  <div key={m.id} className="rounded-lg border bg-card p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                          {getInitials(m.profile?.full_name || "U")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{m.profile?.full_name || "—"}</p>
+                        <p className="text-xs text-muted-foreground truncate">{m.profile?.email || "—"}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge variant={m.role === "admin" ? "default" : "secondary"}>
+                        {m.role === "admin" ? "Admin" : "Operador"}
+                      </Badge>
+                      <Badge variant={m.is_active ? "default" : "outline"}>
+                        {m.is_active ? "Ativo" : "Inativo"}
+                      </Badge>
+                      <Badge variant="outline" className="font-mono">
+                        {m.payment_limit != null
+                          ? `R$ ${Number(m.payment_limit).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                          : "Sem limite"}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button variant="outline" size="sm" className="flex-1 min-h-[44px]" onClick={() => openEdit(m)}>
+                        Editar
+                      </Button>
+                      <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => toggleActive(m)}>
+                        {m.is_active ? "Desativar" : "Ativar"}
+                      </Button>
+                      {user && m.user_id !== user.id && (
+                        <>
+                          <Button variant="outline" size="sm" className="min-h-[44px]"
+                            onClick={() => { setPasswordMember(m); setNewPassword(""); setPasswordDialog(true); }}>
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" className="min-h-[44px] text-destructive hover:text-destructive"
+                            onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
+              /* Desktop: Table */
               <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -518,20 +571,13 @@ export default function Users() {
                         </Button>
                         {user && m.user_id !== user.id && (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                            <Button variant="ghost" size="sm"
                               onClick={() => { setPasswordMember(m); setNewPassword(""); setPasswordDialog(true); }}
-                              title="Nova Senha"
-                            >
+                              title="Nova Senha">
                               <KeyRound className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}
-                            >
+                            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"
+                              onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </>
