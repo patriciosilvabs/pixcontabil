@@ -60,6 +60,13 @@ export default function ReceiptCapture() {
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
+  const [transactionInfo, setTransactionInfo] = useState<{
+    beneficiary_name: string | null;
+    amount: number | null;
+    created_at: string | null;
+    description: string | null;
+  }>({ beneficiary_name: null, amount: null, created_at: null, description: null });
+  const [paymentDescription, setPaymentDescription] = useState("");
 
   // Check transaction status — only allow receipt attachment if completed
   useEffect(() => {
