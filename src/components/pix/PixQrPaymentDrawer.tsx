@@ -11,7 +11,6 @@ import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
-import { useQuickTags } from "@/hooks/useQuickTags";
 import { supabase } from "@/integrations/supabase/client";
 
 interface PixQrPaymentDrawerProps {
