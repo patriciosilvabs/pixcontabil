@@ -320,6 +320,19 @@ export default function QuickTags() {
               </div>
 
               <div className="space-y-2">
+                <Label>Placeholder da Descrição</Label>
+                <Input
+                  placeholder="Ex: Digite o nome do motoboy"
+                  value={formPlaceholder}
+                  onChange={(e) => setFormPlaceholder(e.target.value)}
+                  data-vaul-no-drag
+                />
+                <p className="text-xs text-muted-foreground">
+                  Texto de orientação exibido no campo Descrição ao usar esta tag
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Ordem de exibição</Label>
                 <Input
                   type="number"

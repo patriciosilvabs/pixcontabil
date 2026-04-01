@@ -476,7 +476,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 </Label>
                 <Textarea
                   id="pix-description"
-                  placeholder="Ex: Pagamento fornecedor"
+                  placeholder={descriptionPlaceholder}
                   value={description}
                   onChange={(e) => setDescription(e.target.value.slice(0, 140))}
                   className="text-sm resize-none"
