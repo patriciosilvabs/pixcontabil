@@ -1,40 +1,36 @@
 
 
-# Fix: Drawer sobe e conteúdo desaparece quando teclado virtual abre no mobile
+# Placeholder Customizável por Tag
 
-## Problema
+## Resumo
 
-Quando o usuário toca no campo "Chave Pix" no Step 1 do PixKeyDialog, o teclado virtual do celular abre e empurra o Drawer para cima, fazendo o conteúdo ficar invisível/inacessível. O usuário precisa arrastar manualmente para ver os campos.
+Adicionar campo `description_placeholder` à tabela `quick_tags` para que o admin defina um texto orientativo (ex: "Digite o nome do motoboy") que aparece no campo Descrição quando a tag é selecionada no fluxo de pagamento.
 
-## Causa raiz
+## 1. Banco de Dados — Migration
 
-O viewport meta tag usa o comportamento padrão que redimensiona o layout viewport quando o teclado abre. O Drawer está fixado com `bottom-0` e `max-h-[85dvh]` — quando o teclado abre, o `dvh` muda e o drawer se reposiciona de forma errada.
-
-## Solução
-
-Duas alterações coordenadas:
-
-### 1. Adicionar `interactive-widget=resizes-content` ao viewport meta — `index.html`
-
-Isso instrui o browser a manter o layout viewport estável quando o teclado virtual abre, redimensionando apenas o conteúdo visual. Evita que elementos `fixed` (como o Drawer) sejam reposicionados.
-
-```html
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
+```sql
+ALTER TABLE public.quick_tags
+  ADD COLUMN description_placeholder text DEFAULT NULL;
 ```
 
-### 2. Ajustar DrawerContent para usar `max-h` baseado em visual viewport — `src/components/ui/drawer.tsx`
+## 2. Admin — `QuickTags.tsx` + `useQuickTags.ts`
 
-Adicionar um hook que escuta `visualViewport.resize` e ajusta o `max-height` do drawer dinamicamente, garantindo que o conteúdo sempre caiba na área visível acima do teclado.
+- Adicionar campo `description_placeholder` à interface `QuickTag`
+- Adicionar input "Placeholder da Descrição" no formulário de criar/editar tag, com hint: "Texto de orientação exibido no campo Descrição ao usar esta tag"
+- Incluir no `createTag` e `updateTag`
 
-### 3. Garantir scroll automático ao campo focado — `src/components/pix/PixKeyDialog.tsx`
+## 3. Fluxo de Pagamento — `PixKeyDialog.tsx`
 
-Adicionar `onFocus` no input da chave Pix para fazer `scrollIntoView({ block: 'center' })` após breve delay, garantindo que o campo fique visível após o teclado abrir.
+- Criar state `descriptionPlaceholder` (default: `"Ex: Pagamento fornecedor"`)
+- Ao clicar numa tag que tenha `description_placeholder` preenchido, atualizar o placeholder do `<Textarea>` de descrição com esse valor
+- Se múltiplas tags forem clicadas, usar o placeholder da última tag que tem o campo preenchido
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `index.html` | Adicionar `interactive-widget=resizes-content` ao viewport meta |
-| `src/components/ui/drawer.tsx` | Hook de visual viewport para max-height dinâmico |
-| `src/components/pix/PixKeyDialog.tsx` | `scrollIntoView` nos inputs do Step 1 |
+| Migration SQL | `ADD COLUMN description_placeholder text` |
+| `src/hooks/useQuickTags.ts` | Campo na interface + CRUD |
+| `src/pages/QuickTags.tsx` | Input "Placeholder da Descrição" no form |
+| `src/components/pix/PixKeyDialog.tsx` | Placeholder dinâmico no Textarea |
 
