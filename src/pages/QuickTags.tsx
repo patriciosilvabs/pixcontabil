@@ -32,6 +32,7 @@ export default function QuickTags() {
   const [formReceiptRequired, setFormReceiptRequired] = useState(true);
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [formPlaceholder, setFormPlaceholder] = useState("");
+  const [formDescriptionRequired, setFormDescriptionRequired] = useState(true);
   const [saving, setSaving] = useState(false);
 
   const openCreate = () => {
