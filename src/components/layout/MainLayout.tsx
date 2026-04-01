@@ -29,6 +29,7 @@ import {
   Link2,
   Activity,
   Shield,
+  Tag,
 } from "lucide-react";
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
