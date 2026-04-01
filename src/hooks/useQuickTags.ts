@@ -83,7 +83,7 @@ export function useQuickTagsAdmin() {
     fetchAll();
   }, [fetchAll]);
 
-  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; receipt_required?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean }) => {
+  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean }) => {
     if (!currentCompany?.id) return;
     const { error } = await supabase
       .from("quick_tags" as any)
@@ -92,7 +92,7 @@ export function useQuickTagsAdmin() {
         name: tag.name,
         suggested_classification: tag.suggested_classification || null,
         request_order_number: tag.request_order_number ?? false,
-        receipt_required: tag.receipt_required ?? true,
+        receipt_required: false,
         sort_order: tag.sort_order ?? tags.length,
         description_placeholder: tag.description_placeholder || null,
         description_required: tag.description_required ?? true,
