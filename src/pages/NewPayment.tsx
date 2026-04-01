@@ -824,6 +824,77 @@ export default function NewPayment() {
                 </div>
               </div>
 
+              {/* Quick Tags - only for key payments */}
+              {pixData.type === "key" && quickTags.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Tags Rápidas
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {quickTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => {
+                          if (selectedTagId === tag.id) {
+                            setSelectedTagId(null);
+                            setShowOrderInput(false);
+                            setReceiptRequired(true);
+                            setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                            setDescriptionRequired(true);
+                          } else {
+                            setSelectedTagId(tag.id);
+                            setShowOrderInput(tag.request_order_number);
+                            setReceiptRequired(tag.receipt_required);
+                            setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+                            setDescriptionRequired(tag.description_required);
+                          }
+                        }}
+                        className={`h-10 px-4 rounded-full font-medium text-sm border transition-all ${
+                          selectedTagId === tag.id
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                        }`}
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Order Number Input */}
+              {pixData.type === "key" && showOrderInput && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Nº do Pedido
+                  </Label>
+                  <Input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ex: 1234"
+                    value={orderNumber}
+                    onChange={(e) => setOrderNumber(e.target.value)}
+                    className="h-12 text-base"
+                  />
+                </div>
+              )}
+
+              {/* Description - for key payments */}
+              {pixData.type === "key" && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Descrição {descriptionRequired ? "*" : "(opcional)"}
+                  </Label>
+                  <Textarea
+                    placeholder={descriptionPlaceholder}
+                    value={pixData.description || ""}
+                    onChange={(e) => setPixData({ ...pixData, description: e.target.value })}
+                    className="min-h-[80px]"
+                  />
+                </div>
+              )}
+
             </CardContent>
           </Card>
         )}
