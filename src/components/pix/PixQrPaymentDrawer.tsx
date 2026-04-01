@@ -31,6 +31,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   const [hasFixedAmount, setHasFixedAmount] = useState(false);
   const [transactionId, setTransactionId] = useState("");
   const [description, setDescription] = useState("");
+  const [companyName, setCompanyName] = useState("");
 
   useEffect(() => {
     if (!open || !qrCode) return;
@@ -43,6 +44,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setHasFixedAmount(false);
     setTransactionId("");
     setDescription("");
+    setCompanyName("");
 
     (async () => {
       const info = await getQRCodeInfo({ qr_code: qrCode });
@@ -51,6 +53,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
         setMerchantName(info.merchant_name || "");
         setMerchantCity(info.merchant_city || "");
         setPixKey(info.pix_key || "");
+        setCompanyName(info.merchant_name || "");
         if (info.amount && info.amount > 0) {
           setAmount(info.amount.toFixed(2).replace(".", ","));
           setHasFixedAmount(true);
@@ -93,6 +96,10 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   };
 
   const handleConfirm = async () => {
+    if (!companyName.trim()) {
+      toast.error("Informe o nome da empresa que está recebendo o pagamento");
+      return;
+    }
     if (!description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
@@ -108,7 +115,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
       try {
         await supabase
           .from("transactions")
-          .update({ description: description.trim() } as any)
+          .update({ description: description.trim(), beneficiary_name: companyName.trim() } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixQrPaymentDrawer] Failed to update transaction metadata:", e);
@@ -242,6 +249,21 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
                   <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Valor</p>
                   <p className="text-lg font-bold text-primary mt-1">{formattedAmount()}</p>
                 </div>
+              </div>
+
+              {/* Company Name */}
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Nome da Empresa *
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Empresa XYZ Ltda"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className="text-sm"
+                  data-vaul-no-drag
+                />
               </div>
 
               {/* Description */}

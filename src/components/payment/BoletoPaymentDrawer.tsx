@@ -26,6 +26,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState<string | null>(null);
   const [description, setDescription] = useState("");
+  const [companyName, setCompanyName] = useState("");
   const [consultInfo, setConsultInfo] = useState<BilletConsultResult | null>(null);
   const [transactionId, setTransactionId] = useState("");
 
@@ -42,6 +43,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   useEffect(() => {
     if (!open || !barcode) return;
     setDescription("");
+    setCompanyName("");
     setConsultInfo(null);
     setTransactionId("");
     setStatusState("polling");
@@ -61,6 +63,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     consultBillet(barcode).then((result) => {
       if (result) {
         setConsultInfo(result);
+        if (result.recipient_name) setCompanyName(result.recipient_name);
         if (result.total_updated_value && result.total_updated_value > 0) {
           setAmount(result.total_updated_value.toFixed(2).replace(".", ","));
         } else if (result.value && result.value > 0) {
@@ -163,6 +166,10 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   };
 
   const handleConfirm = async () => {
+    if (!companyName.trim()) {
+      toast.error("Informe o nome da empresa que está recebendo o pagamento");
+      return;
+    }
     const value = parseLocalizedNumber(amount);
     const result = await payBillet({
       digitable_code: barcode,
@@ -174,6 +181,16 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       invalidateDashboardCache();
       const txId = (result as any).transaction_id || (result as any).id;
       if (txId) {
+        // Save beneficiary_name
+        try {
+          const { supabase } = await import("@/integrations/supabase/client");
+          await supabase
+            .from("transactions")
+            .update({ beneficiary_name: companyName.trim() } as any)
+            .eq("id", txId);
+        } catch (e) {
+          console.error("[BoletoPaymentDrawer] Failed to update beneficiary_name:", e);
+        }
         setTransactionId(txId);
         setStep(3);
         startPolling(txId);
@@ -425,6 +442,19 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
                   </p>
                 </div>
               )}
+
+              <div className="space-y-2">
+                <Label htmlFor="boleto-company" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Nome da Empresa *
+                </Label>
+                <Input
+                  id="boleto-company"
+                  type="text"
+                  placeholder="Ex: Empresa XYZ Ltda"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+              </div>
 
               <div className="space-y-2">
                 <Label htmlFor="boleto-desc" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
