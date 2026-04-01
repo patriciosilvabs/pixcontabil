@@ -176,9 +176,6 @@ export default function QuickTags() {
                           <Badge variant={tag.suggested_classification ? "default" : "secondary"} className="text-xs">
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
-                          {!tag.receipt_required && (
-                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">Sem Foto</Badge>
-                          )}
                           {tag.request_order_number && (
                             <Badge variant="outline" className="text-xs">Nº Pedido</Badge>
                           )}
