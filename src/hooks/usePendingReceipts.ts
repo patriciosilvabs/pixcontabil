@@ -57,6 +57,8 @@ export function usePendingReceipts() {
           beneficiary_name: tx.beneficiary_name,
           amount: Number(tx.amount),
           pix_type: tx.pix_type,
+          created_at: tx.created_at,
+          description: tx.description ?? null,
         }))
       );
     } catch (err) {
