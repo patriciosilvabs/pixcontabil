@@ -90,6 +90,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setOrderNumber("");
     setShowOrderInput(false);
     setSuggestedClassification(null);
+    setReceiptRequired(true);
     setStep(1);
     setProbeTransactionId("");
     setProbeError("");
