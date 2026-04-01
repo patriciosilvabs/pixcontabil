@@ -44,7 +44,7 @@ export default function ReceiptCapture() {
   const { transactionId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentCompany } = useAuth();
+  const { currentCompany, hasFeatureAccess, isAdmin } = useAuth();
   const { checkStatus } = usePixPayment();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
