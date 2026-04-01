@@ -1,32 +1,39 @@
 
 
-# Remover Tags dos Fluxos QR Code e Copia e Cola
+# Descrição Obrigatória/Opcional por Tag
 
 ## Resumo
 
-Tags devem aparecer **apenas** no fluxo Pix por Chave (`PixKeyDialog`). Os drawers de QR Code e Copia e Cola devem ter toda a lógica de tags removida, voltando ao comportamento simples (descrição livre, sempre exige comprovante).
+Adicionar campo `description_required` (boolean) na tabela `quick_tags` para que o gestor escolha, ao criar/editar cada tag, se o preenchimento da descrição será obrigatório ou não. No fluxo de pagamento, validar conforme essa configuração.
 
 ## Alterações
 
-### 1. `src/components/pix/PixCopyPasteDrawer.tsx`
+### 1. Migration SQL
+```sql
+ALTER TABLE public.quick_tags
+  ADD COLUMN description_required boolean NOT NULL DEFAULT true;
+```
 
-- Remover import e uso de `useQuickTags`
-- Remover states: `selectedTagId`, `descriptionPlaceholder`, `orderNumber`, `showOrderInput`, `receiptRequired`
-- Remover seção de Quick Tags e Nº do Pedido do Step 3
-- Remover validação de tag obrigatória no `handleConfirm`
-- Manter campo Descrição com placeholder fixo `"Ex: Pagamento fornecedor"`
-- `receiptRequired` volta a ser sempre `true` (hardcoded)
-- Remover atualização de `receipt_required` no update da transaction (sempre true)
+### 2. `src/hooks/useQuickTags.ts`
+- Adicionar `description_required: boolean` na interface `QuickTag`
+- Incluir no `createTag` e `updateTag`
 
-### 2. `src/components/pix/PixQrPaymentDrawer.tsx`
+### 3. `src/pages/QuickTags.tsx`
+- Novo state `formDescriptionRequired` (default `true`)
+- Switch no formulário: "Descrição obrigatória?"
+- Passar no `createTag` / `updateTag`
 
-- Mesmas remoções: `useQuickTags`, states de tag, UI de tags, validação de tag
-- Descrição com placeholder fixo, `receiptRequired` sempre `true`
+### 4. `src/components/pix/PixKeyDialog.tsx`
+- Ao selecionar uma tag, ler `description_required` e guardar em state
+- Na validação do step (handleStep2/handleConfirm), só exigir descrição preenchida se `descriptionRequired === true`
+- Indicar visualmente no campo se é obrigatório (ex: label "Descrição *" vs "Descrição (opcional)")
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `src/components/pix/PixCopyPasteDrawer.tsx` | Remover toda lógica de tags |
-| `src/components/pix/PixQrPaymentDrawer.tsx` | Remover toda lógica de tags |
+| Migration SQL | `ADD COLUMN description_required boolean DEFAULT true` |
+| `src/hooks/useQuickTags.ts` | Campo na interface + CRUD |
+| `src/pages/QuickTags.tsx` | Switch "Descrição obrigatória" no form |
+| `src/components/pix/PixKeyDialog.tsx` | Validação condicional da descrição |
 
