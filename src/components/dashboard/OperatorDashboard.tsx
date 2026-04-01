@@ -12,15 +12,32 @@ import { usePixBalance } from "@/hooks/usePixBalance";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import { ManualBarcodeDialog } from "@/components/payment/ManualBarcodeDialog";
-import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import {
-...
+  Send,
+  History,
+  FileWarning,
+  ArrowRight,
+  DollarSign,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Inbox,
+  Wallet,
+} from "lucide-react";
+
+export function OperatorDashboard() {
+  const { profile, currentCompany, canViewBalance } = useAuth();
+  const isMobile = useIsMobile();
+  const { balanceVisible, toggleBalance } = useBalanceVisibility();
+  const { summary, recentTransactions, missingReceipts, isLoading: dataLoading } = useDashboardData();
+  const pixBalance = usePixBalance({ enabled: canViewBalance });
+  const { balance, isLoading: balanceLoading, isAvailable: balanceAvailable, provider } = pixBalance;
+
   const [barcodeScannerOpen, setBarcodeScannerOpen] = React.useState(false);
   const [scannedBarcode, setScannedBarcode] = React.useState("");
   const [boletoPaymentOpen, setBoletoPaymentOpen] = React.useState(false);
   const [manualBarcodeOpen, setManualBarcodeOpen] = React.useState(false);
-  const [pixKeyOpen, setPixKeyOpen] = React.useState(false);
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
 
   const acquireStreamAndOpenBarcode = async () => {
