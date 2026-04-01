@@ -14,8 +14,6 @@ import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { invalidateDashboardCache } from "@/hooks/useDashboardData";
-import { usePixPayment } from "@/hooks/usePixPayment";
 import {
   Camera,
   Upload,
