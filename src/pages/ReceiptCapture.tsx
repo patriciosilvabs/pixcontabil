@@ -616,6 +616,21 @@ export default function ReceiptCapture() {
             </Card>
 
             {/* Classification */}
+            {hasNoClassificationAccess ? (
+              <Card className="mb-6 border-primary/30 bg-primary/5">
+                <CardContent className="flex items-center gap-4 p-4">
+                  <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                    <FileText className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-medium">Classificação pendente</p>
+                    <p className="text-sm text-muted-foreground">
+                      A classificação contábil será realizada pelo gestor. Anexe o comprovante para prosseguir.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
             <Card className="mb-6">
                 <CardHeader>
                   <CardTitle>Classificar Pagamento</CardTitle>
@@ -757,6 +772,7 @@ export default function ReceiptCapture() {
                   )}
                 </CardContent>
             </Card>
+            )}
           </>
         )}
         {/* Description field */}
