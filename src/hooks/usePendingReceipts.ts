@@ -51,6 +51,7 @@ export function usePendingReceipts() {
         .eq("company_id", currentCompany.id)
         .eq("created_by", user.id)
         .eq("status", "pending")
+        .gt("amount", 0.01)
         .lte("created_at", fiveMinAgo)
         .gte("created_at", thirtyDaysAgo)
         .order("created_at", { ascending: false })
