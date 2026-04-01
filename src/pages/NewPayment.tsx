@@ -227,10 +227,14 @@ export default function NewPayment() {
 
     try {
       const amount = parseFloat(pixData.amount?.replace(",", ".") || "0");
+      let finalDescription = pixData.description?.trim() || 'Pagamento Pix';
+      if (orderNumber.trim()) {
+        finalDescription = `${finalDescription} #${orderNumber.trim()}`;
+      }
       const result = await payByKey({
         pix_key: pixData.key || '',
         valor: amount,
-        descricao: pixData.description?.trim() || 'Pagamento Pix',
+        descricao: finalDescription,
       });
 
       if (result) {
