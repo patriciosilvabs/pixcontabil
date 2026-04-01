@@ -70,6 +70,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [suggestedClassification, setSuggestedClassification] = useState<string | null>(null);
   const [receiptRequired, setReceiptRequired] = useState(true);
   const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
