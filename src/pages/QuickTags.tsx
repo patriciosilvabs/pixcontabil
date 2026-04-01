@@ -176,9 +176,6 @@ export default function QuickTags() {
                           <Badge variant={tag.suggested_classification ? "default" : "secondary"} className="text-xs">
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
-                          {!tag.receipt_required && (
-                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">Sem Foto</Badge>
-                          )}
                           {tag.request_order_number && (
                             <Badge variant="outline" className="text-xs">Nº Pedido</Badge>
                           )}
@@ -308,21 +305,6 @@ export default function QuickTags() {
                 </Label>
               </div>
 
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  id="receipt-required"
-                  checked={formReceiptRequired}
-                  onCheckedChange={(v) => setFormReceiptRequired(v === true)}
-                />
-                <div>
-                  <Label htmlFor="receipt-required" className="cursor-pointer">
-                    Exige Comprovante (Foto)
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    Desmarque para tags como "Troco" que não precisam de nota fiscal
-                  </p>
-                </div>
-              </div>
 
               <div className="flex items-center gap-3">
                 <Checkbox

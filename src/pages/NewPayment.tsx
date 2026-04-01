@@ -844,9 +844,9 @@ export default function NewPayment() {
                             setDescriptionPlaceholder("Ex: Pagamento fornecedor");
                             setDescriptionRequired(true);
                           } else {
-                            setSelectedTagId(tag.id);
+                          setSelectedTagId(tag.id);
                             setShowOrderInput(tag.request_order_number);
-                            setReceiptRequired(tag.receipt_required);
+                            setReceiptRequired(false);
                             setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
                             setDescriptionRequired(tag.description_required);
                           }
