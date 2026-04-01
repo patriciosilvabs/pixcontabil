@@ -359,6 +359,11 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   placeholder={keyTypePlaceholders[pixKeyType]}
                   value={pixKey}
                   onChange={(e) => setPixKey(e.target.value)}
+                  onFocus={(e) => {
+                    setTimeout(() => {
+                      e.target.scrollIntoView({ block: "center", behavior: "smooth" });
+                    }, 300);
+                  }}
                   className="h-12 text-base"
                   data-vaul-no-drag
                 />
