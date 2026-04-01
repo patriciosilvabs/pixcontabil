@@ -48,6 +48,7 @@ export default function QuickTags() {
     setFormName(tag.name);
     setFormClassification(tag.suggested_classification || "none");
     setFormRequestOrder(tag.request_order_number);
+    setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
     setDialogOpen(true);
   };
