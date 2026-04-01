@@ -159,7 +159,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                 size="sm"
                 variant="outline"
                 className="shrink-0 h-8 text-xs font-bold border-warning/50 text-warning hover:bg-warning/10"
-                onClick={() => navigate(`/pix/receipt/${missingReceipts[0].id}`)}
+                onClick={() => navigate(`/pix/receipt/${pendingReceipts[0].id}`)}
               >
                 Anexar
               </Button>
