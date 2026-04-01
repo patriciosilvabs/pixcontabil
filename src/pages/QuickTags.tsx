@@ -41,6 +41,7 @@ export default function QuickTags() {
     setFormRequestOrder(false);
     setFormReceiptRequired(true);
     setFormSortOrder(tags.length);
+    setFormPlaceholder("");
     setDialogOpen(true);
   };
 
