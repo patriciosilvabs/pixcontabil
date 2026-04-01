@@ -44,6 +44,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setHasFixedAmount(false);
     setTransactionId("");
     setDescription("");
+    setCompanyName("");
 
     (async () => {
       const info = await getQRCodeInfo({ qr_code: qrCode });
@@ -52,6 +53,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
         setMerchantName(info.merchant_name || "");
         setMerchantCity(info.merchant_city || "");
         setPixKey(info.pix_key || "");
+        setCompanyName(info.merchant_name || "");
         if (info.amount && info.amount > 0) {
           setAmount(info.amount.toFixed(2).replace(".", ","));
           setHasFixedAmount(true);
