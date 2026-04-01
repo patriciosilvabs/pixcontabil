@@ -1,34 +1,32 @@
 
 
-# Tags Obrigatórias + Seleção sem preencher descrição
+# Remover Tags dos Fluxos QR Code e Copia e Cola
 
-## Problema atual
+## Resumo
 
-1. Ao clicar numa tag, o sistema concatena o nome da tag no campo Descrição — o usuário quer que a tag seja apenas uma **seleção** (chip marcado), sem alterar o campo de texto
-2. Tags não são obrigatórias — o usuário pode prosseguir sem selecionar nenhuma
+Tags devem aparecer **apenas** no fluxo Pix por Chave (`PixKeyDialog`). Os drawers de QR Code e Copia e Cola devem ter toda a lógica de tags removida, voltando ao comportamento simples (descrição livre, sempre exige comprovante).
 
-## Solução
+## Alterações
 
-### 1. Estado de tag selecionada — `PixKeyDialog.tsx`
+### 1. `src/components/pix/PixCopyPasteDrawer.tsx`
 
-- Adicionar state `selectedTagId: string | null` (apenas uma tag por vez)
-- Ao clicar numa tag: marcar como selecionada (highlight visual), aplicar `receipt_required`, `suggested_classification`, `showOrderInput` e `descriptionPlaceholder` — **sem** concatenar o nome da tag no campo Descrição
-- Clicar novamente na mesma tag desmarca
-- Visual: tag selecionada fica com fundo sólido `bg-primary text-white`, as demais ficam `bg-primary/10`
+- Remover import e uso de `useQuickTags`
+- Remover states: `selectedTagId`, `descriptionPlaceholder`, `orderNumber`, `showOrderInput`, `receiptRequired`
+- Remover seção de Quick Tags e Nº do Pedido do Step 3
+- Remover validação de tag obrigatória no `handleConfirm`
+- Manter campo Descrição com placeholder fixo `"Ex: Pagamento fornecedor"`
+- `receiptRequired` volta a ser sempre `true` (hardcoded)
+- Remover atualização de `receipt_required` no update da transaction (sempre true)
 
-### 2. Obrigatoriedade — `PixKeyDialog.tsx`
+### 2. `src/components/pix/PixQrPaymentDrawer.tsx`
 
-- No `handleStep2`, validar que `selectedTagId` não é null quando há tags disponíveis (`quickTags.length > 0`)
-- Se nenhuma tag foi selecionada, exibir `toast.error("Selecione uma tag")`
-- Atualizar o `disabled` do botão "Continuar" para incluir essa validação
-
-### 3. Limpar ao desmarcar
-
-- Ao desmarcar uma tag, resetar `receiptRequired = true`, `suggestedClassification = null`, `showOrderInput = false`, `descriptionPlaceholder` para valor padrão
+- Mesmas remoções: `useQuickTags`, states de tag, UI de tags, validação de tag
+- Descrição com placeholder fixo, `receiptRequired` sempre `true`
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `src/components/pix/PixKeyDialog.tsx` | State `selectedTagId`, lógica de toggle, validação obrigatória, visual de seleção |
+| `src/components/pix/PixCopyPasteDrawer.tsx` | Remover toda lógica de tags |
+| `src/components/pix/PixQrPaymentDrawer.tsx` | Remover toda lógica de tags |
 
