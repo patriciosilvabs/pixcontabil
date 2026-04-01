@@ -175,6 +175,7 @@ export default function ReceiptCapture() {
   // Permission-based classification
   const canClassifyCost = isAdmin || hasFeatureAccess("classificar_insumo");
   const canClassifyExpense = isAdmin || hasFeatureAccess("classificar_despesa");
+  const hasNoClassificationAccess = !canClassifyCost && !canClassifyExpense;
   const hasBothClassifications = canClassifyCost && canClassifyExpense;
   const hasOnlyOneClassification = (canClassifyCost || canClassifyExpense) && !hasBothClassifications;
   const autoClassification: ClassificationType | null = hasOnlyOneClassification
