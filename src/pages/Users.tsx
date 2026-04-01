@@ -50,40 +50,65 @@ interface PermissionTemplate {
   canViewBalance: boolean;
   pages: Record<string, boolean>;
   features: Record<string, boolean>;
+  highlights: { label: string; enabled: boolean }[];
 }
 
 const PERMISSION_TEMPLATES: Record<string, PermissionTemplate> = {
   gestor: {
     label: "Gestor",
-    description: "Acesso total a todas as funções e visualização de saldo",
+    description: "Acesso total ao sistema",
     role: "operator",
     canViewBalance: true,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, true])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, true])),
+    highlights: [
+      { label: "Saldo", enabled: true },
+      { label: "Todas as páginas", enabled: true },
+      { label: "Classificações", enabled: true },
+      { label: "Configurações", enabled: true },
+    ],
   },
   operacional: {
     label: "Operacional",
-    description: "Pagamentos e transações, sem saldo nem configurações",
+    description: "Pagamentos e transações",
     role: "operator",
     canViewBalance: false,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, !["users", "companies", "settings", "reports"].includes(p.key)])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo"].includes(f.key)])),
+    highlights: [
+      { label: "Saldo", enabled: false },
+      { label: "Pagamentos", enabled: true },
+      { label: "Configurações", enabled: false },
+      { label: "Classif. Despesa", enabled: true },
+    ],
   },
   caixa: {
     label: "Caixa",
-    description: "Apenas pagamentos básicos, sem saldo nem classificações",
+    description: "Apenas pagamentos básicos",
     role: "operator",
     canViewBalance: false,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions"].includes(p.key)])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "classificar_despesa", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+    highlights: [
+      { label: "Saldo", enabled: false },
+      { label: "Pagamentos", enabled: true },
+      { label: "Classificações", enabled: false },
+      { label: "Favorecidos", enabled: false },
+    ],
   },
   caixa_confianca: {
     label: "Caixa Confiança",
-    description: "Caixa com acesso a saldo e classificação de despesas",
+    description: "Caixa com saldo e despesas",
     role: "operator",
     canViewBalance: true,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions", "categories"].includes(p.key)])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+    highlights: [
+      { label: "Saldo", enabled: true },
+      { label: "Pagamentos", enabled: true },
+      { label: "Classif. Custo", enabled: false },
+      { label: "Classif. Despesa", enabled: true },
+    ],
   },
 };
 
