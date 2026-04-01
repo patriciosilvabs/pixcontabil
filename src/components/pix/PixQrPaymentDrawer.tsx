@@ -42,12 +42,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setPixKey("");
     setHasFixedAmount(false);
     setTransactionId("");
-    setSelectedTagId(null);
     setDescription("");
-    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
-    setOrderNumber("");
-    setShowOrderInput(false);
-    setReceiptRequired(true);
 
     (async () => {
       const info = await getQRCodeInfo({ qr_code: qrCode });
@@ -59,9 +54,9 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
         if (info.amount && info.amount > 0) {
           setAmount(info.amount.toFixed(2).replace(".", ","));
           setHasFixedAmount(true);
-          setStep(3); // go to confirmation (with tags)
+          setStep(3);
         } else {
-          setStep(2); // ask for amount
+          setStep(2);
         }
       } else {
         toast.error("Não foi possível ler os dados do QR Code");
@@ -98,11 +93,6 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   };
 
   const handleConfirm = async () => {
-    // Validate tag selection
-    if (quickTags.length > 0 && !selectedTagId) {
-      toast.error("Selecione uma tag");
-      return;
-    }
     if (!description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
@@ -115,17 +105,10 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     });
 
     if (result?.transaction_id) {
-      // Update transaction with description and receipt_required
-      const fullDescription = orderNumber.trim()
-        ? `${description.trim()} #${orderNumber.trim()}`
-        : description.trim();
       try {
         await supabase
           .from("transactions")
-          .update({
-            description: fullDescription,
-            receipt_required: receiptRequired,
-          } as any)
+          .update({ description: description.trim() } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixQrPaymentDrawer] Failed to update transaction metadata:", e);
@@ -233,7 +216,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
             </div>
           )}
 
-          {/* Step 3: Confirmation with tags + description */}
+          {/* Step 3: Confirmation */}
           {step === 3 && (
             <div className="space-y-5 max-h-[60vh] overflow-y-auto">
               <div className="rounded-xl bg-secondary p-4 space-y-3">
@@ -261,69 +244,13 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
                 </div>
               </div>
 
-              {/* Quick Tags */}
-              {quickTags.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Tags Rápidas *
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    {quickTags.map((tag) => (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => {
-                          if (selectedTagId === tag.id) {
-                            setSelectedTagId(null);
-                            setShowOrderInput(false);
-                            setReceiptRequired(true);
-                            setDescriptionPlaceholder("Ex: Pagamento fornecedor");
-                          } else {
-                            setSelectedTagId(tag.id);
-                            setShowOrderInput(tag.request_order_number);
-                            setReceiptRequired(tag.receipt_required);
-                            setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
-                          }
-                        }}
-                        className={`h-10 px-4 rounded-full font-medium text-sm border active:scale-95 transition-all ${
-                          selectedTagId === tag.id
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
-                        }`}
-                        data-vaul-no-drag
-                      >
-                        {tag.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Order Number */}
-              {showOrderInput && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Nº do Pedido
-                  </Label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="Ex: 1234"
-                    value={orderNumber}
-                    onChange={(e) => setOrderNumber(e.target.value)}
-                    className="h-12 text-base"
-                    data-vaul-no-drag
-                  />
-                </div>
-              )}
-
               {/* Description */}
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Descrição *
                 </Label>
                 <Textarea
-                  placeholder={descriptionPlaceholder}
+                  placeholder="Ex: Pagamento fornecedor"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="min-h-[60px] text-sm"
@@ -355,8 +282,8 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
               amount={parseLocalizedNumber(amount)}
               beneficiaryName={merchantName || pixKey}
               onClose={handleCloseAndNavigate}
-              redirectToReceiptCapture={receiptRequired}
-              skipReceiptCapture={!receiptRequired}
+              redirectToReceiptCapture={true}
+              skipReceiptCapture={false}
             />
           )}
         </div>

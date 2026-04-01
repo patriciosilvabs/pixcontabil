@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,12 +39,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     setMerchantCity("");
     setPixKey("");
     setTransactionId("");
-    setSelectedTagId(null);
     setDescription("");
-    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
-    setOrderNumber("");
-    setShowOrderInput(false);
-    setReceiptRequired(true);
   };
 
   const handleClose = () => {
@@ -96,7 +90,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
 
       if (info.amount && info.amount > 0) {
         setAmount(info.amount.toFixed(2).replace(".", ","));
-        setStep(3); // go to confirmation with tags
+        setStep(3);
       } else {
         toast.error("Este código Pix não contém valor. Verifique o código e tente novamente.");
         setStep(1);
@@ -108,11 +102,6 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   };
 
   const handleConfirm = async () => {
-    // Validate tag selection
-    if (quickTags.length > 0 && !selectedTagId) {
-      toast.error("Selecione uma tag");
-      return;
-    }
     if (!description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
@@ -125,17 +114,10 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     });
 
     if (result?.transaction_id) {
-      // Update transaction with description, receipt_required, etc.
-      const fullDescription = orderNumber.trim()
-        ? `${description.trim()} #${orderNumber.trim()}`
-        : description.trim();
       try {
         await supabase
           .from("transactions")
-          .update({
-            description: fullDescription,
-            receipt_required: receiptRequired,
-          } as any)
+          .update({ description: description.trim() } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixCopyPasteDrawer] Failed to update transaction metadata:", e);
@@ -244,7 +226,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
             </div>
           )}
 
-          {/* Step 3: Confirmation with tags + description */}
+          {/* Step 3: Confirmation */}
           {step === 3 && (
             <div className="space-y-5 max-h-[60vh] overflow-y-auto">
               <div className="rounded-xl bg-secondary p-4 space-y-3">
@@ -272,69 +254,13 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
                 </div>
               </div>
 
-              {/* Quick Tags */}
-              {quickTags.length > 0 && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Tags Rápidas *
-                  </Label>
-                  <div className="flex flex-wrap gap-2">
-                    {quickTags.map((tag) => (
-                      <button
-                        key={tag.id}
-                        type="button"
-                        onClick={() => {
-                          if (selectedTagId === tag.id) {
-                            setSelectedTagId(null);
-                            setShowOrderInput(false);
-                            setReceiptRequired(true);
-                            setDescriptionPlaceholder("Ex: Pagamento fornecedor");
-                          } else {
-                            setSelectedTagId(tag.id);
-                            setShowOrderInput(tag.request_order_number);
-                            setReceiptRequired(tag.receipt_required);
-                            setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
-                          }
-                        }}
-                        className={`h-10 px-4 rounded-full font-medium text-sm border active:scale-95 transition-all ${
-                          selectedTagId === tag.id
-                            ? "bg-primary text-primary-foreground border-primary"
-                            : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
-                        }`}
-                        data-vaul-no-drag
-                      >
-                        {tag.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Order Number */}
-              {showOrderInput && (
-                <div className="space-y-2">
-                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                    Nº do Pedido
-                  </Label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    placeholder="Ex: 1234"
-                    value={orderNumber}
-                    onChange={(e) => setOrderNumber(e.target.value)}
-                    className="h-12 text-base"
-                    data-vaul-no-drag
-                  />
-                </div>
-              )}
-
               {/* Description */}
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Descrição *
                 </Label>
                 <Textarea
-                  placeholder={descriptionPlaceholder}
+                  placeholder="Ex: Pagamento fornecedor"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   className="min-h-[60px] text-sm"
@@ -366,8 +292,8 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
               amount={parseLocalizedNumber(amount)}
               beneficiaryName={merchantName || pixKey}
               onClose={handleCloseAndNavigate}
-              redirectToReceiptCapture={receiptRequired}
-              skipReceiptCapture={!receiptRequired}
+              redirectToReceiptCapture={true}
+              skipReceiptCapture={false}
             />
           )}
         </div>
