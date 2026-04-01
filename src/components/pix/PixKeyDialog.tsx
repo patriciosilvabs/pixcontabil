@@ -13,6 +13,8 @@ import { usePixPayment } from "@/hooks/usePixPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
+import { useQuickTags } from "@/hooks/useQuickTags";
+import { Badge } from "@/components/ui/badge";
 
 interface PixKeyDialogProps {
   open: boolean;
