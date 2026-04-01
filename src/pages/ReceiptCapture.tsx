@@ -413,9 +413,23 @@ export default function ReceiptCapture() {
   const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
   const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing;
 
+  // Guard: auto-redirect for probe transactions (R$ 0,01)
+  const isProbeTransaction = transactionInfo.amount != null && transactionInfo.amount <= 0.01;
+
   // Guard: show waiting screen if transaction is not yet completed
   const isTransactionCompleted = transactionStatus === "completed";
   const isTransactionFinalFailed = transactionStatus === "failed" || transactionStatus === "cancelled";
+
+  // Auto-redirect probes
+  useEffect(() => {
+    if (!isLoadingStatus && isProbeTransaction) {
+      toast({
+        title: "Verificação de dados",
+        description: "Transações de verificação (R$ 0,01) não requerem comprovante.",
+      });
+      navigate("/");
+    }
+  }, [isLoadingStatus, isProbeTransaction, navigate, toast]);
 
   return (
     <MainLayout>
