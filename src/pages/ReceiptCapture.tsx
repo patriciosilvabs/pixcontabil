@@ -468,6 +468,30 @@ export default function ReceiptCapture() {
         {/* Only show receipt capture when transaction is confirmed */}
         {!isLoadingStatus && isTransactionCompleted && (
           <>
+        {/* Transaction identification card */}
+        {transactionInfo.beneficiary_name && (
+          <Card className="border-primary/30 bg-primary/5 mb-6">
+            <CardContent className="p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">
+                Pendente: Nota Fiscal
+              </p>
+              <p className="text-base font-semibold">
+                {transactionInfo.beneficiary_name}
+              </p>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-lg font-bold font-mono-numbers">
+                  {transactionInfo.amount != null ? formatCurrency(transactionInfo.amount) : "—"}
+                </span>
+                {transactionInfo.created_at && (
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(transactionInfo.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Alert */}
         <Card className="border-warning/50 bg-warning/5 mb-6">
           <CardContent className="flex items-center gap-4 p-4">
