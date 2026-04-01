@@ -312,11 +312,20 @@ export default function ReceiptCapture() {
   };
 
   const handleSubmit = async () => {
-    if (!receiptData.file || !receiptData.classification) {
+    if (!receiptData.file) {
       toast({
         variant: "destructive",
         title: "Erro",
-        description: "Anexe um comprovante e selecione a classificação.",
+        description: "Anexe um comprovante.",
+      });
+      return;
+    }
+
+    if (!hasNoClassificationAccess && !receiptData.classification) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Selecione a classificação.",
       });
       return;
     }
