@@ -235,6 +235,7 @@ export default function NewPayment() {
         pix_key: pixData.key || '',
         valor: amount,
         descricao: finalDescription,
+        receipt_required: selectedTagId ? false : true,
       });
 
       if (result) {
