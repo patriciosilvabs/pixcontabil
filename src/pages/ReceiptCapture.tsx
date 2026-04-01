@@ -66,11 +66,12 @@ export default function ReceiptCapture() {
     const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
         .from("transactions")
-        .select("status")
+        .select("status, pix_type")
         .eq("id", transactionId)
         .single();
 
       const currentStatus = data?.status || null;
+      if (data?.pix_type) setTransactionPixType(data.pix_type);
 
       if (!isMounted) return currentStatus;
 
