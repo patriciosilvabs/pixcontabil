@@ -470,29 +470,34 @@ export default function ReceiptCapture() {
         {/* Only show receipt capture when transaction is confirmed */}
         {!isLoadingStatus && isTransactionCompleted && (
           <>
-        {/* Transaction identification card */}
-        {transactionInfo.beneficiary_name && (
-          <Card className="border-primary/30 bg-primary/5 mb-6">
-            <CardContent className="p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">
-                Pendente: Nota Fiscal
-              </p>
-              <p className="text-base font-semibold">
-                {transactionInfo.beneficiary_name}
-              </p>
-              <div className="flex items-center gap-3 mt-1">
-                <span className="text-lg font-bold font-mono-numbers">
-                  {transactionInfo.amount != null ? formatCurrency(transactionInfo.amount) : "—"}
-                </span>
-                {transactionInfo.created_at && (
-                  <span className="text-xs text-muted-foreground">
-                    {format(new Date(transactionInfo.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+        {/* Transaction identification card — REFORÇADO */}
+        <Card className="border-warning/60 bg-warning/10 mb-6 shadow-md">
+          <CardContent className="p-4">
+            <div className="flex items-start gap-3">
+              <div className="h-10 w-10 rounded-full bg-warning/20 flex items-center justify-center shrink-0 mt-0.5">
+                <AlertCircle className="h-5 w-5 text-warning" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-bold uppercase tracking-wider text-warning mb-1">
+                  ⚠ Pendente: Nota Fiscal
+                </p>
+                <p className="text-lg font-bold text-foreground">
+                  {transactionInfo.beneficiary_name || "Destinatário não identificado"}
+                </p>
+                <div className="flex items-center gap-3 mt-1">
+                  <span className="text-2xl font-bold font-mono-numbers text-primary">
+                    {transactionInfo.amount != null ? formatCurrency(transactionInfo.amount) : "—"}
                   </span>
+                </div>
+                {transactionInfo.created_at && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {format(new Date(transactionInfo.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </p>
                 )}
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Alert */}
         <Card className="border-warning/50 bg-warning/5 mb-6">

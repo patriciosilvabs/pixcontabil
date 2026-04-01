@@ -47,6 +47,31 @@ Deno.serve(async (req) => {
 
     // Get Pix config for cash-out (admin client to bypass RLS)
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+
+    // ---- SERVER-SIDE PENDENCY CHECK ----
+    {
+      const { data: completedTxs } = await supabaseAdmin
+        .from('transactions')
+        .select('id, receipts(id, ocr_data)')
+        .eq('created_by', userId)
+        .eq('company_id', company_id)
+        .eq('status', 'completed')
+        .limit(50);
+
+      if (completedTxs) {
+        const hasPending = completedTxs.some((tx: any) => {
+          const receipts = Array.isArray(tx.receipts) ? tx.receipts : [];
+          return !receipts.some((r: any) => !r?.ocr_data?.auto_generated);
+        });
+        if (hasPending) {
+          return new Response(JSON.stringify({
+            error: 'Você possui comprovante(s) pendente(s). Anexe a nota fiscal antes de realizar um novo pagamento.',
+            code: 'PENDING_RECEIPT',
+          }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      }
+    }
+
     let config: any = null;
     const { data: cashOutConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
     config = cashOutConfig;

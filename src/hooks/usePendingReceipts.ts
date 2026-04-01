@@ -29,22 +29,33 @@ export function usePendingReceipts() {
     }
 
     try {
-      // Get ALL completed transactions by the current user (including pix_type='key')
-      const { data } = await supabase
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+
+      // Get completed transactions without manual receipt
+      const { data: completedData } = await supabase
         .from("transactions")
-        .select("id, beneficiary_name, amount, pix_type, created_at, description, receipts(id, ocr_data)")
+        .select("id, beneficiary_name, amount, pix_type, created_at, description, status, receipts(id, ocr_data)")
         .eq("company_id", currentCompany.id)
         .eq("created_by", user.id)
         .eq("status", "completed")
+        .gte("created_at", thirtyDaysAgo)
         .order("created_at", { ascending: false })
-        .limit(10);
+        .limit(100);
 
-      if (!data) {
-        setPending([]);
-        return;
-      }
+      // Get stuck transactions (pending > 5 min)
+      const { data: stuckData } = await supabase
+        .from("transactions")
+        .select("id, beneficiary_name, amount, pix_type, created_at, description, status")
+        .eq("company_id", currentCompany.id)
+        .eq("created_by", user.id)
+        .eq("status", "pending")
+        .lte("created_at", fiveMinAgo)
+        .gte("created_at", thirtyDaysAgo)
+        .order("created_at", { ascending: false })
+        .limit(20);
 
-      const missingManual = data.filter((tx: any) => {
+      const missingManual = (completedData || []).filter((tx: any) => {
         const receipts = Array.isArray(tx.receipts) ? tx.receipts : [];
         const hasManual = receipts.some(
           (r: any) => !r?.ocr_data?.auto_generated
@@ -52,16 +63,28 @@ export function usePendingReceipts() {
         return !hasManual;
       });
 
-      setPending(
-        missingManual.map((tx: any) => ({
+      const allPending = [
+        ...missingManual.map((tx: any) => ({
           id: tx.id,
           beneficiary_name: tx.beneficiary_name,
           amount: Number(tx.amount),
           pix_type: tx.pix_type,
           created_at: tx.created_at,
           description: tx.description ?? null,
-        }))
-      );
+          status: "completed" as string,
+        })),
+        ...(stuckData || []).map((tx: any) => ({
+          id: tx.id,
+          beneficiary_name: tx.beneficiary_name,
+          amount: Number(tx.amount),
+          pix_type: tx.pix_type,
+          created_at: tx.created_at,
+          description: tx.description ?? null,
+          status: "pending" as string,
+        })),
+      ];
+
+      setPending(allPending);
     } catch (err) {
       console.error("[usePendingReceipts] Error:", err);
     } finally {
