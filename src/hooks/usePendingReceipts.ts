@@ -11,7 +11,7 @@ export interface PendingReceipt {
 
 /**
  * Checks if the current user has pending receipts (completed transactions
- * that are NOT pix_type='key' and have no manual receipt attached).
+ * that have no manual receipt attached — ALL pix_types included).
  */
 export function usePendingReceipts() {
   const { user, currentCompany } = useAuth();
