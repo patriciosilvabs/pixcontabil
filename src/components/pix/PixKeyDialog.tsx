@@ -67,6 +67,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [orderNumber, setOrderNumber] = useState("");
   const [showOrderInput, setShowOrderInput] = useState(false);
   const [suggestedClassification, setSuggestedClassification] = useState<string | null>(null);
+  const [receiptRequired, setReceiptRequired] = useState(true);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
