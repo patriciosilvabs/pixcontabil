@@ -97,7 +97,7 @@ export function useQuickTagsAdmin() {
     await fetchAll();
   };
 
-  const updateTag = async (id: string, updates: Partial<Pick<QuickTag, "name" | "suggested_classification" | "request_order_number" | "is_active" | "sort_order">>) => {
+  const updateTag = async (id: string, updates: Partial<Pick<QuickTag, "name" | "suggested_classification" | "request_order_number" | "receipt_required" | "is_active" | "sort_order">>) => {
     const { error } = await supabase
       .from("quick_tags" as any)
       .update(updates as any)
