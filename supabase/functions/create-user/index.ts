@@ -93,6 +93,20 @@ Deno.serve(async (req) => {
     }));
     await adminClient.from("user_page_permissions").insert(permRows);
 
+    // Create default feature permissions (all enabled)
+    const featureKeys = [
+      "menu_pix", "pagar_qrcode", "copia_cola", "com_chave",
+      "favorecidos", "agendadas", "boleto", "dinheiro", "transferir",
+      "classificar_insumo", "classificar_despesa",
+    ];
+    const featRows = featureKeys.map((feature_key) => ({
+      user_id: userId,
+      company_id,
+      feature_key,
+      is_visible: true,
+    }));
+    await adminClient.from("user_feature_permissions").insert(featRows);
+
     return new Response(
       JSON.stringify({ success: true, user_id: userId, email }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
