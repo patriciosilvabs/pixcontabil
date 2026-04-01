@@ -74,6 +74,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       <MobileHeader
         balanceVisible={balanceVisible}
         onToggleBalance={toggleBalance}
+        pendingReceiptsCount={pendingReceiptsCount}
       />
 
       {/* Desktop sidebar */}
