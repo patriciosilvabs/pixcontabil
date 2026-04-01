@@ -504,7 +504,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <Button
                 onClick={handleStep2}
-                disabled={!amount || parseLocalizedNumber(amount) <= 0 || !description.trim()}
+                disabled={!amount || parseLocalizedNumber(amount) <= 0 || (descriptionRequired && !description.trim())}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar
