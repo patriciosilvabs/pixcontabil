@@ -148,7 +148,8 @@ export default function Transactions() {
     const matchesSearch = t.beneficiary.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || t.status === statusFilter;
     const matchesClassification = classificationFilter === "all" || t.classification === classificationFilter;
-    return matchesSearch && matchesStatus && matchesClassification;
+    const matchesProbe = showProbes || t.amount > 0.01;
+    return matchesSearch && matchesStatus && matchesClassification && matchesProbe;
   });
 
   return (
