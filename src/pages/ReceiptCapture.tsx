@@ -278,6 +278,7 @@ export default function ReceiptCapture() {
 
       const updateData: Record<string, any> = {
         description: paymentDescription.trim(),
+        classified_at: new Date().toISOString(),
       };
 
       if (receiptData.subcategory) {
@@ -287,7 +288,6 @@ export default function ReceiptCapture() {
         if (selectedCategory) {
           updateData.category_id = selectedCategory.id;
           updateData.classified_by = user.id;
-          updateData.classified_at = new Date().toISOString();
         }
       }
 
