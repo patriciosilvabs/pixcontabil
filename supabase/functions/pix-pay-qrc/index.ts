@@ -56,6 +56,7 @@ Deno.serve(async (req) => {
         .eq('created_by', userId)
         .eq('company_id', company_id)
         .eq('status', 'completed')
+        .eq('receipt_required', true)
         .gt('amount', 0.01)
         .gte('created_at', '2026-04-01T00:00:00Z')
         .limit(50);
