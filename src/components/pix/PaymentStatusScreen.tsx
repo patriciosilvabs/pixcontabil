@@ -15,6 +15,8 @@ interface PaymentStatusScreenProps {
   onViewReceipt?: () => void;
   /** When true, redirects to receipt capture page on completion instead of showing "Ver Comprovante" */
   redirectToReceiptCapture?: boolean;
+  /** When true, skip the "Anexar Comprovante" button — transaction doesn't require a receipt photo */
+  skipReceiptCapture?: boolean;
 }
 
 export function PaymentStatusScreen({
