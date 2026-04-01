@@ -70,6 +70,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [suggestedClassification, setSuggestedClassification] = useState<string | null>(null);
   const [receiptRequired, setReceiptRequired] = useState(true);
   const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
@@ -93,7 +94,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setShowOrderInput(false);
     setSuggestedClassification(null);
     setReceiptRequired(true);
-    setStep(1);
+    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+    setSelectedTagId(null);
     setProbeTransactionId("");
     setProbeError("");
     setBeneficiaryName(null);
@@ -155,6 +157,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     const validation = isValidPaymentAmount(value);
     if (!validation.valid) {
       toast.error(validation.message);
+      return;
+    }
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
       return;
     }
     if (!description.trim()) {
@@ -427,22 +433,31 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                         key={tag.id}
                         type="button"
                       onClick={() => {
-                          const separator = description.trim() ? " | " : "";
-                          setDescription((prev) => (prev.trim() + separator + tag.name).slice(0, 140));
-                          if (tag.suggested_classification) {
-                            setSuggestedClassification(tag.suggested_classification);
-                          }
-                          if (tag.request_order_number) {
-                            setShowOrderInput(true);
-                          }
-                          if (!tag.receipt_required) {
-                            setReceiptRequired(false);
-                          }
-                          if (tag.description_placeholder) {
-                            setDescriptionPlaceholder(tag.description_placeholder);
+                          if (selectedTagId === tag.id) {
+                            // Deselect
+                            setSelectedTagId(null);
+                            setSuggestedClassification(null);
+                            setShowOrderInput(false);
+                            setReceiptRequired(true);
+                            setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                          } else {
+                            // Select
+                            setSelectedTagId(tag.id);
+                            if (tag.suggested_classification) {
+                              setSuggestedClassification(tag.suggested_classification);
+                            } else {
+                              setSuggestedClassification(null);
+                            }
+                            setShowOrderInput(tag.request_order_number);
+                            setReceiptRequired(tag.receipt_required);
+                            setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
                           }
                         }}
-                        className="h-10 px-4 rounded-full bg-primary/10 text-primary font-medium text-sm border border-primary/20 hover:bg-primary/20 active:scale-95 transition-all"
+                        className={`h-10 px-4 rounded-full font-medium text-sm border active:scale-95 transition-all ${
+                          selectedTagId === tag.id
+                            ? "bg-primary text-primary-foreground border-primary"
+                            : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+                        }`}
                         data-vaul-no-drag
                       >
                         {tag.name}
