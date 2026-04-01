@@ -57,12 +57,16 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess } = useAuth();
+  const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<Step>(1);
   const [pixKeyType, setPixKeyType] = useState<PixKeyType>("cpf");
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
   const [description, setDescription] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [suggestedClassification, setSuggestedClassification] = useState<string | null>(null);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
