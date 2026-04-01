@@ -118,8 +118,7 @@ export default function Transactions() {
       } else {
         const mapped: TransactionRow[] = (txResult.data || []).map((t: any) => {
           const receipts = Array.isArray(t.receipts) ? t.receipts : [];
-          const hasManualReceipt = receipts.some((r: any) => !r?.ocr_data?.auto_generated);
-          const hasReceipt = t.pix_type === "key" ? receipts.length > 0 : hasManualReceipt;
+          const hasReceipt = receipts.some((r: any) => !r?.ocr_data?.auto_generated);
 
           return {
             id: t.id,
