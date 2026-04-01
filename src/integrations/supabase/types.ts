@@ -587,6 +587,50 @@ export type Database = {
         }
         Relationships: []
       }
+      quick_tags: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          request_order_number: boolean
+          sort_order: number
+          suggested_classification: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          request_order_number?: boolean
+          sort_order?: number
+          suggested_classification?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          request_order_number?: boolean
+          sort_order?: number
+          suggested_classification?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "quick_tags_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       receipts: {
         Row: {
           capture_latitude: number | null

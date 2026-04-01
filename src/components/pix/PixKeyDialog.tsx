@@ -13,6 +13,8 @@ import { usePixPayment } from "@/hooks/usePixPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
+import { useQuickTags } from "@/hooks/useQuickTags";
+import { Badge } from "@/components/ui/badge";
 
 interface PixKeyDialogProps {
   open: boolean;
@@ -55,12 +57,16 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess } = useAuth();
+  const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<Step>(1);
   const [pixKeyType, setPixKeyType] = useState<PixKeyType>("cpf");
   const [pixKey, setPixKey] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
   const [description, setDescription] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [suggestedClassification, setSuggestedClassification] = useState<string | null>(null);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
@@ -80,6 +86,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setAmount("");
     setDescription("");
     setSaveFavorite(false);
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSuggestedClassification(null);
     setStep(1);
     setProbeTransactionId("");
     setProbeError("");
@@ -231,11 +240,14 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const handleConfirmRealPayment = async () => {
     setStep(5);
     const value = parseLocalizedNumber(amount);
+    const fullDescription = orderNumber.trim()
+      ? `${description.trim()} #${orderNumber.trim()}`
+      : description.trim();
 
     const result = await payByKey({
       pix_key: pixKey.trim(),
       valor: value,
-      descricao: description.trim() || undefined,
+      descricao: fullDescription || undefined,
     });
 
     if (result?.transaction_id) {
@@ -382,6 +394,56 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   data-vaul-no-drag
                 />
               </div>
+
+              {/* Quick Tags */}
+              {quickTags.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Tags Rápidas
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {quickTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => {
+                          const separator = description.trim() ? " | " : "";
+                          setDescription((prev) => (prev.trim() + separator + tag.name).slice(0, 140));
+                          if (tag.suggested_classification) {
+                            setSuggestedClassification(tag.suggested_classification);
+                          }
+                          if (tag.request_order_number) {
+                            setShowOrderInput(true);
+                          }
+                        }}
+                        className="h-10 px-4 rounded-full bg-primary/10 text-primary font-medium text-sm border border-primary/20 hover:bg-primary/20 active:scale-95 transition-all"
+                        data-vaul-no-drag
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Order Number Input */}
+              {showOrderInput && (
+                <div className="space-y-2">
+                  <Label htmlFor="order-number" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Nº do Pedido
+                  </Label>
+                  <Input
+                    id="order-number"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ex: 1234"
+                    value={orderNumber}
+                    onChange={(e) => setOrderNumber(e.target.value)}
+                    className="h-12 text-base"
+                    data-vaul-no-drag
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
