@@ -221,6 +221,20 @@ export default function Users() {
     FEATURE_OPTIONS.forEach(f => featureMap[f.key] = true); // default all true
     featurePerms?.forEach((f: any) => { featureMap[f.feature_key] = f.is_visible; });
     setEditFeaturePermissions(featureMap);
+
+    // Detect matching template
+    const canView = (m as any).can_view_balance ?? false;
+    const memberRole = (m.role as "admin" | "operator") || "operator";
+    let detectedTemplate: string | null = null;
+    for (const [key, tpl] of Object.entries(PERMISSION_TEMPLATES)) {
+      const pagesMatch = PAGE_OPTIONS.every(p => (permMap[p.key] ?? true) === tpl.pages[p.key]);
+      const featuresMatch = FEATURE_OPTIONS.every(f => (featureMap[f.key] ?? true) === tpl.features[f.key]);
+      if (pagesMatch && featuresMatch && tpl.canViewBalance === canView && tpl.role === memberRole) {
+        detectedTemplate = key;
+        break;
+      }
+    }
+    setSelectedTemplate(detectedTemplate);
     setEditDialog(true);
   };
 
