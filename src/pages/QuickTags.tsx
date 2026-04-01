@@ -50,7 +50,6 @@ export default function QuickTags() {
     setFormName(tag.name);
     setFormClassification(tag.suggested_classification || "none");
     setFormRequestOrder(tag.request_order_number);
-    setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
     setFormPlaceholder(tag.description_placeholder || "");
     setFormDescriptionRequired(tag.description_required);
