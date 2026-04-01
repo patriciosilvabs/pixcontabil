@@ -436,24 +436,21 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                         type="button"
                       onClick={() => {
                           if (selectedTagId === tag.id) {
-                            // Deselect
                             setSelectedTagId(null);
                             setSuggestedClassification(null);
                             setShowOrderInput(false);
                             setReceiptRequired(true);
                             setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                            setDescriptionRequired(true);
                           } else {
-                            // Select
                             setSelectedTagId(tag.id);
-                            if (tag.suggested_classification) {
-                              setSuggestedClassification(tag.suggested_classification);
-                            } else {
-                              setSuggestedClassification(null);
-                            }
+                            setSuggestedClassification(tag.suggested_classification || null);
                             setShowOrderInput(tag.request_order_number);
                             setReceiptRequired(tag.receipt_required);
                             setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+                            setDescriptionRequired(tag.description_required);
                           }
+                        }}
                         }}
                         className={`h-10 px-4 rounded-full font-medium text-sm border active:scale-95 transition-all ${
                           selectedTagId === tag.id
