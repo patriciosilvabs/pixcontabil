@@ -592,56 +592,30 @@ export default function Users() {
           </CardContent>
         </Card>
 
-        <Dialog open={editDialog} onOpenChange={setEditDialog}>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Editar Membro</DialogTitle>
-              <DialogDescription>Altere as permissões e configurações do membro</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {/* Template selector */}
+        <ResponsiveDialog open={editDialog} onOpenChange={setEditDialog}>
+          <ResponsiveDialogContent className={isMobile ? "" : "max-h-[90vh] overflow-y-auto"}>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Editar Membro</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>Altere as permissões e configurações do membro</ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-4 ${isMobile ? "px-4" : ""}`}>
               <div className="space-y-3">
                 <Label className="text-sm font-medium">Template de Perfil</Label>
-                <p className="text-xs text-muted-foreground">Selecione um template para preencher automaticamente. Você pode ajustar individualmente depois.</p>
+                <p className="text-xs text-muted-foreground">Selecione um template para preencher automaticamente.</p>
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   {Object.entries(PERMISSION_TEMPLATES).map(([key, tpl]) => {
                     const isActive = selectedTemplate === key;
                     return (
-                      <button
-                        key={key}
-                        type="button"
-                        className={`relative rounded-lg border-2 p-3 text-left transition-all ${
-                          isActive
-                            ? "border-primary bg-primary/5 shadow-sm"
-                            : "border-border hover:border-muted-foreground/30 hover:bg-muted/50"
-                        }`}
-                        onClick={() => {
-                          setSelectedTemplate(key);
-                          setEditRole(tpl.role);
-                          setEditCanViewBalance(tpl.canViewBalance);
-                          setEditPermissions({ ...tpl.pages });
-                          setEditFeaturePermissions({ ...tpl.features });
-                        }}
-                      >
-                        {isActive && (
-                          <Badge className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">
-                            Ativo
-                          </Badge>
-                        )}
+                      <button key={key} type="button"
+                        className={`relative rounded-lg border-2 p-3 text-left transition-all ${isActive ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-muted-foreground/30 hover:bg-muted/50"}`}
+                        onClick={() => { setSelectedTemplate(key); setEditRole(tpl.role); setEditCanViewBalance(tpl.canViewBalance); setEditPermissions({ ...tpl.pages }); setEditFeaturePermissions({ ...tpl.features }); }}>
+                        {isActive && <Badge className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">Ativo</Badge>}
                         <span className="font-semibold text-sm block">{tpl.label}</span>
                         <span className="text-xs text-muted-foreground block mb-2">{tpl.description}</span>
                         <div className="flex flex-wrap gap-1">
                           {tpl.highlights.map((h, i) => (
-                            <span
-                              key={i}
-                              className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1.5 py-0.5 font-medium ${
-                                h.enabled
-                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                  : "bg-destructive/10 text-destructive"
-                              }`}
-                            >
-                              {h.enabled ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                              {h.label}
+                            <span key={i} className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1.5 py-0.5 font-medium ${h.enabled ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
+                              {h.enabled ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}{h.label}
                             </span>
                           ))}
                         </div>
@@ -650,60 +624,33 @@ export default function Users() {
                   })}
                 </div>
               </div>
-
               <div className="border-t pt-4 space-y-4">
                 <div className="flex items-center gap-2">
-                  {selectedTemplate && (
-                    <Badge variant="secondary" className="text-xs">
-                      Perfil: {PERMISSION_TEMPLATES[selectedTemplate].label}
-                    </Badge>
-                  )}
-                  <p className="text-xs text-muted-foreground font-medium">
-                    {selectedTemplate ? "Ajustes abaixo sobrescrevem o template selecionado" : "Ajustes individuais"}
-                  </p>
+                  {selectedTemplate && <Badge variant="secondary" className="text-xs">Perfil: {PERMISSION_TEMPLATES[selectedTemplate].label}</Badge>}
+                  <p className="text-xs text-muted-foreground font-medium">{selectedTemplate ? "Ajustes sobrescrevem o template" : "Ajustes individuais"}</p>
                 </div>
-
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2"><Shield className="h-4 w-4" /> Role</Label>
                   <Select value={editRole} onValueChange={(v) => setEditRole(v as "admin" | "operator")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="operator">Operador</SelectItem>
-                    </SelectContent>
+                    <SelectTrigger data-vaul-no-drag><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="admin">Administrador</SelectItem><SelectItem value="operator">Operador</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite de Pagamento (R$)</Label>
-                  <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" />
+                  <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite (R$)</Label>
+                  <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" data-vaul-no-drag />
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 pt-1">
-                    <Checkbox
-                      id="can-view-balance"
-                      checked={editCanViewBalance}
-                      onCheckedChange={(checked) => setEditCanViewBalance(!!checked)}
-                    />
-                    <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">
-                      Visualizar Saldo da Conta
-                    </Label>
-                  </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox id="can-view-balance" checked={editCanViewBalance} onCheckedChange={(checked) => setEditCanViewBalance(!!checked)} />
+                  <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">Visualizar Saldo</Label>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Acesso às Páginas</Label>
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     {PAGE_OPTIONS.map(page => (
                       <div key={page.key} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`perm-${page.key}`}
-                          checked={editPermissions[page.key] ?? true}
-                          onCheckedChange={(checked) =>
-                            setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))
-                          }
-                        />
-                        <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">
-                          {page.label}
-                        </Label>
+                        <Checkbox id={`perm-${page.key}`} checked={editPermissions[page.key] ?? true} onCheckedChange={(checked) => setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))} />
+                        <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">{page.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -713,73 +660,38 @@ export default function Users() {
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     {FEATURE_OPTIONS.map(feature => (
                       <div key={feature.key} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`feat-${feature.key}`}
-                          checked={editFeaturePermissions[feature.key] ?? true}
-                          onCheckedChange={(checked) =>
-                            setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))
-                          }
-                        />
-                        <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">
-                          {feature.label}
-                        </Label>
+                        <Checkbox id={`feat-${feature.key}`} checked={editFeaturePermissions[feature.key] ?? true} onCheckedChange={(checked) => setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))} />
+                        <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">{feature.label}</Label>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditDialog(false)}>Cancelar</Button>
-              <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => setEditDialog(false)} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleSave} disabled={isSaving} className="min-h-[44px]">{isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar</Button>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
-        <Dialog open={addDialog} onOpenChange={setAddDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Adicionar Usuário</DialogTitle>
-              <DialogDescription>Cadastre um novo membro para a empresa</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nome completo</Label>
-                <Input
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  placeholder="Nome do usuário"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={addEmail}
-                  onChange={(e) => setAddEmail(e.target.value)}
-                  placeholder="usuario@email.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Senha</Label>
-                <Input
-                  type="password"
-                  value={addPassword}
-                  onChange={(e) => setAddPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                />
-              </div>
+        <ResponsiveDialog open={addDialog} onOpenChange={setAddDialog}>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Adicionar Usuário</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>Cadastre um novo membro para a empresa</ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-4 ${isMobile ? "px-4" : ""}`}>
+              <div className="space-y-2"><Label>Nome completo</Label><Input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Nome do usuário" data-vaul-no-drag /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} placeholder="usuario@email.com" data-vaul-no-drag /></div>
+              <div className="space-y-2"><Label>Senha</Label><Input type="password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} placeholder="Mínimo 6 caracteres" data-vaul-no-drag /></div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); setAddName(""); setAddPassword(""); }}>Cancelar</Button>
-              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim() || !addName.trim() || !addPassword.trim()}>
-                {isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Cadastrar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); setAddName(""); setAddPassword(""); }} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim() || !addName.trim() || !addPassword.trim()} className="min-h-[44px]">{isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Cadastrar</Button>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
         <AlertDialog open={deleteDialog} onOpenChange={setDeleteDialog}>
           <AlertDialogContent>
