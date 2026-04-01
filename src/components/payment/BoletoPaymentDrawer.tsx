@@ -435,6 +435,19 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
               )}
 
               <div className="space-y-2">
+                <Label htmlFor="boleto-company" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Nome da Empresa *
+                </Label>
+                <Input
+                  id="boleto-company"
+                  type="text"
+                  placeholder="Ex: Empresa XYZ Ltda"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
                 <Label htmlFor="boleto-desc" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Descrição (opcional)
                 </Label>

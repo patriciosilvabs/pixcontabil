@@ -251,6 +251,21 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
                 </div>
               </div>
 
+              {/* Company Name */}
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  Nome da Empresa *
+                </Label>
+                <Input
+                  type="text"
+                  placeholder="Ex: Empresa XYZ Ltda"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className="text-sm"
+                  data-vaul-no-drag
+                />
+              </div>
+
               {/* Description */}
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
