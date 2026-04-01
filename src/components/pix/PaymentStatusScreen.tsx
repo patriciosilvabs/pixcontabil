@@ -155,7 +155,17 @@ export function PaymentStatusScreen({
           )}
           <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
           <div className="w-full space-y-2 mt-1">
-            {redirectToReceiptCapture ? (
+            {skipReceiptCapture ? (
+              /* Tag dispensou comprovante — só "Voltar ao Início" */
+              <Button
+                variant="ghost"
+                onClick={() => { onClose(); navigate("/"); }}
+                className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+              >
+                <Home className="mr-2 h-5 w-5" />
+                Voltar ao Início
+              </Button>
+            ) : redirectToReceiptCapture ? (
               <>
                 <Button
                   onClick={() => {
