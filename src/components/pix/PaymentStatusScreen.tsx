@@ -26,6 +26,7 @@ export function PaymentStatusScreen({
   onClose,
   onViewReceipt,
   redirectToReceiptCapture = false,
+  skipReceiptCapture = false,
 }: PaymentStatusScreenProps) {
   const navigate = useNavigate();
   const { checkStatus, downloadReceipt, shareReceipt, saveReceiptAsFile } = usePixPayment();
