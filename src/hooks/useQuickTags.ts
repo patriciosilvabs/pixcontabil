@@ -8,6 +8,7 @@ export interface QuickTag {
   name: string;
   suggested_classification: string | null;
   request_order_number: boolean;
+  receipt_required: boolean;
   is_active: boolean;
   sort_order: number;
   created_at: string;
