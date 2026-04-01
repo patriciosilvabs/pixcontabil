@@ -165,7 +165,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
       toast.error("Selecione uma tag");
       return;
     }
-    if (!description.trim()) {
+    if (descriptionRequired && !description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
