@@ -15,6 +15,7 @@ import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
+import { usePendingReceipts } from "@/hooks/usePendingReceipts";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Key,
