@@ -43,6 +43,7 @@ export default function QuickTags() {
     setFormReceiptRequired(true);
     setFormSortOrder(tags.length);
     setFormPlaceholder("");
+    setFormDescriptionRequired(true);
     setDialogOpen(true);
   };
 
