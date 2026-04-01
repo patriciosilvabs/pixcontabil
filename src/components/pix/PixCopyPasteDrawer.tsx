@@ -21,7 +21,6 @@ interface PixCopyPasteDrawerProps {
 export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerProps) {
   const navigate = useNavigate();
   const { getQRCodeInfo, payByQRCode, isProcessing } = usePixPayment();
-  const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [emvCode, setEmvCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -30,14 +29,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   const [merchantCity, setMerchantCity] = useState("");
   const [pixKey, setPixKey] = useState("");
   const [transactionId, setTransactionId] = useState("");
-  
-  // Tag & description state
-  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
-  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
-  const [orderNumber, setOrderNumber] = useState("");
-  const [showOrderInput, setShowOrderInput] = useState(false);
-  const [receiptRequired, setReceiptRequired] = useState(true);
 
   const reset = () => {
     setStep(1);

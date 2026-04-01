@@ -22,7 +22,6 @@ interface PixQrPaymentDrawerProps {
 export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentDrawerProps) {
   const navigate = useNavigate();
   const { getQRCodeInfo, payByQRCode, isProcessing } = usePixPayment();
-  const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [isLoading, setIsLoading] = useState(true);
   const [amount, setAmount] = useState("");
@@ -31,14 +30,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   const [pixKey, setPixKey] = useState("");
   const [hasFixedAmount, setHasFixedAmount] = useState(false);
   const [transactionId, setTransactionId] = useState("");
-
-  // Tag & description state
-  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
   const [description, setDescription] = useState("");
-  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
-  const [orderNumber, setOrderNumber] = useState("");
-  const [showOrderInput, setShowOrderInput] = useState(false);
-  const [receiptRequired, setReceiptRequired] = useState(true);
 
   useEffect(() => {
     if (!open || !qrCode) return;
