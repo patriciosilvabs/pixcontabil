@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { RECEIPT_CUTOFF_DATE } from "@/constants/app";
 
 export interface PendingReceipt {
   id: string;
