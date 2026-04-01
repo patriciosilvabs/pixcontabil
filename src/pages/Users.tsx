@@ -15,7 +15,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2, KeyRound } from "lucide-react";
+import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2, KeyRound, Check, X } from "lucide-react";
 
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
@@ -50,40 +50,65 @@ interface PermissionTemplate {
   canViewBalance: boolean;
   pages: Record<string, boolean>;
   features: Record<string, boolean>;
+  highlights: { label: string; enabled: boolean }[];
 }
 
 const PERMISSION_TEMPLATES: Record<string, PermissionTemplate> = {
   gestor: {
     label: "Gestor",
-    description: "Acesso total a todas as funções e visualização de saldo",
+    description: "Acesso total ao sistema",
     role: "operator",
     canViewBalance: true,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, true])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, true])),
+    highlights: [
+      { label: "Saldo", enabled: true },
+      { label: "Todas as páginas", enabled: true },
+      { label: "Classificações", enabled: true },
+      { label: "Configurações", enabled: true },
+    ],
   },
   operacional: {
     label: "Operacional",
-    description: "Pagamentos e transações, sem saldo nem configurações",
+    description: "Pagamentos e transações",
     role: "operator",
     canViewBalance: false,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, !["users", "companies", "settings", "reports"].includes(p.key)])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo"].includes(f.key)])),
+    highlights: [
+      { label: "Saldo", enabled: false },
+      { label: "Pagamentos", enabled: true },
+      { label: "Configurações", enabled: false },
+      { label: "Classif. Despesa", enabled: true },
+    ],
   },
   caixa: {
     label: "Caixa",
-    description: "Apenas pagamentos básicos, sem saldo nem classificações",
+    description: "Apenas pagamentos básicos",
     role: "operator",
     canViewBalance: false,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions"].includes(p.key)])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "classificar_despesa", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+    highlights: [
+      { label: "Saldo", enabled: false },
+      { label: "Pagamentos", enabled: true },
+      { label: "Classificações", enabled: false },
+      { label: "Favorecidos", enabled: false },
+    ],
   },
   caixa_confianca: {
     label: "Caixa Confiança",
-    description: "Caixa com acesso a saldo e classificação de despesas",
+    description: "Caixa com saldo e despesas",
     role: "operator",
     canViewBalance: true,
     pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions", "categories"].includes(p.key)])),
     features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+    highlights: [
+      { label: "Saldo", enabled: true },
+      { label: "Pagamentos", enabled: true },
+      { label: "Classif. Custo", enabled: false },
+      { label: "Classif. Despesa", enabled: true },
+    ],
   },
 };
 
@@ -122,6 +147,7 @@ export default function Users() {
   const [passwordMember, setPasswordMember] = useState<MemberRow | null>(null);
   const [newPassword, setNewPassword] = useState("");
   const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
 
   const fetchMembers = async () => {
     if (!currentCompany) return;
@@ -195,6 +221,20 @@ export default function Users() {
     FEATURE_OPTIONS.forEach(f => featureMap[f.key] = true); // default all true
     featurePerms?.forEach((f: any) => { featureMap[f.feature_key] = f.is_visible; });
     setEditFeaturePermissions(featureMap);
+
+    // Detect matching template
+    const canView = (m as any).can_view_balance ?? false;
+    const memberRole = (m.role as "admin" | "operator") || "operator";
+    let detectedTemplate: string | null = null;
+    for (const [key, tpl] of Object.entries(PERMISSION_TEMPLATES)) {
+      const pagesMatch = PAGE_OPTIONS.every(p => (permMap[p.key] ?? true) === tpl.pages[p.key]);
+      const featuresMatch = FEATURE_OPTIONS.every(f => (featureMap[f.key] ?? true) === tpl.features[f.key]);
+      if (pagesMatch && featuresMatch && tpl.canViewBalance === canView && tpl.role === memberRole) {
+        detectedTemplate = key;
+        break;
+      }
+    }
+    setSelectedTemplate(detectedTemplate);
     setEditDialog(true);
   };
 
@@ -505,32 +545,68 @@ export default function Users() {
             </DialogHeader>
             <div className="space-y-4">
               {/* Template selector */}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <Label className="text-sm font-medium">Template de Perfil</Label>
                 <p className="text-xs text-muted-foreground">Selecione um template para preencher automaticamente. Você pode ajustar individualmente depois.</p>
-                <div className="grid grid-cols-2 gap-2 pt-1">
-                  {Object.entries(PERMISSION_TEMPLATES).map(([key, tpl]) => (
-                    <Button
-                      key={key}
-                      variant="outline"
-                      size="sm"
-                      className="h-auto py-2 flex-col items-start text-left"
-                      onClick={() => {
-                        setEditRole(tpl.role);
-                        setEditCanViewBalance(tpl.canViewBalance);
-                        setEditPermissions({ ...tpl.pages });
-                        setEditFeaturePermissions({ ...tpl.features });
-                      }}
-                    >
-                      <span className="font-medium text-xs">{tpl.label}</span>
-                      <span className="text-[10px] text-muted-foreground leading-tight">{tpl.description}</span>
-                    </Button>
-                  ))}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  {Object.entries(PERMISSION_TEMPLATES).map(([key, tpl]) => {
+                    const isActive = selectedTemplate === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        className={`relative rounded-lg border-2 p-3 text-left transition-all ${
+                          isActive
+                            ? "border-primary bg-primary/5 shadow-sm"
+                            : "border-border hover:border-muted-foreground/30 hover:bg-muted/50"
+                        }`}
+                        onClick={() => {
+                          setSelectedTemplate(key);
+                          setEditRole(tpl.role);
+                          setEditCanViewBalance(tpl.canViewBalance);
+                          setEditPermissions({ ...tpl.pages });
+                          setEditFeaturePermissions({ ...tpl.features });
+                        }}
+                      >
+                        {isActive && (
+                          <Badge className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">
+                            Ativo
+                          </Badge>
+                        )}
+                        <span className="font-semibold text-sm block">{tpl.label}</span>
+                        <span className="text-xs text-muted-foreground block mb-2">{tpl.description}</span>
+                        <div className="flex flex-wrap gap-1">
+                          {tpl.highlights.map((h, i) => (
+                            <span
+                              key={i}
+                              className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1.5 py-0.5 font-medium ${
+                                h.enabled
+                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                  : "bg-destructive/10 text-destructive"
+                              }`}
+                            >
+                              {h.enabled ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
+                              {h.label}
+                            </span>
+                          ))}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="border-t pt-4 space-y-4">
-                <p className="text-xs text-muted-foreground font-medium">Ajustes individuais (sobrescrita)</p>
+                <div className="flex items-center gap-2">
+                  {selectedTemplate && (
+                    <Badge variant="secondary" className="text-xs">
+                      Perfil: {PERMISSION_TEMPLATES[selectedTemplate].label}
+                    </Badge>
+                  )}
+                  <p className="text-xs text-muted-foreground font-medium">
+                    {selectedTemplate ? "Ajustes abaixo sobrescrevem o template selecionado" : "Ajustes individuais"}
+                  </p>
+                </div>
 
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2"><Shield className="h-4 w-4" /> Role</Label>
