@@ -38,7 +38,54 @@ const FEATURE_OPTIONS = [
   { key: "boleto", label: "BOLETO" },
   { key: "dinheiro", label: "DINHEIRO" },
   { key: "transferir", label: "TRANSFERIR" },
+  { key: "classificar_insumo", label: "CLASSIFICAR CUSTO" },
+  { key: "classificar_despesa", label: "CLASSIFICAR DESPESA" },
 ];
+
+// Permission templates
+interface PermissionTemplate {
+  label: string;
+  description: string;
+  role: "admin" | "operator";
+  canViewBalance: boolean;
+  pages: Record<string, boolean>;
+  features: Record<string, boolean>;
+}
+
+const PERMISSION_TEMPLATES: Record<string, PermissionTemplate> = {
+  gestor: {
+    label: "Gestor",
+    description: "Acesso total a todas as funções e visualização de saldo",
+    role: "operator",
+    canViewBalance: true,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, true])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, true])),
+  },
+  operacional: {
+    label: "Operacional",
+    description: "Pagamentos e transações, sem saldo nem configurações",
+    role: "operator",
+    canViewBalance: false,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, !["users", "companies", "settings", "reports"].includes(p.key)])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo"].includes(f.key)])),
+  },
+  caixa: {
+    label: "Caixa",
+    description: "Apenas pagamentos básicos, sem saldo nem classificações",
+    role: "operator",
+    canViewBalance: false,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions"].includes(p.key)])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "classificar_despesa", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+  },
+  caixa_confianca: {
+    label: "Caixa Confiança",
+    description: "Caixa com acesso a saldo e classificação de despesas",
+    role: "operator",
+    canViewBalance: true,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions", "categories"].includes(p.key)])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+  },
+};
 
 interface MemberRow {
   id: string;
@@ -457,68 +504,97 @@ export default function Users() {
               <DialogDescription>Altere as permissões e configurações do membro</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
+              {/* Template selector */}
               <div className="space-y-2">
-                <Label className="flex items-center gap-2"><Shield className="h-4 w-4" /> Role</Label>
-                <Select value={editRole} onValueChange={(v) => setEditRole(v as "admin" | "operator")}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="operator">Operador</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite de Pagamento (R$)</Label>
-                <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 pt-1">
-                  <Checkbox
-                    id="can-view-balance"
-                    checked={editCanViewBalance}
-                    onCheckedChange={(checked) => setEditCanViewBalance(!!checked)}
-                  />
-                  <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">
-                    Visualizar Saldo da Conta
-                  </Label>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Acesso às Páginas</Label>
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  {PAGE_OPTIONS.map(page => (
-                    <div key={page.key} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`perm-${page.key}`}
-                        checked={editPermissions[page.key] ?? true}
-                        onCheckedChange={(checked) =>
-                          setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))
-                        }
-                      />
-                      <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">
-                        {page.label}
-                      </Label>
-                    </div>
+                <Label className="text-sm font-medium">Template de Perfil</Label>
+                <p className="text-xs text-muted-foreground">Selecione um template para preencher automaticamente. Você pode ajustar individualmente depois.</p>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {Object.entries(PERMISSION_TEMPLATES).map(([key, tpl]) => (
+                    <Button
+                      key={key}
+                      variant="outline"
+                      size="sm"
+                      className="h-auto py-2 flex-col items-start text-left"
+                      onClick={() => {
+                        setEditRole(tpl.role);
+                        setEditCanViewBalance(tpl.canViewBalance);
+                        setEditPermissions({ ...tpl.pages });
+                        setEditFeaturePermissions({ ...tpl.features });
+                      }}
+                    >
+                      <span className="font-medium text-xs">{tpl.label}</span>
+                      <span className="text-[10px] text-muted-foreground leading-tight">{tpl.description}</span>
+                    </Button>
                   ))}
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label className="text-sm font-medium">Funções Principais Visíveis</Label>
-                <div className="grid grid-cols-2 gap-3 pt-1">
-                  {FEATURE_OPTIONS.map(feature => (
-                    <div key={feature.key} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`feat-${feature.key}`}
-                        checked={editFeaturePermissions[feature.key] ?? true}
-                        onCheckedChange={(checked) =>
-                          setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))
-                        }
-                      />
-                      <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">
-                        {feature.label}
-                      </Label>
-                    </div>
-                  ))}
+
+              <div className="border-t pt-4 space-y-4">
+                <p className="text-xs text-muted-foreground font-medium">Ajustes individuais (sobrescrita)</p>
+
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2"><Shield className="h-4 w-4" /> Role</Label>
+                  <Select value={editRole} onValueChange={(v) => setEditRole(v as "admin" | "operator")}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="admin">Administrador</SelectItem>
+                      <SelectItem value="operator">Operador</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite de Pagamento (R$)</Label>
+                  <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 pt-1">
+                    <Checkbox
+                      id="can-view-balance"
+                      checked={editCanViewBalance}
+                      onCheckedChange={(checked) => setEditCanViewBalance(!!checked)}
+                    />
+                    <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">
+                      Visualizar Saldo da Conta
+                    </Label>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Acesso às Páginas</Label>
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    {PAGE_OPTIONS.map(page => (
+                      <div key={page.key} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`perm-${page.key}`}
+                          checked={editPermissions[page.key] ?? true}
+                          onCheckedChange={(checked) =>
+                            setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))
+                          }
+                        />
+                        <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">
+                          {page.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Funções e Classificações</Label>
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    {FEATURE_OPTIONS.map(feature => (
+                      <div key={feature.key} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`feat-${feature.key}`}
+                          checked={editFeaturePermissions[feature.key] ?? true}
+                          onCheckedChange={(checked) =>
+                            setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))
+                          }
+                        />
+                        <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">
+                          {feature.label}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>

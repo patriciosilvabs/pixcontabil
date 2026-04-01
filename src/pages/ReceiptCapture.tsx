@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
@@ -43,7 +44,7 @@ export default function ReceiptCapture() {
   const { transactionId } = useParams();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { currentCompany } = useAuth();
+  const { currentCompany, hasFeatureAccess, isAdmin } = useAuth();
   const { checkStatus } = usePixPayment();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +149,15 @@ export default function ReceiptCapture() {
     });
   }, [currentCompany]);
 
+  // Permission-based classification
+  const canClassifyCost = isAdmin || hasFeatureAccess("classificar_insumo");
+  const canClassifyExpense = isAdmin || hasFeatureAccess("classificar_despesa");
+  const hasBothClassifications = canClassifyCost && canClassifyExpense;
+  const hasOnlyOneClassification = (canClassifyCost || canClassifyExpense) && !hasBothClassifications;
+  const autoClassification: ClassificationType | null = hasOnlyOneClassification
+    ? (canClassifyCost ? "cost" : "expense")
+    : null;
+
   const [receiptData, setReceiptData] = useState<ReceiptData>({
     file: null,
     previewUrl: null,
@@ -195,6 +205,8 @@ export default function ReceiptCapture() {
       file: correctedFile,
       previewUrl,
       isProcessing: false,
+      // Auto-set classification if user only has one permission
+      classification: autoClassification ?? prev.classification,
     }));
   }, [normalizeImageOrientation]);
 
@@ -464,11 +476,24 @@ export default function ReceiptCapture() {
                 <CardHeader>
                   <CardTitle>Classificar Pagamento</CardTitle>
                   <CardDescription>
-                    Selecione se é um Custo ou Despesa
+                    {hasOnlyOneClassification
+                      ? "Classificação definida automaticamente com base nas suas permissões"
+                      : "Selecione se é um Custo ou Despesa"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Main classification */}
+                  {/* Auto-classification notice */}
+                  {hasOnlyOneClassification && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <Badge variant="secondary" className="text-sm px-3 py-1">
+                        Categoria: {autoClassification === "cost" ? "Custo" : "Despesa"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">Definida automaticamente</span>
+                    </div>
+                  )}
+
+                  {/* Main classification buttons — only show when user has both permissions */}
+                  {hasBothClassifications && (
                   <div className="grid grid-cols-2 gap-4">
                     <Button
                       variant={
@@ -522,6 +547,7 @@ export default function ReceiptCapture() {
                       <span className="font-bold">DESPESA</span>
                     </Button>
                   </div>
+                  )}
 
                   {/* Subcategories */}
                   {receiptData.classification && (
