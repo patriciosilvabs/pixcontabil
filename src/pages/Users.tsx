@@ -133,6 +133,7 @@ interface MemberRow {
 export default function Users() {
   const { currentCompany, user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editDialog, setEditDialog] = useState(false);
