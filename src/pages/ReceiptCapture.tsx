@@ -441,9 +441,9 @@ export default function ReceiptCapture() {
               <AlertCircle className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="font-medium">Comprovante Obrigatório</p>
+              <p className="font-medium">Anexar Comprovante</p>
               <p className="text-sm text-muted-foreground">
-                Você não pode sair desta tela sem anexar o comprovante.
+                Anexe o comprovante fiscal e classifique o pagamento. Você pode salvar a classificação agora e anexar a foto depois.
               </p>
             </div>
           </CardContent>
