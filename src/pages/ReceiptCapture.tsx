@@ -726,8 +726,29 @@ export default function ReceiptCapture() {
             </Card>
           </>
         )}
+        {/* Description field */}
+        <Card className="mb-6">
+          <CardContent className="p-4 space-y-2">
+            <label className="text-sm font-medium">
+              O que foi pago? {!receiptData.file && <span className="text-destructive">*</span>}
+            </label>
+            <Textarea
+              placeholder="Ex: Compra de tomate, Conta de luz, Material de limpeza..."
+              value={paymentDescription}
+              onChange={(e) => setPaymentDescription(e.target.value)}
+              maxLength={200}
+              className="resize-none"
+              rows={2}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              {!receiptData.file
+                ? "Obrigatório ao salvar sem comprovante — ajuda a lembrar qual foto anexar depois."
+                : "Opcional — adicione uma descrição para facilitar a identificação."}
+            </p>
+          </CardContent>
+        </Card>
 
-        {/* Submit button */}
+
         <div className="space-y-3">
           <Button
             className="w-full bg-gradient-accent hover:opacity-90 shadow-accent text-lg h-14"
