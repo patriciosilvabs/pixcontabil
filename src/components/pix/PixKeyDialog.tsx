@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
@@ -67,6 +68,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [orderNumber, setOrderNumber] = useState("");
   const [showOrderInput, setShowOrderInput] = useState(false);
   const [suggestedClassification, setSuggestedClassification] = useState<string | null>(null);
+  const [receiptRequired, setReceiptRequired] = useState(true);
 
   // Probe state
   const [probeTransactionId, setProbeTransactionId] = useState("");
@@ -89,6 +91,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setOrderNumber("");
     setShowOrderInput(false);
     setSuggestedClassification(null);
+    setReceiptRequired(true);
     setStep(1);
     setProbeTransactionId("");
     setProbeError("");
@@ -252,6 +255,17 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result?.transaction_id) {
       setRealTransactionId(result.transaction_id);
+      // If receipt not required, mark the transaction accordingly
+      if (!receiptRequired) {
+        try {
+          await supabase
+            .from("transactions")
+            .update({ receipt_required: false } as any)
+            .eq("id", result.transaction_id);
+        } catch (e) {
+          console.error("[PixKeyDialog] Failed to update receipt_required:", e);
+        }
+      }
       setStep(6);
     } else {
       setStep(4);
@@ -414,6 +428,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                           }
                           if (tag.request_order_number) {
                             setShowOrderInput(true);
+                          }
+                          if (!tag.receipt_required) {
+                            setReceiptRequired(false);
                           }
                         }}
                         className="h-10 px-4 rounded-full bg-primary/10 text-primary font-medium text-sm border border-primary/20 hover:bg-primary/20 active:scale-95 transition-all"
@@ -580,7 +597,8 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
               amount={parseLocalizedNumber(amount)}
               beneficiaryName={beneficiaryName || pixKey}
               onClose={handleCloseAndNavigate}
-              redirectToReceiptCapture={true}
+              redirectToReceiptCapture={receiptRequired}
+              skipReceiptCapture={!receiptRequired}
             />
           )}
         </div>

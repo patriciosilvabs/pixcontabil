@@ -8,6 +8,7 @@ export interface QuickTag {
   name: string;
   suggested_classification: string | null;
   request_order_number: boolean;
+  receipt_required: boolean;
   is_active: boolean;
   sort_order: number;
   created_at: string;
@@ -80,7 +81,7 @@ export function useQuickTagsAdmin() {
     fetchAll();
   }, [fetchAll]);
 
-  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; sort_order?: number }) => {
+  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; receipt_required?: boolean; sort_order?: number }) => {
     if (!currentCompany?.id) return;
     const { error } = await supabase
       .from("quick_tags" as any)
@@ -89,13 +90,14 @@ export function useQuickTagsAdmin() {
         name: tag.name,
         suggested_classification: tag.suggested_classification || null,
         request_order_number: tag.request_order_number ?? false,
+        receipt_required: tag.receipt_required ?? true,
         sort_order: tag.sort_order ?? tags.length,
       } as any);
     if (error) throw error;
     await fetchAll();
   };
 
-  const updateTag = async (id: string, updates: Partial<Pick<QuickTag, "name" | "suggested_classification" | "request_order_number" | "is_active" | "sort_order">>) => {
+  const updateTag = async (id: string, updates: Partial<Pick<QuickTag, "name" | "suggested_classification" | "request_order_number" | "receipt_required" | "is_active" | "sort_order">>) => {
     const { error } = await supabase
       .from("quick_tags" as any)
       .update(updates as any)

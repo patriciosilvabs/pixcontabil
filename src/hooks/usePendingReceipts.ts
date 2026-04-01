@@ -38,10 +38,11 @@ export function usePendingReceipts() {
       // Get completed transactions without manual receipt
       const { data: completedData } = await supabase
         .from("transactions")
-        .select("id, beneficiary_name, amount, pix_type, created_at, description, status, receipts(id, ocr_data)")
+        .select("id, beneficiary_name, amount, pix_type, created_at, description, status, receipt_required, receipts(id, ocr_data)")
         .eq("company_id", currentCompany.id)
         .eq("created_by", user.id)
         .eq("status", "completed")
+        .eq("receipt_required", true)
         .gt("amount", 0.01)
         .gte("created_at", effectiveSince)
         .order("created_at", { ascending: false })
@@ -54,6 +55,7 @@ export function usePendingReceipts() {
         .eq("company_id", currentCompany.id)
         .eq("created_by", user.id)
         .eq("status", "pending")
+        .eq("receipt_required", true)
         .gt("amount", 0.01)
         .lte("created_at", fiveMinAgo)
         .gte("created_at", effectiveSince)

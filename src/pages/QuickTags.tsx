@@ -29,6 +29,7 @@ export default function QuickTags() {
   const [formName, setFormName] = useState("");
   const [formClassification, setFormClassification] = useState<string>("none");
   const [formRequestOrder, setFormRequestOrder] = useState(false);
+  const [formReceiptRequired, setFormReceiptRequired] = useState(true);
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [saving, setSaving] = useState(false);
 
@@ -37,6 +38,7 @@ export default function QuickTags() {
     setFormName("");
     setFormClassification("none");
     setFormRequestOrder(false);
+    setFormReceiptRequired(true);
     setFormSortOrder(tags.length);
     setDialogOpen(true);
   };
@@ -46,6 +48,7 @@ export default function QuickTags() {
     setFormName(tag.name);
     setFormClassification(tag.suggested_classification || "none");
     setFormRequestOrder(tag.request_order_number);
+    setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
     setDialogOpen(true);
   };
@@ -63,6 +66,7 @@ export default function QuickTags() {
           name: formName.trim(),
           suggested_classification: classification,
           request_order_number: formRequestOrder,
+          receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
         });
         toast.success("Tag atualizada");
@@ -71,6 +75,7 @@ export default function QuickTags() {
           name: formName.trim(),
           suggested_classification: classification,
           request_order_number: formRequestOrder,
+          receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
         });
         toast.success("Tag criada");
@@ -160,6 +165,9 @@ export default function QuickTags() {
                           <Badge variant={tag.suggested_classification ? "default" : "secondary"} className="text-xs">
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
+                          {!tag.receipt_required && (
+                            <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-700 border-amber-300">Sem Foto</Badge>
+                          )}
                           {tag.request_order_number && (
                             <Badge variant="outline" className="text-xs">Nº Pedido</Badge>
                           )}
@@ -287,6 +295,22 @@ export default function QuickTags() {
                 <Label htmlFor="request-order" className="cursor-pointer">
                   Solicitar Nº do Pedido
                 </Label>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <Checkbox
+                  id="receipt-required"
+                  checked={formReceiptRequired}
+                  onCheckedChange={(v) => setFormReceiptRequired(v === true)}
+                />
+                <div>
+                  <Label htmlFor="receipt-required" className="cursor-pointer">
+                    Exige Comprovante (Foto)
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Desmarque para tags como "Troco" que não precisam de nota fiscal
+                  </p>
+                </div>
               </div>
 
               <div className="space-y-2">

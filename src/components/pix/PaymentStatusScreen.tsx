@@ -15,6 +15,8 @@ interface PaymentStatusScreenProps {
   onViewReceipt?: () => void;
   /** When true, redirects to receipt capture page on completion instead of showing "Ver Comprovante" */
   redirectToReceiptCapture?: boolean;
+  /** When true, skip the "Anexar Comprovante" button — transaction doesn't require a receipt photo */
+  skipReceiptCapture?: boolean;
 }
 
 export function PaymentStatusScreen({
@@ -24,6 +26,7 @@ export function PaymentStatusScreen({
   onClose,
   onViewReceipt,
   redirectToReceiptCapture = false,
+  skipReceiptCapture = false,
 }: PaymentStatusScreenProps) {
   const navigate = useNavigate();
   const { checkStatus, downloadReceipt, shareReceipt, saveReceiptAsFile } = usePixPayment();
@@ -152,7 +155,17 @@ export function PaymentStatusScreen({
           )}
           <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formattedAmount}</p>
           <div className="w-full space-y-2 mt-1">
-            {redirectToReceiptCapture ? (
+            {skipReceiptCapture ? (
+              /* Tag dispensou comprovante — só "Voltar ao Início" */
+              <Button
+                variant="ghost"
+                onClick={() => { onClose(); navigate("/"); }}
+                className="w-full h-11 text-sm font-bold uppercase tracking-wider"
+              >
+                <Home className="mr-2 h-5 w-5" />
+                Voltar ao Início
+              </Button>
+            ) : redirectToReceiptCapture ? (
               <>
                 <Button
                   onClick={() => {
