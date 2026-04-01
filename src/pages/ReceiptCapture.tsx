@@ -476,11 +476,24 @@ export default function ReceiptCapture() {
                 <CardHeader>
                   <CardTitle>Classificar Pagamento</CardTitle>
                   <CardDescription>
-                    Selecione se é um Custo ou Despesa
+                    {hasOnlyOneClassification
+                      ? "Classificação definida automaticamente com base nas suas permissões"
+                      : "Selecione se é um Custo ou Despesa"}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Main classification */}
+                  {/* Auto-classification notice */}
+                  {hasOnlyOneClassification && (
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                      <Badge variant="secondary" className="text-sm px-3 py-1">
+                        Categoria: {autoClassification === "cost" ? "Custo" : "Despesa"}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">Definida automaticamente</span>
+                    </div>
+                  )}
+
+                  {/* Main classification buttons — only show when user has both permissions */}
+                  {hasBothClassifications && (
                   <div className="grid grid-cols-2 gap-4">
                     <Button
                       variant={
