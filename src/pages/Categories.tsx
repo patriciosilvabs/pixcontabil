@@ -1,17 +1,25 @@
 import { useState, useEffect } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogDescription,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Plus, Pencil, Power, FolderOpen, Filter, FileUp, Trash2 } from "lucide-react";
+import { Loader2, Plus, Pencil, Power, FolderOpen, FileUp, Trash2 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -32,6 +40,7 @@ interface Category {
 export default function Categories() {
   const { currentCompany } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -133,7 +142,7 @@ export default function Categories() {
 
   return (
     <MainLayout>
-      <div className="p-6 lg:p-8 max-w-5xl mx-auto">
+      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -142,7 +151,7 @@ export default function Categories() {
             <p className="text-muted-foreground">Gerencie as categorias de custos e despesas</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => setBatchDialogOpen(true)}><FileUp className="h-4 w-4 mr-2" /> Importar em Lote</Button>
+            <Button variant="outline" onClick={() => setBatchDialogOpen(true)}><FileUp className="h-4 w-4 mr-2" /> Importar</Button>
             <Button onClick={openCreate}><Plus className="h-4 w-4 mr-2" /> Nova Categoria</Button>
           </div>
         </div>
@@ -162,71 +171,109 @@ export default function Categories() {
               <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : filtered.length === 0 ? (
               <div className="text-center text-muted-foreground p-8">Nenhuma categoria encontrada</div>
+            ) : isMobile ? (
+              /* Mobile: Card list */
+              <div className="p-3 space-y-3">
+                {filtered.map((cat) => (
+                  <div key={cat.id} className="rounded-lg border bg-card p-4 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1.5 min-w-0">
+                        <p className="font-medium">{cat.name}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge variant={cat.classification === "cost" ? "default" : "secondary"}>
+                            {cat.classification === "cost" ? "Custo" : "Despesa"}
+                          </Badge>
+                          <Badge variant={cat.is_active ? "default" : "outline"}>
+                            {cat.is_active ? "Ativa" : "Inativa"}
+                          </Badge>
+                        </div>
+                        {(cat.keywords || []).length > 0 && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {(cat.keywords || []).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" className="flex-1 min-h-[44px]" onClick={() => openEdit(cat)}>
+                        <Pencil className="h-4 w-4 mr-2" /> Editar
+                      </Button>
+                      <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => toggleActive(cat)}>
+                        <Power className="h-4 w-4" />
+                      </Button>
+                      <Button variant="outline" size="sm" className="min-h-[44px] text-destructive hover:text-destructive" onClick={() => openDeleteConfirm(cat.id)}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
+              /* Desktop: Table */
               <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Classificação</TableHead>
-                    <TableHead>Keywords</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((cat) => (
-                    <TableRow key={cat.id}>
-                      <TableCell className="font-medium">{cat.name}</TableCell>
-                      <TableCell>
-                        <Badge variant={cat.classification === "cost" ? "default" : "secondary"}>
-                          {cat.classification === "cost" ? "Custo" : "Despesa"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {(cat.keywords || []).join(", ") || "—"}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={cat.is_active ? "default" : "outline"}>
-                          {cat.is_active ? "Ativa" : "Inativa"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right space-x-1">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(cat)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => toggleActive(cat)}>
-                          <Power className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openDeleteConfirm(cat.id)} className="text-destructive hover:text-destructive">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Classificação</TableHead>
+                      <TableHead>Keywords</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((cat) => (
+                      <TableRow key={cat.id}>
+                        <TableCell className="font-medium">{cat.name}</TableCell>
+                        <TableCell>
+                          <Badge variant={cat.classification === "cost" ? "default" : "secondary"}>
+                            {cat.classification === "cost" ? "Custo" : "Despesa"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-sm">
+                          {(cat.keywords || []).join(", ") || "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={cat.is_active ? "default" : "outline"}>
+                            {cat.is_active ? "Ativa" : "Inativa"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right space-x-1">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(cat)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => toggleActive(cat)}>
+                            <Power className="h-4 w-4" />
+                          </Button>
+                          <Button variant="ghost" size="icon" onClick={() => openDeleteConfirm(cat.id)} className="text-destructive hover:text-destructive">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Dialog */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingId ? "Editar Categoria" : "Nova Categoria"}</DialogTitle>
-              <DialogDescription>Defina o nome, classificação e palavras-chave</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
+        {/* Dialog — Drawer on mobile */}
+        <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>{editingId ? "Editar Categoria" : "Nova Categoria"}</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>Defina o nome, classificação e palavras-chave</ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-4 ${isMobile ? "px-4" : ""}`}>
               <div className="space-y-2">
                 <Label>Nome</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome da categoria" />
+                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Nome da categoria" data-vaul-no-drag />
               </div>
               <div className="space-y-2">
                 <Label>Classificação</Label>
                 <Select value={form.classification} onValueChange={(v) => setForm({ ...form, classification: v as Classification })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectTrigger data-vaul-no-drag><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="cost">Custo</SelectItem>
                     <SelectItem value="expense">Despesa</SelectItem>
@@ -235,18 +282,18 @@ export default function Categories() {
               </div>
               <div className="space-y-2">
                 <Label>Keywords (separadas por vírgula)</Label>
-                <Input value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} placeholder="aluguel, energia, água" />
+                <Input value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} placeholder="aluguel, energia, água" data-vaul-no-drag />
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button onClick={handleSave} disabled={isSaving || !form.name.trim()}>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleSave} disabled={isSaving || !form.name.trim()} className="min-h-[44px]">
                 {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
                 {editingId ? "Salvar" : "Criar"}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
         {currentCompany && (
           <BatchCategoryDialog

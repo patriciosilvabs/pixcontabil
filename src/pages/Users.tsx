@@ -7,7 +7,14 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogDescription,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +23,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { getInitials } from "@/lib/utils";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Loader2, Users as UsersIcon, Shield, DollarSign, UserPlus, Trash2, KeyRound, Check, X } from "lucide-react";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const PAGE_OPTIONS = [
   { key: "dashboard", label: "Dashboard" },
@@ -125,6 +133,7 @@ interface MemberRow {
 export default function Users() {
   const { currentCompany, user } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [editDialog, setEditDialog] = useState(false);
@@ -459,7 +468,60 @@ export default function Users() {
               <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
             ) : members.length === 0 ? (
               <div className="text-center text-muted-foreground p-8">Nenhum membro encontrado</div>
+            ) : isMobile ? (
+              /* Mobile: Card list */
+              <div className="p-3 space-y-3">
+                {members.map((m) => (
+                  <div key={m.id} className="rounded-lg border bg-card p-4 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Avatar className="h-10 w-10">
+                        <AvatarFallback className="bg-primary text-primary-foreground text-xs">
+                          {getInitials(m.profile?.full_name || "U")}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium truncate">{m.profile?.full_name || "—"}</p>
+                        <p className="text-xs text-muted-foreground truncate">{m.profile?.email || "—"}</p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge variant={m.role === "admin" ? "default" : "secondary"}>
+                        {m.role === "admin" ? "Admin" : "Operador"}
+                      </Badge>
+                      <Badge variant={m.is_active ? "default" : "outline"}>
+                        {m.is_active ? "Ativo" : "Inativo"}
+                      </Badge>
+                      <Badge variant="outline" className="font-mono">
+                        {m.payment_limit != null
+                          ? `R$ ${Number(m.payment_limit).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`
+                          : "Sem limite"}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <Button variant="outline" size="sm" className="flex-1 min-h-[44px]" onClick={() => openEdit(m)}>
+                        Editar
+                      </Button>
+                      <Button variant="outline" size="sm" className="min-h-[44px]" onClick={() => toggleActive(m)}>
+                        {m.is_active ? "Desativar" : "Ativar"}
+                      </Button>
+                      {user && m.user_id !== user.id && (
+                        <>
+                          <Button variant="outline" size="sm" className="min-h-[44px]"
+                            onClick={() => { setPasswordMember(m); setNewPassword(""); setPasswordDialog(true); }}>
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                          <Button variant="outline" size="sm" className="min-h-[44px] text-destructive hover:text-destructive"
+                            onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
+              /* Desktop: Table */
               <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
@@ -509,20 +571,13 @@ export default function Users() {
                         </Button>
                         {user && m.user_id !== user.id && (
                           <>
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                            <Button variant="ghost" size="sm"
                               onClick={() => { setPasswordMember(m); setNewPassword(""); setPasswordDialog(true); }}
-                              title="Nova Senha"
-                            >
+                              title="Nova Senha">
                               <KeyRound className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive"
-                              onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}
-                            >
+                            <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive"
+                              onClick={() => { setDeletingMember(m); setDeleteDialog(true); }}>
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </>
@@ -537,56 +592,30 @@ export default function Users() {
           </CardContent>
         </Card>
 
-        <Dialog open={editDialog} onOpenChange={setEditDialog}>
-          <DialogContent className="max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Editar Membro</DialogTitle>
-              <DialogDescription>Altere as permissões e configurações do membro</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              {/* Template selector */}
+        <ResponsiveDialog open={editDialog} onOpenChange={setEditDialog}>
+          <ResponsiveDialogContent className={isMobile ? "" : "max-h-[90vh] overflow-y-auto"}>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Editar Membro</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>Altere as permissões e configurações do membro</ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-4 ${isMobile ? "px-4" : ""}`}>
               <div className="space-y-3">
                 <Label className="text-sm font-medium">Template de Perfil</Label>
-                <p className="text-xs text-muted-foreground">Selecione um template para preencher automaticamente. Você pode ajustar individualmente depois.</p>
+                <p className="text-xs text-muted-foreground">Selecione um template para preencher automaticamente.</p>
                 <div className="grid grid-cols-2 gap-3 pt-1">
                   {Object.entries(PERMISSION_TEMPLATES).map(([key, tpl]) => {
                     const isActive = selectedTemplate === key;
                     return (
-                      <button
-                        key={key}
-                        type="button"
-                        className={`relative rounded-lg border-2 p-3 text-left transition-all ${
-                          isActive
-                            ? "border-primary bg-primary/5 shadow-sm"
-                            : "border-border hover:border-muted-foreground/30 hover:bg-muted/50"
-                        }`}
-                        onClick={() => {
-                          setSelectedTemplate(key);
-                          setEditRole(tpl.role);
-                          setEditCanViewBalance(tpl.canViewBalance);
-                          setEditPermissions({ ...tpl.pages });
-                          setEditFeaturePermissions({ ...tpl.features });
-                        }}
-                      >
-                        {isActive && (
-                          <Badge className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">
-                            Ativo
-                          </Badge>
-                        )}
+                      <button key={key} type="button"
+                        className={`relative rounded-lg border-2 p-3 text-left transition-all ${isActive ? "border-primary bg-primary/5 shadow-sm" : "border-border hover:border-muted-foreground/30 hover:bg-muted/50"}`}
+                        onClick={() => { setSelectedTemplate(key); setEditRole(tpl.role); setEditCanViewBalance(tpl.canViewBalance); setEditPermissions({ ...tpl.pages }); setEditFeaturePermissions({ ...tpl.features }); }}>
+                        {isActive && <Badge className="absolute -top-2 -right-2 text-[10px] px-1.5 py-0">Ativo</Badge>}
                         <span className="font-semibold text-sm block">{tpl.label}</span>
                         <span className="text-xs text-muted-foreground block mb-2">{tpl.description}</span>
                         <div className="flex flex-wrap gap-1">
                           {tpl.highlights.map((h, i) => (
-                            <span
-                              key={i}
-                              className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1.5 py-0.5 font-medium ${
-                                h.enabled
-                                  ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                                  : "bg-destructive/10 text-destructive"
-                              }`}
-                            >
-                              {h.enabled ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}
-                              {h.label}
+                            <span key={i} className={`inline-flex items-center gap-0.5 text-[10px] rounded px-1.5 py-0.5 font-medium ${h.enabled ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" : "bg-destructive/10 text-destructive"}`}>
+                              {h.enabled ? <Check className="h-2.5 w-2.5" /> : <X className="h-2.5 w-2.5" />}{h.label}
                             </span>
                           ))}
                         </div>
@@ -595,60 +624,33 @@ export default function Users() {
                   })}
                 </div>
               </div>
-
               <div className="border-t pt-4 space-y-4">
                 <div className="flex items-center gap-2">
-                  {selectedTemplate && (
-                    <Badge variant="secondary" className="text-xs">
-                      Perfil: {PERMISSION_TEMPLATES[selectedTemplate].label}
-                    </Badge>
-                  )}
-                  <p className="text-xs text-muted-foreground font-medium">
-                    {selectedTemplate ? "Ajustes abaixo sobrescrevem o template selecionado" : "Ajustes individuais"}
-                  </p>
+                  {selectedTemplate && <Badge variant="secondary" className="text-xs">Perfil: {PERMISSION_TEMPLATES[selectedTemplate].label}</Badge>}
+                  <p className="text-xs text-muted-foreground font-medium">{selectedTemplate ? "Ajustes sobrescrevem o template" : "Ajustes individuais"}</p>
                 </div>
-
                 <div className="space-y-2">
                   <Label className="flex items-center gap-2"><Shield className="h-4 w-4" /> Role</Label>
                   <Select value={editRole} onValueChange={(v) => setEditRole(v as "admin" | "operator")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="admin">Administrador</SelectItem>
-                      <SelectItem value="operator">Operador</SelectItem>
-                    </SelectContent>
+                    <SelectTrigger data-vaul-no-drag><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectItem value="admin">Administrador</SelectItem><SelectItem value="operator">Operador</SelectItem></SelectContent>
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite de Pagamento (R$)</Label>
-                  <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" />
+                  <Label className="flex items-center gap-2"><DollarSign className="h-4 w-4" /> Limite (R$)</Label>
+                  <Input type="number" value={editLimit} onChange={(e) => setEditLimit(e.target.value)} placeholder="Sem limite" data-vaul-no-drag />
                 </div>
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 pt-1">
-                    <Checkbox
-                      id="can-view-balance"
-                      checked={editCanViewBalance}
-                      onCheckedChange={(checked) => setEditCanViewBalance(!!checked)}
-                    />
-                    <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">
-                      Visualizar Saldo da Conta
-                    </Label>
-                  </div>
+                <div className="flex items-center gap-2 pt-1">
+                  <Checkbox id="can-view-balance" checked={editCanViewBalance} onCheckedChange={(checked) => setEditCanViewBalance(!!checked)} />
+                  <Label htmlFor="can-view-balance" className="text-sm cursor-pointer">Visualizar Saldo</Label>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-sm font-medium">Acesso às Páginas</Label>
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     {PAGE_OPTIONS.map(page => (
                       <div key={page.key} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`perm-${page.key}`}
-                          checked={editPermissions[page.key] ?? true}
-                          onCheckedChange={(checked) =>
-                            setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))
-                          }
-                        />
-                        <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">
-                          {page.label}
-                        </Label>
+                        <Checkbox id={`perm-${page.key}`} checked={editPermissions[page.key] ?? true} onCheckedChange={(checked) => setEditPermissions(prev => ({ ...prev, [page.key]: !!checked }))} />
+                        <Label htmlFor={`perm-${page.key}`} className="text-sm cursor-pointer">{page.label}</Label>
                       </div>
                     ))}
                   </div>
@@ -658,73 +660,38 @@ export default function Users() {
                   <div className="grid grid-cols-2 gap-3 pt-1">
                     {FEATURE_OPTIONS.map(feature => (
                       <div key={feature.key} className="flex items-center gap-2">
-                        <Checkbox
-                          id={`feat-${feature.key}`}
-                          checked={editFeaturePermissions[feature.key] ?? true}
-                          onCheckedChange={(checked) =>
-                            setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))
-                          }
-                        />
-                        <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">
-                          {feature.label}
-                        </Label>
+                        <Checkbox id={`feat-${feature.key}`} checked={editFeaturePermissions[feature.key] ?? true} onCheckedChange={(checked) => setEditFeaturePermissions(prev => ({ ...prev, [feature.key]: !!checked }))} />
+                        <Label htmlFor={`feat-${feature.key}`} className="text-sm cursor-pointer">{feature.label}</Label>
                       </div>
                     ))}
                   </div>
                 </div>
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setEditDialog(false)}>Cancelar</Button>
-              <Button onClick={handleSave} disabled={isSaving}>
-                {isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => setEditDialog(false)} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleSave} disabled={isSaving} className="min-h-[44px]">{isSaving && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar</Button>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
-        <Dialog open={addDialog} onOpenChange={setAddDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Adicionar Usuário</DialogTitle>
-              <DialogDescription>Cadastre um novo membro para a empresa</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label>Nome completo</Label>
-                <Input
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  placeholder="Nome do usuário"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Email</Label>
-                <Input
-                  type="email"
-                  value={addEmail}
-                  onChange={(e) => setAddEmail(e.target.value)}
-                  placeholder="usuario@email.com"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Senha</Label>
-                <Input
-                  type="password"
-                  value={addPassword}
-                  onChange={(e) => setAddPassword(e.target.value)}
-                  placeholder="Mínimo 6 caracteres"
-                />
-              </div>
+        <ResponsiveDialog open={addDialog} onOpenChange={setAddDialog}>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Adicionar Usuário</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>Cadastre um novo membro para a empresa</ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-4 ${isMobile ? "px-4" : ""}`}>
+              <div className="space-y-2"><Label>Nome completo</Label><Input value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="Nome do usuário" data-vaul-no-drag /></div>
+              <div className="space-y-2"><Label>Email</Label><Input type="email" value={addEmail} onChange={(e) => setAddEmail(e.target.value)} placeholder="usuario@email.com" data-vaul-no-drag /></div>
+              <div className="space-y-2"><Label>Senha</Label><Input type="password" value={addPassword} onChange={(e) => setAddPassword(e.target.value)} placeholder="Mínimo 6 caracteres" data-vaul-no-drag /></div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); setAddName(""); setAddPassword(""); }}>Cancelar</Button>
-              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim() || !addName.trim() || !addPassword.trim()}>
-                {isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Cadastrar
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => { setAddDialog(false); setAddEmail(""); setAddName(""); setAddPassword(""); }} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleAddUser} disabled={isAdding || !addEmail.trim() || !addName.trim() || !addPassword.trim()} className="min-h-[44px]">{isAdding && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Cadastrar</Button>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
 
         <AlertDialog open={deleteDialog} onOpenChange={setDeleteDialog}>
           <AlertDialogContent>
@@ -748,32 +715,32 @@ export default function Users() {
           </AlertDialogContent>
         </AlertDialog>
 
-        <Dialog open={passwordDialog} onOpenChange={(open) => { setPasswordDialog(open); if (!open) setNewPassword(""); }}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Nova Senha</DialogTitle>
-              <DialogDescription>
+        <ResponsiveDialog open={passwordDialog} onOpenChange={(open) => { setPasswordDialog(open); if (!open) setNewPassword(""); }}>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>Nova Senha</ResponsiveDialogTitle>
+              <ResponsiveDialogDescription>
                 Definir nova senha para <strong>{passwordMember?.profile?.full_name || "usuário"}</strong> ({passwordMember?.profile?.email})
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-2">
+              </ResponsiveDialogDescription>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-2 ${isMobile ? "px-4" : ""}`}>
               <Label>Nova Senha</Label>
               <Input
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="Mínimo 6 caracteres"
-                autoFocus
+                data-vaul-no-drag
               />
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => { setPasswordDialog(false); setNewPassword(""); }}>Cancelar</Button>
-              <Button onClick={handleResetPassword} disabled={isResettingPassword || newPassword.length < 6}>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => { setPasswordDialog(false); setNewPassword(""); }} className="min-h-[44px]">Cancelar</Button>
+              <Button onClick={handleResetPassword} disabled={isResettingPassword || newPassword.length < 6} className="min-h-[44px]">
                 {isResettingPassword && <Loader2 className="h-4 w-4 animate-spin mr-2" />} Salvar
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
       </div>
     </MainLayout>
   );
