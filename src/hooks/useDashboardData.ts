@@ -138,7 +138,7 @@ export function useDashboardData() {
 
         // Missing receipt/classification — ALL payment types require manual receipt
         const eligibleForManualReceipt = transactions.filter(
-          (t) => t.status === "completed" || t.status === "pending"
+          (t) => (t.status === "completed" || t.status === "pending") && Number(t.amount) > 0.01
         );
 
         const missingReceiptTxs: MissingReceiptTransaction[] = eligibleForManualReceipt

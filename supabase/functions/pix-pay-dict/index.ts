@@ -130,6 +130,7 @@ Deno.serve(async (req) => {
         .eq('created_by', userId)
         .eq('company_id', company_id)
         .eq('status', 'completed')
+        .gt('amount', 0.01)
         .limit(50);
 
       if (completedTxs) {

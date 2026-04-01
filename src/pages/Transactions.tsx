@@ -82,6 +82,7 @@ export default function Transactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") || "all");
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
+  const [showProbes, setShowProbes] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
@@ -147,7 +148,8 @@ export default function Transactions() {
     const matchesSearch = t.beneficiary.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || t.status === statusFilter;
     const matchesClassification = classificationFilter === "all" || t.classification === classificationFilter;
-    return matchesSearch && matchesStatus && matchesClassification;
+    const matchesProbe = showProbes || t.amount > 0.01;
+    return matchesSearch && matchesStatus && matchesClassification && matchesProbe;
   });
 
   return (
@@ -200,6 +202,15 @@ export default function Transactions() {
                   <SelectItem value="expense">Despesas</SelectItem>
                 </SelectContent>
               </Select>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground whitespace-nowrap cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showProbes}
+                  onChange={(e) => setShowProbes(e.target.checked)}
+                  className="rounded border-border"
+                />
+                Mostrar verificações
+              </label>
             </div>
           </CardContent>
         </Card>
