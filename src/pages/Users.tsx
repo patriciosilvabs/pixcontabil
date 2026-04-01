@@ -38,7 +38,54 @@ const FEATURE_OPTIONS = [
   { key: "boleto", label: "BOLETO" },
   { key: "dinheiro", label: "DINHEIRO" },
   { key: "transferir", label: "TRANSFERIR" },
+  { key: "classificar_insumo", label: "CLASSIFICAR CUSTO" },
+  { key: "classificar_despesa", label: "CLASSIFICAR DESPESA" },
 ];
+
+// Permission templates
+interface PermissionTemplate {
+  label: string;
+  description: string;
+  role: "admin" | "operator";
+  canViewBalance: boolean;
+  pages: Record<string, boolean>;
+  features: Record<string, boolean>;
+}
+
+const PERMISSION_TEMPLATES: Record<string, PermissionTemplate> = {
+  gestor: {
+    label: "Gestor",
+    description: "Acesso total a todas as funções e visualização de saldo",
+    role: "operator",
+    canViewBalance: true,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, true])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, true])),
+  },
+  operacional: {
+    label: "Operacional",
+    description: "Pagamentos e transações, sem saldo nem configurações",
+    role: "operator",
+    canViewBalance: false,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, !["users", "companies", "settings", "reports"].includes(p.key)])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo"].includes(f.key)])),
+  },
+  caixa: {
+    label: "Caixa",
+    description: "Apenas pagamentos básicos, sem saldo nem classificações",
+    role: "operator",
+    canViewBalance: false,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions"].includes(p.key)])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "classificar_despesa", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+  },
+  caixa_confianca: {
+    label: "Caixa Confiança",
+    description: "Caixa com acesso a saldo e classificação de despesas",
+    role: "operator",
+    canViewBalance: true,
+    pages: Object.fromEntries(PAGE_OPTIONS.map(p => [p.key, ["dashboard", "new_payment", "transactions", "categories"].includes(p.key)])),
+    features: Object.fromEntries(FEATURE_OPTIONS.map(f => [f.key, !["classificar_insumo", "favorecidos", "agendadas", "transferir"].includes(f.key)])),
+  },
+};
 
 interface MemberRow {
   id: string;
