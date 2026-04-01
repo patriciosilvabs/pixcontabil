@@ -64,6 +64,7 @@ export default function QuickTags() {
     setSaving(true);
     try {
       const classification = formClassification === "none" ? null : formClassification;
+      const placeholder = formPlaceholder.trim() || null;
       if (editingTag) {
         await updateTag(editingTag.id, {
           name: formName.trim(),
@@ -71,6 +72,7 @@ export default function QuickTags() {
           request_order_number: formRequestOrder,
           receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
+          description_placeholder: placeholder,
         });
         toast.success("Tag atualizada");
       } else {
@@ -80,6 +82,7 @@ export default function QuickTags() {
           request_order_number: formRequestOrder,
           receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
+          description_placeholder: placeholder,
         });
         toast.success("Tag criada");
       }
