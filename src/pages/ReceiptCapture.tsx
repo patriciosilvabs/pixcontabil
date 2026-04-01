@@ -76,12 +76,23 @@ export default function ReceiptCapture() {
     const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
         .from("transactions")
-        .select("status, pix_type")
+        .select("status, pix_type, beneficiary_name, amount, created_at, description")
         .eq("id", transactionId)
         .single();
 
       const currentStatus = data?.status || null;
       if (data?.pix_type) setTransactionPixType(data.pix_type);
+      if (data) {
+        setTransactionInfo({
+          beneficiary_name: data.beneficiary_name ?? null,
+          amount: data.amount ? Number(data.amount) : null,
+          created_at: data.created_at ?? null,
+          description: data.description ?? null,
+        });
+        if (data.description && !paymentDescription) {
+          setPaymentDescription(data.description);
+        }
+      }
 
       if (!isMounted) return currentStatus;
 
