@@ -19,9 +19,10 @@ import { cn } from "@/lib/utils";
 interface MobileHeaderProps {
   balanceVisible: boolean;
   onToggleBalance: () => void;
+  pendingReceiptsCount?: number;
 }
 
-export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance }: MobileHeaderProps) {
+export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance, pendingReceiptsCount = 0 }: MobileHeaderProps) {
   const { profile, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -80,9 +81,14 @@ export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, o
             <Button
               variant="ghost"
               size="icon"
-              className="text-white hover:bg-white/10 h-9 w-9"
+              className="text-white hover:bg-white/10 h-9 w-9 relative"
             >
               <Bell className="h-5 w-5" />
+              {pendingReceiptsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground flex items-center justify-center px-1">
+                  {pendingReceiptsCount}
+                </span>
+              )}
             </Button>
           </div>
         </div>

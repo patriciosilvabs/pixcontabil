@@ -16,6 +16,8 @@ import { ptBR } from "date-fns/locale";
 import type { RecentTransaction, MissingReceiptTransaction } from "@/hooks/useDashboardData";
 import { useAuth } from "@/contexts/AuthContext";
 import { CashPaymentDrawer } from "@/components/payment/CashPaymentDrawer";
+import { usePendingReceipts } from "@/hooks/usePendingReceipts";
+import { toast } from "sonner";
 
 interface MobileDashboardProps {
   balanceVisible: boolean;
@@ -57,6 +59,16 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
+  const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
+
+  const checkPendencyAndBlock = (): boolean => {
+    if (pendingCount > 0) {
+      toast.error("Finalize o comprovante da transação anterior antes de iniciar uma nova.");
+      navigate(`/pix/receipt/${pendingReceipts[0].id}`);
+      return true;
+    }
+    return false;
+  };
 
   const visibleActions = quickActions.filter(a => hasFeatureAccess(a.featureKey));
 
@@ -172,14 +184,23 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                 <button
                   key={action.label}
                   onClick={() => {
-                    if (isPixKey) setPixKeyOpen(true);
-                    else if (isQrCode) acquireStreamAndOpen(setQrScannerOpen);
-                    else if (isBoleto) {
+                    if (isPixKey) {
+                      if (checkPendencyAndBlock()) return;
+                      setPixKeyOpen(true);
+                    } else if (isQrCode) {
+                      if (checkPendencyAndBlock()) return;
+                      acquireStreamAndOpen(setQrScannerOpen);
+                    } else if (isBoleto) {
+                      if (checkPendencyAndBlock()) return;
                       if (onOpenBarcodeScanner) onOpenBarcodeScanner();
                       else navigate("/pix/new?tab=boleto&openCamera=1");
+                    } else if (isCopyPaste) {
+                      if (checkPendencyAndBlock()) return;
+                      setCopyPasteOpen(true);
+                    } else if (isCash) {
+                      if (checkPendencyAndBlock()) return;
+                      setCashDrawerOpen(true);
                     }
-                    else if (isCopyPaste) setCopyPasteOpen(true);
-                    else if (isCash) setCashDrawerOpen(true);
                   }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
                 >

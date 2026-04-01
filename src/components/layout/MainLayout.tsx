@@ -33,6 +33,7 @@ import {
 import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
+import { usePendingReceipts } from "@/hooks/usePendingReceipts";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -42,6 +43,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { profile, isAdmin, currentCompany, companies, setCurrentCompany, signOut, hasPageAccess } = useAuth();
   const location = useLocation();
   const { balanceVisible, toggleBalance } = useBalanceVisibility();
+  const { count: pendingReceiptsCount } = usePendingReceipts();
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: Home, pageKey: "dashboard" },
@@ -72,6 +74,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       <MobileHeader
         balanceVisible={balanceVisible}
         onToggleBalance={toggleBalance}
+        pendingReceiptsCount={pendingReceiptsCount}
       />
 
       {/* Desktop sidebar */}

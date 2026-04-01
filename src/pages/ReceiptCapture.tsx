@@ -54,6 +54,7 @@ export default function ReceiptCapture() {
   const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
 
   // Check transaction status — only allow receipt attachment if completed
   useEffect(() => {
@@ -65,11 +66,12 @@ export default function ReceiptCapture() {
     const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
         .from("transactions")
-        .select("status")
+        .select("status, pix_type")
         .eq("id", transactionId)
         .single();
 
       const currentStatus = data?.status || null;
+      if (data?.pix_type) setTransactionPixType(data.pix_type);
 
       if (!isMounted) return currentStatus;
 
@@ -224,6 +226,56 @@ export default function ReceiptCapture() {
     }
   };
 
+  const handleSaveWithoutReceipt = async () => {
+    if (!receiptData.classification) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Selecione a classificação antes de salvar.",
+      });
+      return;
+    }
+
+    if (!transactionId || !currentCompany) {
+      toast({ variant: "destructive", title: "Erro", description: "Transação ou empresa não encontrada." });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      if (receiptData.subcategory) {
+        const selectedCategory = categories.find(
+          (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
+        );
+        if (selectedCategory) {
+          await supabase
+            .from("transactions")
+            .update({
+              category_id: selectedCategory.id,
+              classified_by: user.id,
+              classified_at: new Date().toISOString(),
+            })
+            .eq("id", transactionId);
+        }
+      }
+
+      invalidateDashboardCache();
+      toast({
+        title: "Classificação salva!",
+        description: "O comprovante ficou pendente para anexar depois.",
+      });
+      navigate("/");
+    } catch (error: any) {
+      console.error("Erro ao salvar classificação:", error);
+      toast({ variant: "destructive", title: "Erro ao salvar", description: error.message || "Tente novamente." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!receiptData.file || !receiptData.classification) {
       toast({
@@ -323,6 +375,7 @@ export default function ReceiptCapture() {
   };
 
   const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
+  const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing && transactionPixType !== "key";
 
   // Guard: show waiting screen if transaction is not yet completed
   const isTransactionCompleted = transactionStatus === "completed";
@@ -388,9 +441,9 @@ export default function ReceiptCapture() {
               <AlertCircle className="h-5 w-5 text-warning" />
             </div>
             <div>
-              <p className="font-medium">Comprovante Obrigatório</p>
+              <p className="font-medium">Anexar Comprovante</p>
               <p className="text-sm text-muted-foreground">
-                Você não pode sair desta tela sem anexar o comprovante.
+                Anexe o comprovante fiscal e classifique o pagamento. Você pode salvar a classificação agora e anexar a foto depois.
               </p>
             </div>
           </CardContent>
@@ -617,23 +670,44 @@ export default function ReceiptCapture() {
         )}
 
         {/* Submit button */}
-        <Button
-          className="w-full bg-gradient-accent hover:opacity-90 shadow-accent text-lg h-14"
-          disabled={!canSubmit || isSubmitting}
-          onClick={handleSubmit}
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
-              Salvando...
-            </>
-          ) : (
-            <>
-              <Check className="mr-2 h-5 w-5" />
-              Salvar Comprovante
-            </>
+        <div className="space-y-3">
+          <Button
+            className="w-full bg-gradient-accent hover:opacity-90 shadow-accent text-lg h-14"
+            disabled={!canSubmit || isSubmitting}
+            onClick={handleSubmit}
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              <>
+                <Check className="mr-2 h-5 w-5" />
+                Salvar Comprovante
+              </>
+            )}
+          </Button>
+
+          {/* Contingency: save without photo */}
+          {!receiptData.file && canSaveWithoutReceipt && (
+            <Button
+              variant="outline"
+              className="w-full h-12 text-sm"
+              disabled={isSubmitting}
+              onClick={handleSaveWithoutReceipt}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                "Salvar classificação sem comprovante"
+              )}
+            </Button>
           )}
-        </Button>
+        </div>
           </>
         )}
       </div>

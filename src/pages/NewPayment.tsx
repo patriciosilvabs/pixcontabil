@@ -15,6 +15,7 @@ import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
+import { usePendingReceipts } from "@/hooks/usePendingReceipts";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Key,
@@ -121,6 +122,7 @@ export default function NewPayment() {
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany, user } = useAuth();
+  const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
 
@@ -299,6 +301,17 @@ export default function NewPayment() {
   };
 
   const handleConfirmPayment = async () => {
+    // Block if there are pending receipts
+    if (pendingCount > 0) {
+      toast({
+        variant: "destructive",
+        title: "Pendência de comprovante",
+        description: "Finalize o comprovante da transação anterior antes de iniciar uma nova.",
+      });
+      navigate(`/pix/receipt/${pendingReceipts[0].id}`);
+      return;
+    }
+
     setIsLoading(true);
 
     try {
