@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
 import { PixQrPaymentDrawer } from "@/components/pix/PixQrPaymentDrawer";
