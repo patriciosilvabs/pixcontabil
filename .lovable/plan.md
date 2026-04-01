@@ -1,47 +1,76 @@
 
 
-# Âncora de Memória e Identificação para Pendências
+# Blindagem Server-Side + Reconciliação + Melhorias de Pendência
 
 ## Resumo
 
-Adicionar dados do beneficiário na tela de captura, campo obrigatório "O que foi pago?" ao salvar sem foto, e melhorar a tela de pendências com contexto completo.
+5 correções: (1) trava server-side nas Edge Functions de pagamento, (2) reconciliação de transações stuck, (3) remoção do limite de 10, (4) identificação visual reforçada, (5) `classified_at` no salvamento sem foto.
 
 ## Alterações
 
-### 1. `src/pages/ReceiptCapture.tsx` — Exibir dados da transação + campo descrição
+### 1. Trava Server-Side — Edge Functions `pix-pay-dict`, `pix-pay-qrc`, `billet-pay`
 
-- No `useEffect` que carrega o status da transação (linha ~67), expandir o `select` para incluir `beneficiary_name, amount, created_at, description`
-- Exibir card com: "Pendente: Nota Fiscal para **[NOME]** - R$ [VALOR]" e data/hora
-- Adicionar campo de texto "O que foi pago?" (Textarea ou Input)
-- **Se foto anexada**: campo descrição é opcional
-- **Se "Salvar sem comprovante"**: campo descrição é OBRIGATÓRIO — validar antes de salvar
-- No `handleSaveWithoutReceipt`: salvar descrição na transação (`description`) via update
-- No `handleSubmit`: salvar descrição se preenchida
+Antes de disparar o pagamento no provedor, adicionar verificação com `supabaseAdmin`:
 
-### 2. `src/hooks/usePendingReceipts.ts` — Incluir mais dados
+```sql
+SELECT id FROM transactions
+WHERE created_by = $userId AND company_id = $company_id
+  AND status = 'completed'
+  AND id NOT IN (
+    SELECT transaction_id FROM receipts
+    WHERE ocr_data->>'auto_generated' IS DISTINCT FROM 'true'
+  )
+LIMIT 1
+```
 
-- Expandir select para incluir `created_at, description` no retorno
-- Atualizar interface `PendingReceipt` com `created_at: string`, `description: string | null`
+Se retornar resultado → responder **403 Forbidden** com mensagem clara:
+`"Você possui comprovante(s) pendente(s). Anexe a nota fiscal antes de realizar um novo pagamento."`
 
-### 3. `src/components/dashboard/MobileDashboard.tsx` — Melhorar exibição de pendências
+Isso será implementado como uma query direta via `supabaseAdmin` em cada uma das 3 funções, logo após a validação de autenticação e antes de qualquer chamada ao provedor.
 
-- Onde o badge de pendência redireciona, exibir na lista: nome do beneficiário, valor, e a descrição digitada pelo usuário
-- Formato: "**Nome** — R$ Valor — *Compra de tomate*"
+### 2. Reconciliação de Transações Stuck — `usePendingReceipts.ts`
 
-### 4. Validação cruzada no `handleSubmit`
+- Expandir a query para incluir também `status = 'pending'` com `created_at < 5 minutos atrás`
+- Adicionar campo `status` à interface `PendingReceipt`
+- No `MobileDashboard.tsx`, adicionar botão "Sincronizar" que chama `pix-check-status` para cada transação stuck e depois faz `refresh()`
 
-- "Salvar Comprovante" só funciona se: foto presente E (descrição preenchida OU subcategoria selecionada)
-- Atualizar `canSubmit` para incluir check de descrição/classificação
+### 3. Remoção do `.limit(10)` — `usePendingReceipts.ts`
+
+- Substituir `.limit(10)` por `.limit(100)` para visibilidade total
+- Adicionar filtro de data: últimos 30 dias (`.gte("created_at", thirtyDaysAgo)`)
+
+### 4. Identificação Visual Reforçada — `ReceiptCapture.tsx`
+
+O card de identificação já existe (beneficiary_name + amount + created_at). Reforçar:
+- Aumentar tamanho da fonte do nome do beneficiário (`text-lg font-bold`)
+- Destacar valor com cor primária e tamanho maior
+- Adicionar ícone visual de atenção
+
+### 5. `classified_at` no `handleSaveWithoutReceipt` — `ReceiptCapture.tsx`
+
+O `classified_at` já é preenchido quando há subcategoria selecionada (linha 290). Corrigir para **sempre** preencher quando salvando sem foto, mesmo sem subcategoria:
+
+```typescript
+updateData.classified_at = new Date().toISOString();
+```
+
+Mover essa linha para fora do bloco condicional `if (receiptData.subcategory)`.
+
+## Arquivos modificados
+
+| Arquivo | Alteração |
+|---|---|
+| `supabase/functions/pix-pay-dict/index.ts` | Adicionar check de pendência antes do pagamento |
+| `supabase/functions/pix-pay-qrc/index.ts` | Mesmo check de pendência |
+| `supabase/functions/billet-pay/index.ts` | Mesmo check de pendência |
+| `src/hooks/usePendingReceipts.ts` | Incluir stuck, remover limit(10), adicionar filtro 30 dias |
+| `src/components/dashboard/MobileDashboard.tsx` | Botão "Sincronizar" para transações stuck |
+| `src/pages/ReceiptCapture.tsx` | Visual reforçado + `classified_at` sempre preenchido |
 
 ## Detalhes técnicos
 
-- Campo `description` já existe na tabela `transactions` — não precisa de migração
-- A descrição serve como "lembrete" para quando o usuário for anexar a foto depois
-- O card de identificação usa dados já disponíveis na query existente, apenas expandindo os campos selecionados
-
-## Resultado
-
-- Usuário sabe exatamente para quem pagou ao abrir a tela de captura
-- Ao pular foto, é obrigado a descrever o que pagou
-- Na lista de pendências, vê nome + valor + descrição para localizar a foto correta
+- A query server-side usa LEFT JOIN implícito: busca transações completed onde NÃO existe receipt com `auto_generated != true`
+- O check é feito com `supabaseAdmin` (service role) para bypass de RLS
+- Transações "stuck" = `status = 'pending'` + `created_at < now() - 5min`
+- O botão Sincronizar itera sobre stuck pendentes chamando `pix-check-status` sequencialmente
 
