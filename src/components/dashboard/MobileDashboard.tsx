@@ -194,6 +194,21 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                 Anexar
               </Button>
             </div>
+            {stuckTransactions.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-warning/20">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="w-full h-7 text-[10px] font-bold text-warning hover:bg-warning/10"
+                  onClick={handleSyncStuck}
+                  disabled={isSyncing}
+                >
+                  <RefreshCw className={`h-3 w-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
+                  {isSyncing ? "Sincronizando..." : `Sincronizar ${stuckTransactions.length} transação(ões) parada(s)`}
+                </Button>
+              </div>
+            )}
+            </div>
           </CardContent>
         </Card>
       )}
