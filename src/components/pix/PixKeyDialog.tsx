@@ -97,6 +97,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setReceiptRequired(true);
     setDescriptionPlaceholder("Ex: Pagamento fornecedor");
     setSelectedTagId(null);
+    setDescriptionRequired(true);
     setProbeTransactionId("");
     setProbeError("");
     setBeneficiaryName(null);
