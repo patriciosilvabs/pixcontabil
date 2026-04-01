@@ -205,6 +205,8 @@ export default function ReceiptCapture() {
       file: correctedFile,
       previewUrl,
       isProcessing: false,
+      // Auto-set classification if user only has one permission
+      classification: autoClassification ?? prev.classification,
     }));
   }, [normalizeImageOrientation]);
 
