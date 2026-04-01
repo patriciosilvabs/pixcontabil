@@ -11,6 +11,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { useQuickTags } from "@/hooks/useQuickTags";
+import { Badge } from "@/components/ui/badge";
 import { useBilletPayment } from "@/hooks/useBilletPayment";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
