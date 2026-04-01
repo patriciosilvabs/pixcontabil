@@ -4,13 +4,16 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrency } from "@/lib/utils";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 import { usePixPayment } from "@/hooks/usePixPayment";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   Camera,
   Upload,
@@ -55,6 +58,13 @@ export default function ReceiptCapture() {
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
+  const [transactionInfo, setTransactionInfo] = useState<{
+    beneficiary_name: string | null;
+    amount: number | null;
+    created_at: string | null;
+    description: string | null;
+  }>({ beneficiary_name: null, amount: null, created_at: null, description: null });
+  const [paymentDescription, setPaymentDescription] = useState("");
 
   // Check transaction status — only allow receipt attachment if completed
   useEffect(() => {
@@ -66,12 +76,23 @@ export default function ReceiptCapture() {
     const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
         .from("transactions")
-        .select("status, pix_type")
+        .select("status, pix_type, beneficiary_name, amount, created_at, description")
         .eq("id", transactionId)
         .single();
 
       const currentStatus = data?.status || null;
       if (data?.pix_type) setTransactionPixType(data.pix_type);
+      if (data) {
+        setTransactionInfo({
+          beneficiary_name: data.beneficiary_name ?? null,
+          amount: data.amount ? Number(data.amount) : null,
+          created_at: data.created_at ?? null,
+          description: data.description ?? null,
+        });
+        if (data.description && !paymentDescription) {
+          setPaymentDescription(data.description);
+        }
+      }
 
       if (!isMounted) return currentStatus;
 
@@ -236,6 +257,15 @@ export default function ReceiptCapture() {
       return;
     }
 
+    if (!paymentDescription.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Descrição obrigatória",
+        description: "Descreva o que foi pago para poder anexar o comprovante depois.",
+      });
+      return;
+    }
+
     if (!transactionId || !currentCompany) {
       toast({ variant: "destructive", title: "Erro", description: "Transação ou empresa não encontrada." });
       return;
@@ -246,21 +276,25 @@ export default function ReceiptCapture() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
+      const updateData: Record<string, any> = {
+        description: paymentDescription.trim(),
+      };
+
       if (receiptData.subcategory) {
         const selectedCategory = categories.find(
           (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
         );
         if (selectedCategory) {
-          await supabase
-            .from("transactions")
-            .update({
-              category_id: selectedCategory.id,
-              classified_by: user.id,
-              classified_at: new Date().toISOString(),
-            })
-            .eq("id", transactionId);
+          updateData.category_id = selectedCategory.id;
+          updateData.classified_by = user.id;
+          updateData.classified_at = new Date().toISOString();
         }
       }
+
+      await supabase
+        .from("transactions")
+        .update(updateData)
+        .eq("id", transactionId);
 
       invalidateDashboardCache();
       toast({
@@ -324,21 +358,23 @@ export default function ReceiptCapture() {
 
       // Status is already set by the payment provider confirmation — do not override here
 
-      // Update category on transaction if selected
+      // Update category and description on transaction
+      const txUpdate: Record<string, any> = {};
+      if (paymentDescription.trim()) {
+        txUpdate.description = paymentDescription.trim();
+      }
       if (receiptData.subcategory) {
         const selectedCategory = categories.find(
           (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
         );
         if (selectedCategory) {
-          await supabase
-            .from("transactions")
-            .update({
-              category_id: selectedCategory.id,
-              classified_by: user.id,
-              classified_at: new Date().toISOString(),
-            })
-            .eq("id", transactionId);
+          txUpdate.category_id = selectedCategory.id;
+          txUpdate.classified_by = user.id;
+          txUpdate.classified_at = new Date().toISOString();
         }
+      }
+      if (Object.keys(txUpdate).length > 0) {
+        await supabase.from("transactions").update(txUpdate).eq("id", transactionId);
       }
 
       invalidateDashboardCache();
@@ -375,7 +411,7 @@ export default function ReceiptCapture() {
   };
 
   const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
-  const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing && transactionPixType !== "key";
+  const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing;
 
   // Guard: show waiting screen if transaction is not yet completed
   const isTransactionCompleted = transactionStatus === "completed";
@@ -434,6 +470,30 @@ export default function ReceiptCapture() {
         {/* Only show receipt capture when transaction is confirmed */}
         {!isLoadingStatus && isTransactionCompleted && (
           <>
+        {/* Transaction identification card */}
+        {transactionInfo.beneficiary_name && (
+          <Card className="border-primary/30 bg-primary/5 mb-6">
+            <CardContent className="p-4">
+              <p className="text-xs font-bold uppercase tracking-wider text-primary mb-1">
+                Pendente: Nota Fiscal
+              </p>
+              <p className="text-base font-semibold">
+                {transactionInfo.beneficiary_name}
+              </p>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-lg font-bold font-mono-numbers">
+                  {transactionInfo.amount != null ? formatCurrency(transactionInfo.amount) : "—"}
+                </span>
+                {transactionInfo.created_at && (
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(transactionInfo.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Alert */}
         <Card className="border-warning/50 bg-warning/5 mb-6">
           <CardContent className="flex items-center gap-4 p-4">
@@ -668,8 +728,29 @@ export default function ReceiptCapture() {
             </Card>
           </>
         )}
+        {/* Description field */}
+        <Card className="mb-6">
+          <CardContent className="p-4 space-y-2">
+            <label className="text-sm font-medium">
+              O que foi pago? {!receiptData.file && <span className="text-destructive">*</span>}
+            </label>
+            <Textarea
+              placeholder="Ex: Compra de tomate, Conta de luz, Material de limpeza..."
+              value={paymentDescription}
+              onChange={(e) => setPaymentDescription(e.target.value)}
+              maxLength={200}
+              className="resize-none"
+              rows={2}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              {!receiptData.file
+                ? "Obrigatório ao salvar sem comprovante — ajuda a lembrar qual foto anexar depois."
+                : "Opcional — adicione uma descrição para facilitar a identificação."}
+            </p>
+          </CardContent>
+        </Card>
 
-        {/* Submit button */}
+
         <div className="space-y-3">
           <Button
             className="w-full bg-gradient-accent hover:opacity-90 shadow-accent text-lg h-14"
