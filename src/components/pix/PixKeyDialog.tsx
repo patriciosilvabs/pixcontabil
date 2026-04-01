@@ -254,6 +254,17 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result?.transaction_id) {
       setRealTransactionId(result.transaction_id);
+      // If receipt not required, mark the transaction accordingly
+      if (!receiptRequired) {
+        try {
+          await supabase
+            .from("transactions")
+            .update({ receipt_required: false } as any)
+            .eq("id", result.transaction_id);
+        } catch (e) {
+          console.error("[PixKeyDialog] Failed to update receipt_required:", e);
+        }
+      }
       setStep(6);
     } else {
       setStep(4);
