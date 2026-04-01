@@ -136,9 +136,9 @@ export function useDashboardData() {
           receipts: Array.isArray(t.receipts) ? t.receipts : [],
         }));
 
-        // Missing receipt/classification for payment types that require manual attachment
+        // Missing receipt/classification — ALL payment types require manual receipt
         const eligibleForManualReceipt = transactions.filter(
-          (t) => t.pix_type !== "key" && (t.status === "completed" || t.status === "pending")
+          (t) => t.status === "completed" || t.status === "pending"
         );
 
         const missingReceiptTxs: MissingReceiptTransaction[] = eligibleForManualReceipt

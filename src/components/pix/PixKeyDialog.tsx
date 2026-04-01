@@ -518,7 +518,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
               amount={parseLocalizedNumber(amount)}
               beneficiaryName={beneficiaryName || pixKey}
               onClose={handleCloseAndNavigate}
-              redirectToReceiptCapture={false}
+              redirectToReceiptCapture={true}
             />
           )}
         </div>

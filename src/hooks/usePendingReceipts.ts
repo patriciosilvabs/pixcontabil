@@ -11,7 +11,7 @@ export interface PendingReceipt {
 
 /**
  * Checks if the current user has pending receipts (completed transactions
- * that are NOT pix_type='key' and have no manual receipt attached).
+ * that have no manual receipt attached — ALL pix_types included).
  */
 export function usePendingReceipts() {
   const { user, currentCompany } = useAuth();
@@ -26,14 +26,13 @@ export function usePendingReceipts() {
     }
 
     try {
-      // Get completed non-key transactions by the current user
+      // Get ALL completed transactions by the current user (including pix_type='key')
       const { data } = await supabase
         .from("transactions")
         .select("id, beneficiary_name, amount, pix_type, receipts(id, ocr_data)")
         .eq("company_id", currentCompany.id)
         .eq("created_by", user.id)
         .eq("status", "completed")
-        .neq("pix_type", "key")
         .order("created_at", { ascending: false })
         .limit(10);
 
