@@ -392,6 +392,56 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 />
               </div>
 
+              {/* Quick Tags */}
+              {quickTags.length > 0 && (
+                <div className="space-y-2">
+                  <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Tags Rápidas
+                  </Label>
+                  <div className="flex flex-wrap gap-2">
+                    {quickTags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        type="button"
+                        onClick={() => {
+                          const separator = description.trim() ? " | " : "";
+                          setDescription((prev) => (prev.trim() + separator + tag.name).slice(0, 140));
+                          if (tag.suggested_classification) {
+                            setSuggestedClassification(tag.suggested_classification);
+                          }
+                          if (tag.request_order_number) {
+                            setShowOrderInput(true);
+                          }
+                        }}
+                        className="h-10 px-4 rounded-full bg-primary/10 text-primary font-medium text-sm border border-primary/20 hover:bg-primary/20 active:scale-95 transition-all"
+                        data-vaul-no-drag
+                      >
+                        {tag.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Order Number Input */}
+              {showOrderInput && (
+                <div className="space-y-2">
+                  <Label htmlFor="order-number" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                    Nº do Pedido
+                  </Label>
+                  <Input
+                    id="order-number"
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="Ex: 1234"
+                    value={orderNumber}
+                    onChange={(e) => setOrderNumber(e.target.value)}
+                    className="h-12 text-base"
+                    data-vaul-no-drag
+                  />
+                </div>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="pix-description" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Descrição *
