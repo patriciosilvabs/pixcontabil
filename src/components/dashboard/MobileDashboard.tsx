@@ -209,7 +209,6 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
               </div>
             )}
           </CardContent>
-          </CardContent>
         </Card>
       )}
 
