@@ -369,9 +369,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   value={pixKey}
                   onChange={(e) => setPixKey(e.target.value)}
                   onFocus={(e) => {
+                    const el = e.target;
                     setTimeout(() => {
-                      e.target.scrollIntoView({ block: "center", behavior: "smooth" });
-                    }, 300);
+                      el.scrollIntoView({ block: "center", behavior: "smooth" });
+                    }, 400);
                   }}
                   className="h-12 text-base"
                   data-vaul-no-drag
@@ -420,6 +421,12 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   onChange={(e) => setAmount(e.target.value)}
                   className="h-14 text-2xl font-bold text-center"
                   data-vaul-no-drag
+                  onFocus={(e) => {
+                    const el = e.target;
+                    setTimeout(() => {
+                      el.scrollIntoView({ block: "center", behavior: "smooth" });
+                    }, 400);
+                  }}
                 />
               </div>
 
@@ -497,6 +504,12 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                   rows={2}
                   maxLength={140}
                   data-vaul-no-drag
+                  onFocus={(e) => {
+                    const el = e.target;
+                    setTimeout(() => {
+                      el.scrollIntoView({ block: "center", behavior: "smooth" });
+                    }, 400);
+                  }}
                 />
                 <p className="text-xs text-muted-foreground text-right">{description.length}/140</p>
               </div>

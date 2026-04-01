@@ -22,8 +22,9 @@ const DrawerOverlay = React.forwardRef<
 ));
 DrawerOverlay.displayName = DrawerPrimitive.Overlay.displayName;
 
-function useVisualViewportHeight() {
+function useVisualViewportOffset() {
   const [maxHeight, setMaxHeight] = React.useState("85dvh");
+  const [bottomOffset, setBottomOffset] = React.useState(0);
 
   React.useEffect(() => {
     const vv = window.visualViewport;
@@ -33,6 +34,9 @@ function useVisualViewportHeight() {
       const vh = vv.height;
       const maxH = Math.min(vh * 0.85, vh - 40);
       setMaxHeight(`${maxH}px`);
+      // offsetTop = how much the visual viewport shifted down (keyboard pushed it)
+      const offset = vv.offsetTop;
+      setBottomOffset(offset);
     };
 
     update();
@@ -44,21 +48,21 @@ function useVisualViewportHeight() {
     };
   }, []);
 
-  return maxHeight;
+  return { maxHeight, bottomOffset };
 }
 
 const DrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content>
 >(({ className, children, ...props }, ref) => {
-  const maxHeight = useVisualViewportHeight();
+  const { maxHeight, bottomOffset } = useVisualViewportOffset();
 
   return (
     <DrawerPortal>
       <DrawerOverlay />
       <DrawerPrimitive.Content
         ref={ref}
-        style={{ maxHeight }}
+        style={{ maxHeight, bottom: bottomOffset > 0 ? `${bottomOffset}px` : undefined }}
         className={cn(
           "fixed inset-x-0 bottom-0 z-50 mt-24 flex h-auto flex-col rounded-t-[10px] border bg-background",
           className,
