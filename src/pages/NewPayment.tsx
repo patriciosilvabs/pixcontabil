@@ -127,6 +127,15 @@ export default function NewPayment() {
   const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
+  const { tags: quickTags } = useQuickTags();
+
+  // Quick tag state for key payments
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [orderNumber, setOrderNumber] = useState("");
+  const [receiptRequired, setReceiptRequired] = useState(true);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
 
   // Probe states for beneficiary verification
   const [probeLoading, setProbeLoading] = useState(false);
