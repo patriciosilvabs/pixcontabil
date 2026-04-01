@@ -1,39 +1,33 @@
 
 
-# Corrigir: Perfil "Caixa" sem permissão de classificação não consegue salvar comprovante
+# Tags = Sem Comprovante Manual
 
-## Problema
+## Resumo
 
-Quando o usuário tem perfil "Caixa" sem permissões de classificação (`classificar_insumo` e `classificar_despesa` ambos desativados), a tela de anexo de comprovante fica travada:
+Quando uma Quick Tag é utilizada na transação, o comprovante manual (foto de NF) não deve ser exigido. O auto-comprovante da API é suficiente. Isso se aplica a **todas** as tags, pois representam pagamentos a pessoas físicas (motoboy, gás, etc.) onde não há nota fiscal.
 
-- Os botões de classificação (Custo/Despesa) não aparecem
-- Nenhuma classificação automática é aplicada
-- `receiptData.classification` permanece `null`
-- Os botões "Salvar Comprovante" e "Salvar classificação sem comprovante" ficam desabilitados permanentemente
+## Alterações
 
-## Solução
+### 1. `src/components/pix/PixKeyDialog.tsx`
+- Quando qualquer tag é selecionada, forçar `receiptRequired = false` (ignorar o campo `receipt_required` da tag)
+- Remover lógica que lê `tag.receipt_required` para definir `receiptRequired`
 
-Quando o usuário **não tem nenhuma permissão de classificação**, o fluxo deve permitir que ele apenas anexe o comprovante (foto) e a descrição, **sem exigir classificação**. A classificação será feita depois por alguém com permissão (gestor).
+### 2. `src/pages/NewPayment.tsx`
+- Mesma lógica: ao selecionar uma tag, forçar `receiptRequired = false`
 
-### Alterações em `src/pages/ReceiptCapture.tsx`
+### 3. `src/pages/QuickTags.tsx` (admin)
+- Remover o switch "Exige Comprovante" (`receipt_required`) do formulário de criação/edição de tags, já que agora todas as tags dispensam comprovante por definição
 
-1. **Detectar ausência total de permissão de classificação:**
-   ```
-   const hasNoClassificationAccess = !canClassifyCost && !canClassifyExpense;
-   ```
+### 4. Comportamento resultante
+- Após pagamento confirmado, a tela de status mostra apenas "Voltar ao Início" (sem botão "Anexar Comprovante")
+- A transaction é salva com `receipt_required = false`
+- O auto-comprovante da API permanece acessível normalmente
 
-2. **Esconder o card de classificação** quando `hasNoClassificationAccess` é `true` — não mostrar botões Custo/Despesa nem categorias.
-
-3. **Ajustar validação de submit:**
-   - `canSubmit`: quando sem permissão de classificação, exigir apenas `receiptData.file` (sem classificação)
-   - `handleSubmit`: pular validação de `classification` se `hasNoClassificationAccess`
-   - Remover o botão "Salvar sem comprovante" para esse perfil (Caixa deve sempre anexar a foto)
-
-4. **Mostrar aviso informativo** dizendo que a classificação será feita pelo gestor.
-
-## Arquivo modificado
+## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `src/pages/ReceiptCapture.tsx` | Permitir salvar sem classificação quando usuário não tem permissão |
+| `src/components/pix/PixKeyDialog.tsx` | Tag selecionada → `receiptRequired = false` sempre |
+| `src/pages/NewPayment.tsx` | Idem |
+| `src/pages/QuickTags.tsx` | Remover switch "Exige Comprovante" |
 
