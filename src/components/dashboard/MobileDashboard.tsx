@@ -62,6 +62,15 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const { pending: pendingReceipts, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
   const [isSyncing, setIsSyncing] = useState(false);
 
+  // One-time toast for cutoff update
+  useEffect(() => {
+    const key = "cutoff_toast_shown_v1";
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(key, "1");
+      toast.info("Sistema atualizado. Novas regras de comprovação ativas a partir de hoje.", { duration: 6000 });
+    }
+  }, []);
+
   const stuckTransactions = pendingReceipts.filter(p => p.status === "pending");
 
   const handleSyncStuck = async () => {
