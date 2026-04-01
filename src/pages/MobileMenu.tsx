@@ -30,6 +30,7 @@ export default function MobileMenu() {
     { name: "Relatórios", href: "/reports", icon: FileText, pageKey: "reports" },
     { name: "Usuários", href: "/users", icon: Users, pageKey: "users" },
     { name: "Empresas", href: "/companies", icon: Building2, pageKey: "companies" },
+    { name: "Tags de Atalho", href: "/quick-tags", icon: Tag, adminOnly: true },
     { name: "Integração Pix", href: "/settings/pix-integration", icon: Link2, pageKey: "pix_integration" },
     { name: "Webhook Gateway", href: "/webhook-events", icon: Activity, adminOnly: true },
     { name: "Configurações", href: "/settings", icon: Settings, pageKey: "settings" },

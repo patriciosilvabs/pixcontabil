@@ -86,6 +86,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setAmount("");
     setDescription("");
     setSaveFavorite(false);
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSuggestedClassification(null);
     setStep(1);
     setProbeTransactionId("");
     setProbeError("");
