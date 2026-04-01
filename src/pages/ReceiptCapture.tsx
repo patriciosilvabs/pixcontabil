@@ -149,6 +149,15 @@ export default function ReceiptCapture() {
     });
   }, [currentCompany]);
 
+  // Permission-based classification
+  const canClassifyCost = isAdmin || hasFeatureAccess("classificar_insumo");
+  const canClassifyExpense = isAdmin || hasFeatureAccess("classificar_despesa");
+  const hasBothClassifications = canClassifyCost && canClassifyExpense;
+  const hasOnlyOneClassification = (canClassifyCost || canClassifyExpense) && !hasBothClassifications;
+  const autoClassification: ClassificationType | null = hasOnlyOneClassification
+    ? (canClassifyCost ? "cost" : "expense")
+    : null;
+
   const [receiptData, setReceiptData] = useState<ReceiptData>({
     file: null,
     previewUrl: null,
