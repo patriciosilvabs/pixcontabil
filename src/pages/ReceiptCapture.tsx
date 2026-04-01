@@ -54,6 +54,7 @@ export default function ReceiptCapture() {
   const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
 
   // Check transaction status — only allow receipt attachment if completed
   useEffect(() => {
