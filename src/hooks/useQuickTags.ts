@@ -11,6 +11,7 @@ export interface QuickTag {
   receipt_required: boolean;
   is_active: boolean;
   sort_order: number;
+  description_placeholder: string | null;
   created_at: string;
   updated_at: string;
 }
