@@ -31,6 +31,7 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   const [hasFixedAmount, setHasFixedAmount] = useState(false);
   const [transactionId, setTransactionId] = useState("");
   const [description, setDescription] = useState("");
+  const [companyName, setCompanyName] = useState("");
 
   useEffect(() => {
     if (!open || !qrCode) return;
