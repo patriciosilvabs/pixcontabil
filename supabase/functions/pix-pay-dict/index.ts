@@ -108,7 +108,7 @@ Deno.serve(async (req) => {
 
     const userId = user.id;
     const body = await req.json();
-    const { company_id, pix_key, pix_key_type, valor, descricao, idempotency_key } = body;
+    const { company_id, pix_key, pix_key_type, valor, descricao, idempotency_key, receipt_required } = body;
 
     if (!company_id || !pix_key || !valor) {
       return new Response(JSON.stringify({ error: 'company_id, pix_key and valor are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
