@@ -184,14 +184,23 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                 <button
                   key={action.label}
                   onClick={() => {
-                    if (isPixKey) setPixKeyOpen(true);
-                    else if (isQrCode) acquireStreamAndOpen(setQrScannerOpen);
-                    else if (isBoleto) {
+                    if (isPixKey) {
+                      if (checkPendencyAndBlock()) return;
+                      setPixKeyOpen(true);
+                    } else if (isQrCode) {
+                      if (checkPendencyAndBlock()) return;
+                      acquireStreamAndOpen(setQrScannerOpen);
+                    } else if (isBoleto) {
+                      if (checkPendencyAndBlock()) return;
                       if (onOpenBarcodeScanner) onOpenBarcodeScanner();
                       else navigate("/pix/new?tab=boleto&openCamera=1");
+                    } else if (isCopyPaste) {
+                      if (checkPendencyAndBlock()) return;
+                      setCopyPasteOpen(true);
+                    } else if (isCash) {
+                      if (checkPendencyAndBlock()) return;
+                      setCashDrawerOpen(true);
                     }
-                    else if (isCopyPaste) setCopyPasteOpen(true);
-                    else if (isCash) setCashDrawerOpen(true);
                   }}
                   className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-secondary shadow-sm hover:bg-secondary/80 transition-colors"
                 >
