@@ -82,6 +82,7 @@ export default function Transactions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>(searchParams.get("status") || "all");
   const [classificationFilter, setClassificationFilter] = useState<string>("all");
+  const [showProbes, setShowProbes] = useState(false);
   const [transactions, setTransactions] = useState<TransactionRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
