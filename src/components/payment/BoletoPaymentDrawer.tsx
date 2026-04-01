@@ -166,11 +166,16 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   };
 
   const handleConfirm = async () => {
+    if (!companyName.trim()) {
+      toast.error("Informe o nome da empresa que está recebendo o pagamento");
+      return;
+    }
     const value = parseLocalizedNumber(amount);
     const result = await payBillet({
       digitable_code: barcode,
       description: description || "Pagamento de boleto",
       amount: value,
+      beneficiary_name: companyName.trim(),
     });
 
     if (result) {
