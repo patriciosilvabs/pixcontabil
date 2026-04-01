@@ -240,11 +240,14 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const handleConfirmRealPayment = async () => {
     setStep(5);
     const value = parseLocalizedNumber(amount);
+    const fullDescription = orderNumber.trim()
+      ? `${description.trim()} #${orderNumber.trim()}`
+      : description.trim();
 
     const result = await payByKey({
       pix_key: pixKey.trim(),
       valor: value,
-      descricao: description.trim() || undefined,
+      descricao: fullDescription || undefined,
     });
 
     if (result?.transaction_id) {
