@@ -12,6 +12,7 @@ export interface QuickTag {
   is_active: boolean;
   sort_order: number;
   description_placeholder: string | null;
+  description_required: boolean;
   created_at: string;
   updated_at: string;
 }
