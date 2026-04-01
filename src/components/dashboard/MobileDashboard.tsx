@@ -59,6 +59,16 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
+  const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
+
+  const checkPendencyAndBlock = (): boolean => {
+    if (pendingCount > 0) {
+      toast.error("Finalize o comprovante da transação anterior antes de iniciar uma nova.");
+      navigate(`/pix/receipt/${pendingReceipts[0].id}`);
+      return true;
+    }
+    return false;
+  };
 
   const visibleActions = quickActions.filter(a => hasFeatureAccess(a.featureKey));
 
