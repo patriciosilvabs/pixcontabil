@@ -1,75 +1,84 @@
 
 
-# Quick Tags — Tags de Atalho Dinâmicas e Gerenciáveis
+# Padronizacao de Responsividade Full-Stack
 
 ## Resumo
 
-Criar tabela `quick_tags`, painel CRUD administrativo, e chips de seleção rápida na tela de pagamento (PixKeyDialog step 2) que preenchem descrição e pré-selecionam classificação.
+Auditar e corrigir todas as telas do sistema para garantir excelencia em Mobile e Desktop. As principais lacunas sao: tabelas admin que nao se adaptam a telas pequenas, e dialogs que deveriam ser drawers no mobile.
 
-## 1. Banco de Dados — Nova tabela `quick_tags`
+## Diagnostico por Tela
 
-Migration SQL:
+| Tela | Desktop | Mobile | Problema |
+|---|---|---|---|
+| Transactions | OK (cards) | OK | Ja usa cards responsivos |
+| Companies | OK (grid cards) | OK | Ja usa grid responsivo |
+| **QuickTags** | Table OK | Table ruim | Precisa de cards no mobile |
+| **Users** | Table OK | Table ruim | Precisa de cards no mobile |
+| **Categories** | Table OK | Table ruim | Precisa de cards no mobile |
+| **Security** | Table parcial | Ruim | Precisa de cards no mobile |
+| Reports | OK | Parcial | Charts ja sao responsivos via ResponsiveContainer |
+| Settings | OK | OK | Layout simples, funciona |
+| Dashboard | OK | OK | Ja tem MobileDashboard dedicado |
 
-```sql
-CREATE TABLE public.quick_tags (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  company_id uuid NOT NULL,
-  name text NOT NULL,
-  suggested_classification text, -- 'cost' | 'expense' | null
-  request_order_number boolean NOT NULL DEFAULT false,
-  is_active boolean NOT NULL DEFAULT true,
-  sort_order integer NOT NULL DEFAULT 0,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
-);
+## Alteracoes
 
-ALTER TABLE public.quick_tags ENABLE ROW LEVEL SECURITY;
+### 1. Componente utilitario `ResponsiveTable` — Novo arquivo
 
-CREATE POLICY "Admins can manage quick_tags" ON public.quick_tags
-  FOR ALL TO authenticated USING (is_admin(auth.uid()));
+Criar `src/components/ui/responsive-card-table.tsx` — um wrapper que renderiza `<Table>` no desktop e cards empilhados no mobile, usando `useIsMobile()`. Isso evita duplicar logica em cada pagina.
 
-CREATE POLICY "Members can view active quick_tags" ON public.quick_tags
-  FOR SELECT TO authenticated
-  USING (company_id IN (SELECT get_user_companies(auth.uid()) AS get_user_companies));
+### 2. QuickTags — Mobile cards
+
+- No mobile: renderizar cada tag como um Card com nome, badge de classificacao, switch de ativo, e botoes de acao
+- Botoes touch-friendly (min h-10, p-3)
+- Dialog de criar/editar: usar Drawer no mobile via componente responsivo
+
+### 3. Users — Mobile cards
+
+- No mobile: cada membro como Card com avatar, nome, email, badges de role/status, e botoes de acao
+- Acoes (Editar, Desativar, Senha, Excluir) em row de botoes ou dropdown
+- Edit dialog -> Drawer no mobile (ja tem `max-h-[90vh] overflow-y-auto`, converter para Drawer)
+
+### 4. Categories — Mobile cards
+
+- No mobile: cada categoria como Card com nome, badge classificacao, keywords truncadas, switch ativo, botoes acao
+- Dialog -> Drawer no mobile
+
+### 5. Security — Mobile cards
+
+- Tabelas de alertas, eventos e IPs bloqueados: cards no mobile
+- Ja tem `hidden md:table-cell` parcial, mas precisa de conversao completa
+
+### 6. Componente `ResponsiveDialog` — Novo arquivo
+
+Criar `src/components/ui/responsive-dialog.tsx` que renderiza `Dialog` no desktop e `Drawer` no mobile. Isso padroniza o comportamento em todo o sistema sem alterar cada uso individualmente.
+
+```text
+Desktop:          Mobile:
++----------+      +----------+
+| Dialog   |      |          |
+| centered |      | Drawer   |
+| modal    |      | bottom   |
++----------+      +----------+
 ```
 
-## 2. Painel Admin — `src/pages/QuickTags.tsx`
+### 7. Revisao de touch targets
 
-- CRUD completo (lista, criar, editar, excluir) seguindo o padrão de `Categories.tsx`
-- Campos: Nome, Classificação Sugerida (opcional: Custo/Despesa/Nenhuma), Solicitar Nº Pedido (checkbox), Ativo/Inativo
-- Ordenação drag-and-drop ou campo `sort_order`
-- Rota `/quick-tags` protegida por `requireAdmin`
+Garantir que todos os botoes de acao em tabelas/cards tenham `min-h-[44px] min-w-[44px]` no mobile (padrao Apple/Google para touch targets).
 
-## 3. Hook — `src/hooks/useQuickTags.ts`
+## Arquivos criados/modificados
 
-- Busca tags ativas da empresa atual, ordenadas por `sort_order`
-- Cache com `useCallback` + state, refresh ao montar
-
-## 4. Interface de Operação — `PixKeyDialog.tsx` (Step 2)
-
-No step 2 (Valor + Descrição), acima do campo de descrição:
-
-- Renderizar chips horizontais scrolláveis com as tags ativas
-- Ao clicar um chip:
-  - Append o nome da tag ao campo descrição (permite combinar)
-  - Se `suggested_classification` definida, gravar no state para uso posterior
-  - Se `request_order_number = true`, exibir um Input inline "Nº Pedido" que appenda ao texto
-- Chips grandes, touch-friendly (h-10, px-4), com cores primárias
-
-## 5. Rota e Navegação
-
-- Adicionar rota `/quick-tags` em `App.tsx`
-- Adicionar link no menu admin (sidebar/MobileMenu)
-
-## Arquivos modificados/criados
-
-| Arquivo | Alteração |
+| Arquivo | Alteracao |
 |---|---|
-| Migration SQL | Criar tabela `quick_tags` + RLS |
-| `src/pages/QuickTags.tsx` | **Novo** — CRUD admin |
-| `src/hooks/useQuickTags.ts` | **Novo** — fetch tags ativas |
-| `src/components/pix/PixKeyDialog.tsx` | Chips de quick tags no step 2 |
-| `src/App.tsx` | Rota `/quick-tags` |
-| `src/components/layout/MainLayout.tsx` | Link no menu admin |
-| `src/pages/MobileMenu.tsx` | Link no menu mobile |
+| `src/components/ui/responsive-dialog.tsx` | **Novo** — Dialog no desktop, Drawer no mobile |
+| `src/pages/QuickTags.tsx` | Cards no mobile + ResponsiveDialog |
+| `src/pages/Users.tsx` | Cards no mobile + ResponsiveDialog |
+| `src/pages/Categories.tsx` | Cards no mobile + ResponsiveDialog |
+| `src/pages/Security.tsx` | Cards no mobile para todas as tabs |
+
+## Resultado esperado
+
+- 100% das telas admin funcionais e legiveis em telas < 768px
+- Dialogs se comportam como bottom-sheets no mobile (consistente com drawers de pagamento)
+- Touch targets adequados para uso rapido no balcao
+- Zero regressao em desktop — tables permanecem para telas grandes
 
