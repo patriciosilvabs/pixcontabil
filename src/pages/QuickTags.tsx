@@ -66,6 +66,7 @@ export default function QuickTags() {
           name: formName.trim(),
           suggested_classification: classification,
           request_order_number: formRequestOrder,
+          receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
         });
         toast.success("Tag atualizada");
@@ -74,6 +75,7 @@ export default function QuickTags() {
           name: formName.trim(),
           suggested_classification: classification,
           request_order_number: formRequestOrder,
+          receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
         });
         toast.success("Tag criada");
