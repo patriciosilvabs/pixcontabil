@@ -1,76 +1,50 @@
 
 
-# Blindagem Server-Side + Reconciliação + Melhorias de Pendência
+# Isenção de Transações de Verificação (R$ 0,01) do Sistema de Pendências
 
 ## Resumo
 
-5 correções: (1) trava server-side nas Edge Functions de pagamento, (2) reconciliação de transações stuck, (3) remoção do limite de 10, (4) identificação visual reforçada, (5) `classified_at` no salvamento sem foto.
+Transações de R$ 0,01 (probe de verificação de beneficiário) serão excluídas de toda lógica de pendência, bloqueio e obrigatoriedade de foto. Serão ocultadas por padrão no extrato.
 
 ## Alterações
 
-### 1. Trava Server-Side — Edge Functions `pix-pay-dict`, `pix-pay-qrc`, `billet-pay`
+### 1. `src/hooks/usePendingReceipts.ts` — Filtrar R$ 0,01
 
-Antes de disparar o pagamento no provedor, adicionar verificação com `supabaseAdmin`:
+Adicionar filtro `.gt("amount", 0.01)` nas duas queries (completed e stuck) para excluir probes da contagem de pendências.
 
-```sql
-SELECT id FROM transactions
-WHERE created_by = $userId AND company_id = $company_id
-  AND status = 'completed'
-  AND id NOT IN (
-    SELECT transaction_id FROM receipts
-    WHERE ocr_data->>'auto_generated' IS DISTINCT FROM 'true'
-  )
-LIMIT 1
-```
+### 2. `src/hooks/useDashboardData.ts` — Filtrar R$ 0,01
 
-Se retornar resultado → responder **403 Forbidden** com mensagem clara:
-`"Você possui comprovante(s) pendente(s). Anexe a nota fiscal antes de realizar um novo pagamento."`
+No `eligibleForManualReceipt`, adicionar condição `Number(t.amount) > 0.01` para excluir probes da lista de missing receipts e dos totais do dashboard.
 
-Isso será implementado como uma query direta via `supabaseAdmin` em cada uma das 3 funções, logo após a validação de autenticação e antes de qualquer chamada ao provedor.
+### 3. Edge Functions (`pix-pay-dict`, `pix-pay-qrc`, `billet-pay`) — Filtrar R$ 0,01 no check server-side
 
-### 2. Reconciliação de Transações Stuck — `usePendingReceipts.ts`
+Na query de pendência server-side, adicionar `.gt('amount', 0.01)` para que probes não bloqueiem novos pagamentos.
 
-- Expandir a query para incluir também `status = 'pending'` com `created_at < 5 minutos atrás`
-- Adicionar campo `status` à interface `PendingReceipt`
-- No `MobileDashboard.tsx`, adicionar botão "Sincronizar" que chama `pix-check-status` para cada transação stuck e depois faz `refresh()`
+### 4. `src/pages/Transactions.tsx` — Ocultar probes por padrão
 
-### 3. Remoção do `.limit(10)` — `usePendingReceipts.ts`
+Adicionar filtro no `filteredTransactions` para esconder transações com `amount <= 0.01` por padrão. Adicionar toggle/checkbox "Mostrar verificações" para exibi-las quando necessário.
 
-- Substituir `.limit(10)` por `.limit(100)` para visibilidade total
-- Adicionar filtro de data: últimos 30 dias (`.gte("created_at", thirtyDaysAgo)`)
+### 5. `src/pages/ReceiptCapture.tsx` — Skip para probes
 
-### 4. Identificação Visual Reforçada — `ReceiptCapture.tsx`
+Se a transação carregada tiver `amount <= 0.01`, redirecionar automaticamente de volta (não exigir captura).
 
-O card de identificação já existe (beneficiary_name + amount + created_at). Reforçar:
-- Aumentar tamanho da fonte do nome do beneficiário (`text-lg font-bold`)
-- Destacar valor com cor primária e tamanho maior
-- Adicionar ícone visual de atenção
+## Sobre a classificação automática
 
-### 5. `classified_at` no `handleSaveWithoutReceipt` — `ReceiptCapture.tsx`
+A classificação automática com categoria "Verificação de Dados" exigiria criar essa categoria no banco para cada empresa. Em vez disso, os probes simplesmente serão ignorados pelo sistema de pendências (não precisam de categoria nem foto). Isso é mais simples e robusto.
 
-O `classified_at` já é preenchido quando há subcategoria selecionada (linha 290). Corrigir para **sempre** preencher quando salvando sem foto, mesmo sem subcategoria:
+## Sobre transferência do nome do beneficiário
 
-```typescript
-updateData.classified_at = new Date().toISOString();
-```
-
-Mover essa linha para fora do bloco condicional `if (receiptData.subcategory)`.
+O nome capturado no probe já é persistido na transação de R$ 0,01 (`beneficiary_name`). O fluxo existente (PixKeyDialog) já copia esse nome para a transação principal no Step 4 — não requer alteração.
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `supabase/functions/pix-pay-dict/index.ts` | Adicionar check de pendência antes do pagamento |
-| `supabase/functions/pix-pay-qrc/index.ts` | Mesmo check de pendência |
-| `supabase/functions/billet-pay/index.ts` | Mesmo check de pendência |
-| `src/hooks/usePendingReceipts.ts` | Incluir stuck, remover limit(10), adicionar filtro 30 dias |
-| `src/components/dashboard/MobileDashboard.tsx` | Botão "Sincronizar" para transações stuck |
-| `src/pages/ReceiptCapture.tsx` | Visual reforçado + `classified_at` sempre preenchido |
-
-## Detalhes técnicos
-
-- A query server-side usa LEFT JOIN implícito: busca transações completed onde NÃO existe receipt com `auto_generated != true`
-- O check é feito com `supabaseAdmin` (service role) para bypass de RLS
-- Transações "stuck" = `status = 'pending'` + `created_at < now() - 5min`
-- O botão Sincronizar itera sobre stuck pendentes chamando `pix-check-status` sequencialmente
+| `src/hooks/usePendingReceipts.ts` | `.gt("amount", 0.01)` nas queries |
+| `src/hooks/useDashboardData.ts` | Filtro `amount > 0.01` no eligibleForManualReceipt |
+| `supabase/functions/pix-pay-dict/index.ts` | `.gt('amount', 0.01)` no check |
+| `supabase/functions/pix-pay-qrc/index.ts` | `.gt('amount', 0.01)` no check |
+| `supabase/functions/billet-pay/index.ts` | `.gt('amount', 0.01)` no check |
+| `src/pages/Transactions.tsx` | Ocultar probes + toggle "Mostrar verificações" |
+| `src/pages/ReceiptCapture.tsx` | Redirect automático se amount ≤ 0.01 |
 
