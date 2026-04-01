@@ -375,6 +375,7 @@ export default function ReceiptCapture() {
   };
 
   const canSubmit = receiptData.file && receiptData.classification && !receiptData.isProcessing;
+  const canSaveWithoutReceipt = receiptData.classification && !receiptData.isProcessing && transactionPixType !== "key";
 
   // Guard: show waiting screen if transaction is not yet completed
   const isTransactionCompleted = transactionStatus === "completed";
