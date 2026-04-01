@@ -226,6 +226,56 @@ export default function ReceiptCapture() {
     }
   };
 
+  const handleSaveWithoutReceipt = async () => {
+    if (!receiptData.classification) {
+      toast({
+        variant: "destructive",
+        title: "Erro",
+        description: "Selecione a classificação antes de salvar.",
+      });
+      return;
+    }
+
+    if (!transactionId || !currentCompany) {
+      toast({ variant: "destructive", title: "Erro", description: "Transação ou empresa não encontrada." });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado");
+
+      if (receiptData.subcategory) {
+        const selectedCategory = categories.find(
+          (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
+        );
+        if (selectedCategory) {
+          await supabase
+            .from("transactions")
+            .update({
+              category_id: selectedCategory.id,
+              classified_by: user.id,
+              classified_at: new Date().toISOString(),
+            })
+            .eq("id", transactionId);
+        }
+      }
+
+      invalidateDashboardCache();
+      toast({
+        title: "Classificação salva!",
+        description: "O comprovante ficou pendente para anexar depois.",
+      });
+      navigate("/");
+    } catch (error: any) {
+      console.error("Erro ao salvar classificação:", error);
+      toast({ variant: "destructive", title: "Erro ao salvar", description: error.message || "Tente novamente." });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!receiptData.file || !receiptData.classification) {
       toast({
