@@ -417,6 +417,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                           if (tag.request_order_number) {
                             setShowOrderInput(true);
                           }
+                          if (!tag.receipt_required) {
+                            setReceiptRequired(false);
+                          }
                         }}
                         className="h-10 px-4 rounded-full bg-primary/10 text-primary font-medium text-sm border border-primary/20 hover:bg-primary/20 active:scale-95 transition-all"
                         data-vaul-no-drag
