@@ -1,13 +1,20 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useQuickTagsAdmin, QuickTag } from "@/hooks/useQuickTags";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  ResponsiveDialog,
+  ResponsiveDialogContent,
+  ResponsiveDialogHeader,
+  ResponsiveDialogTitle,
+  ResponsiveDialogFooter,
+} from "@/components/ui/responsive-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,6 +23,7 @@ import { toast } from "sonner";
 
 export default function QuickTags() {
   const { tags, isLoading, createTag, updateTag, deleteTag } = useQuickTagsAdmin();
+  const isMobile = useIsMobile();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTag, setEditingTag] = useState<QuickTag | null>(null);
   const [formName, setFormName] = useState("");
@@ -112,7 +120,7 @@ export default function QuickTags() {
           </div>
           <Button onClick={openCreate} className="gap-2">
             <Plus className="h-4 w-4" />
-            Nova Tag
+            {!isMobile && "Nova Tag"}
           </Button>
         </div>
 
@@ -137,7 +145,55 @@ export default function QuickTags() {
                 <p>Nenhuma tag cadastrada</p>
                 <p className="text-sm">Crie tags para agilizar o preenchimento dos pagamentos</p>
               </div>
+            ) : isMobile ? (
+              /* Mobile: Card list */
+              <div className="space-y-3">
+                {tags.map((tag) => (
+                  <div
+                    key={tag.id}
+                    className="rounded-lg border bg-card p-4 space-y-3"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1 min-w-0">
+                        <p className="font-medium truncate">{tag.name}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <Badge variant={tag.suggested_classification ? "default" : "secondary"} className="text-xs">
+                            {classificationLabel(tag.suggested_classification)}
+                          </Badge>
+                          {tag.request_order_number && (
+                            <Badge variant="outline" className="text-xs">Nº Pedido</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <Switch
+                        checked={tag.is_active}
+                        onCheckedChange={() => handleToggleActive(tag)}
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="flex-1 min-h-[44px]"
+                        onClick={() => openEdit(tag)}
+                      >
+                        <Pencil className="h-4 w-4 mr-2" />
+                        Editar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="min-h-[44px] text-destructive hover:text-destructive"
+                        onClick={() => handleDelete(tag)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             ) : (
+              /* Desktop: Table */
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -188,26 +244,27 @@ export default function QuickTags() {
           </CardContent>
         </Card>
 
-        {/* Create / Edit Dialog */}
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editingTag ? "Editar Tag" : "Nova Tag"}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 py-2">
+        {/* Create / Edit Dialog — Drawer on mobile */}
+        <ResponsiveDialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <ResponsiveDialogContent>
+            <ResponsiveDialogHeader>
+              <ResponsiveDialogTitle>{editingTag ? "Editar Tag" : "Nova Tag"}</ResponsiveDialogTitle>
+            </ResponsiveDialogHeader>
+            <div className={`space-y-4 ${isMobile ? "px-4" : "py-2"}`}>
               <div className="space-y-2">
                 <Label>Nome da Tag *</Label>
                 <Input
                   placeholder="Ex: Troco Cliente, Pagamento Motoboy"
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
+                  data-vaul-no-drag
                 />
               </div>
 
               <div className="space-y-2">
                 <Label>Categoria Sugerida</Label>
                 <Select value={formClassification} onValueChange={setFormClassification}>
-                  <SelectTrigger>
+                  <SelectTrigger data-vaul-no-drag>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -239,20 +296,21 @@ export default function QuickTags() {
                   min={0}
                   value={formSortOrder}
                   onChange={(e) => setFormSortOrder(Number(e.target.value))}
+                  data-vaul-no-drag
                 />
               </div>
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>
+            <ResponsiveDialogFooter>
+              <Button variant="outline" onClick={() => setDialogOpen(false)} className="min-h-[44px]">
                 Cancelar
               </Button>
-              <Button onClick={handleSave} disabled={saving}>
+              <Button onClick={handleSave} disabled={saving} className="min-h-[44px]">
                 {saving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                 {editingTag ? "Salvar" : "Criar"}
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            </ResponsiveDialogFooter>
+          </ResponsiveDialogContent>
+        </ResponsiveDialog>
       </div>
     </MainLayout>
   );

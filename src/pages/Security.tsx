@@ -1,28 +1,17 @@
 import { MainLayout } from "@/components/layout/MainLayout";
 import { useSecurityData } from "@/hooks/useSecurityData";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Shield,
-  ShieldAlert,
-  ShieldOff,
-  Activity,
-  AlertTriangle,
-  Ban,
-  CheckCircle,
-  XCircle,
-  Loader2,
+  Shield, ShieldAlert, ShieldOff, Activity, AlertTriangle, Ban,
+  CheckCircle, XCircle, Loader2,
 } from "lucide-react";
 import { useState } from "react";
 import { format } from "date-fns";
@@ -57,20 +46,12 @@ function formatDate(d: string) {
 
 export default function Security() {
   const {
-    metrics,
-    events,
-    alerts,
-    ipBlocks,
-    isLoading,
-    activeTab,
-    setActiveTab,
-    resolveAlert,
-    dismissAlert,
-    blockIp,
-    unblockIp,
+    metrics, events, alerts, ipBlocks, isLoading, activeTab, setActiveTab,
+    resolveAlert, dismissAlert, blockIp, unblockIp,
   } = useSecurityData();
 
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const [newIp, setNewIp] = useState("");
   const [newReason, setNewReason] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -112,7 +93,7 @@ export default function Security() {
           <Shield className="h-7 w-7 text-primary" />
           <div>
             <h1 className="text-2xl font-bold text-foreground">Central de Segurança</h1>
-            <p className="text-sm text-muted-foreground">Monitoramento de ameaças e eventos de segurança</p>
+            <p className="text-sm text-muted-foreground">Monitoramento de ameaças e eventos</p>
           </div>
         </div>
 
@@ -124,9 +105,7 @@ export default function Security() {
                 <Activity className="h-4 w-4" /> Eventos (24h)
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{isLoading ? "—" : metrics.events_24h}</p>
-            </CardContent>
+            <CardContent><p className="text-3xl font-bold">{isLoading ? "—" : metrics.events_24h}</p></CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
@@ -134,9 +113,7 @@ export default function Security() {
                 <ShieldAlert className="h-4 w-4" /> Alertas Abertos
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{isLoading ? "—" : metrics.open_alerts}</p>
-            </CardContent>
+            <CardContent><p className="text-3xl font-bold">{isLoading ? "—" : metrics.open_alerts}</p></CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
@@ -144,9 +121,7 @@ export default function Security() {
                 <Ban className="h-4 w-4" /> IPs Bloqueados
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{isLoading ? "—" : metrics.blocked_ips}</p>
-            </CardContent>
+            <CardContent><p className="text-3xl font-bold">{isLoading ? "—" : metrics.blocked_ips}</p></CardContent>
           </Card>
           <Card>
             <CardHeader className="pb-2">
@@ -154,9 +129,7 @@ export default function Security() {
                 <AlertTriangle className="h-4 w-4" /> Nível de Risco
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <p className={`text-3xl font-bold ${riskColor}`}>{isLoading ? "—" : riskLevel}</p>
-            </CardContent>
+            <CardContent><p className={`text-3xl font-bold ${riskColor}`}>{isLoading ? "—" : riskLevel}</p></CardContent>
           </Card>
         </div>
 
@@ -165,7 +138,7 @@ export default function Security() {
           <TabsList className="w-full lg:w-auto">
             <TabsTrigger value="alerts">Alertas</TabsTrigger>
             <TabsTrigger value="events">Eventos</TabsTrigger>
-            <TabsTrigger value="ip-blocks">IPs Bloqueados</TabsTrigger>
+            <TabsTrigger value="ip-blocks">IPs</TabsTrigger>
           </TabsList>
 
           {/* Alerts Tab */}
@@ -179,52 +152,73 @@ export default function Security() {
                     <ShieldOff className="h-12 w-12 mx-auto mb-3 opacity-30" />
                     <p>Nenhum alerta registrado</p>
                   </div>
+                ) : isMobile ? (
+                  <div className="p-3 space-y-3">
+                    {alerts.map((alert) => (
+                      <div key={alert.id} className="rounded-lg border bg-card p-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge className={severityColors[alert.severity] || ""}>{alert.severity}</Badge>
+                          <Badge variant="outline" className={statusColors[alert.status] || ""}>{alert.status}</Badge>
+                        </div>
+                        <p className="font-medium text-sm">{alert.title}</p>
+                        <p className="text-xs text-muted-foreground line-clamp-2">{alert.description}</p>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span className="font-mono">{alert.source_ip || "—"}</span>
+                          <span>{formatDate(alert.created_at)}</span>
+                        </div>
+                        {alert.status === "open" && (
+                          <div className="flex gap-2 pt-1">
+                            <Button size="sm" variant="outline" className="flex-1 min-h-[44px]"
+                              onClick={() => handleAction(alert.id, () => resolveAlert(alert.id), "Alerta resolvido")}
+                              disabled={actionLoading === alert.id}>
+                              <CheckCircle className="h-4 w-4 mr-2 text-green-500" /> Resolver
+                            </Button>
+                            <Button size="sm" variant="outline" className="flex-1 min-h-[44px]"
+                              onClick={() => handleAction(alert.id, () => dismissAlert(alert.id), "Alerta dispensado")}
+                              disabled={actionLoading === alert.id}>
+                              <XCircle className="h-4 w-4 mr-2" /> Dispensar
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Severidade</TableHead>
                         <TableHead>Título</TableHead>
-                        <TableHead className="hidden md:table-cell">IP</TableHead>
+                        <TableHead>IP</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead className="hidden md:table-cell">Data</TableHead>
+                        <TableHead>Data</TableHead>
                         <TableHead>Ações</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {alerts.map((alert) => (
                         <TableRow key={alert.id}>
-                          <TableCell>
-                            <Badge className={severityColors[alert.severity] || ""}>{alert.severity}</Badge>
-                          </TableCell>
+                          <TableCell><Badge className={severityColors[alert.severity] || ""}>{alert.severity}</Badge></TableCell>
                           <TableCell>
                             <div>
                               <p className="font-medium text-sm">{alert.title}</p>
                               <p className="text-xs text-muted-foreground line-clamp-1">{alert.description}</p>
                             </div>
                           </TableCell>
-                          <TableCell className="hidden md:table-cell font-mono text-xs">{alert.source_ip || "—"}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={statusColors[alert.status] || ""}>{alert.status}</Badge>
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(alert.created_at)}</TableCell>
+                          <TableCell className="font-mono text-xs">{alert.source_ip || "—"}</TableCell>
+                          <TableCell><Badge variant="outline" className={statusColors[alert.status] || ""}>{alert.status}</Badge></TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{formatDate(alert.created_at)}</TableCell>
                           <TableCell>
                             {alert.status === "open" && (
                               <div className="flex gap-1">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
+                                <Button size="sm" variant="ghost"
                                   onClick={() => handleAction(alert.id, () => resolveAlert(alert.id), "Alerta resolvido")}
-                                  disabled={actionLoading === alert.id}
-                                >
+                                  disabled={actionLoading === alert.id}>
                                   <CheckCircle className="h-4 w-4 text-green-500" />
                                 </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
+                                <Button size="sm" variant="ghost"
                                   onClick={() => handleAction(alert.id, () => dismissAlert(alert.id), "Alerta dispensado")}
-                                  disabled={actionLoading === alert.id}
-                                >
+                                  disabled={actionLoading === alert.id}>
                                   <XCircle className="h-4 w-4 text-muted-foreground" />
                                 </Button>
                               </div>
@@ -250,6 +244,26 @@ export default function Security() {
                     <Activity className="h-12 w-12 mx-auto mb-3 opacity-30" />
                     <p>Nenhum evento registrado</p>
                   </div>
+                ) : isMobile ? (
+                  <div className="p-3 space-y-3">
+                    {events.map((event) => (
+                      <div key={event.id} className="rounded-lg border bg-card p-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <Badge variant="outline">{eventTypeLabels[event.event_type] || event.event_type}</Badge>
+                          <Badge className={severityColors[event.severity] || ""}>{event.severity}</Badge>
+                        </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <span className="font-mono">{event.ip_address}</span>
+                          <span>{formatDate(event.created_at)}</span>
+                        </div>
+                        {(event.metadata?.email || event.user_agent) && (
+                          <p className="text-xs text-muted-foreground truncate">
+                            {(event.metadata as any)?.email || event.user_agent || "—"}
+                          </p>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -257,22 +271,18 @@ export default function Security() {
                         <TableHead>Tipo</TableHead>
                         <TableHead>Severidade</TableHead>
                         <TableHead>IP</TableHead>
-                        <TableHead className="hidden md:table-cell">Detalhes</TableHead>
+                        <TableHead>Detalhes</TableHead>
                         <TableHead>Data</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {events.map((event) => (
                         <TableRow key={event.id}>
-                          <TableCell>
-                            <Badge variant="outline">{eventTypeLabels[event.event_type] || event.event_type}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge className={severityColors[event.severity] || ""}>{event.severity}</Badge>
-                          </TableCell>
+                          <TableCell><Badge variant="outline">{eventTypeLabels[event.event_type] || event.event_type}</Badge></TableCell>
+                          <TableCell><Badge className={severityColors[event.severity] || ""}>{event.severity}</Badge></TableCell>
                           <TableCell className="font-mono text-xs">{event.ip_address}</TableCell>
-                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[200px] truncate">
-                            {event.metadata?.email || event.user_agent || "—"}
+                          <TableCell className="text-xs text-muted-foreground max-w-[200px] truncate">
+                            {(event.metadata as any)?.email || event.user_agent || "—"}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">{formatDate(event.created_at)}</TableCell>
                         </TableRow>
@@ -290,19 +300,9 @@ export default function Security() {
               <CardHeader>
                 <CardTitle className="text-base">Bloquear novo IP</CardTitle>
                 <div className="flex flex-col sm:flex-row gap-2 pt-2">
-                  <Input
-                    placeholder="Endereço IP"
-                    value={newIp}
-                    onChange={(e) => setNewIp(e.target.value)}
-                    className="sm:w-48"
-                  />
-                  <Input
-                    placeholder="Motivo do bloqueio"
-                    value={newReason}
-                    onChange={(e) => setNewReason(e.target.value)}
-                    className="sm:flex-1"
-                  />
-                  <Button onClick={handleBlockIp} disabled={actionLoading === "block-new" || !newIp || !newReason}>
+                  <Input placeholder="Endereço IP" value={newIp} onChange={(e) => setNewIp(e.target.value)} className="sm:w-48" data-vaul-no-drag />
+                  <Input placeholder="Motivo do bloqueio" value={newReason} onChange={(e) => setNewReason(e.target.value)} className="sm:flex-1" data-vaul-no-drag />
+                  <Button onClick={handleBlockIp} disabled={actionLoading === "block-new" || !newIp || !newReason} className="min-h-[44px]">
                     {actionLoading === "block-new" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Ban className="h-4 w-4 mr-2" />}
                     Bloquear
                   </Button>
@@ -316,13 +316,37 @@ export default function Security() {
                     <Ban className="h-12 w-12 mx-auto mb-3 opacity-30" />
                     <p>Nenhum IP bloqueado</p>
                   </div>
+                ) : isMobile ? (
+                  <div className="p-3 space-y-3">
+                    {ipBlocks.map((block) => (
+                      <div key={block.id} className="rounded-lg border bg-card p-4 space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-medium text-sm">{block.ip_address}</span>
+                          <Badge variant={block.is_active ? "destructive" : "secondary"}>
+                            {block.is_active ? "Ativo" : "Inativo"}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{block.reason}</p>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-muted-foreground">{formatDate(block.blocked_at)}</span>
+                          {block.is_active && (
+                            <Button size="sm" variant="outline" className="min-h-[44px]"
+                              onClick={() => handleAction(block.id, () => unblockIp(block.id), "IP desbloqueado")}
+                              disabled={actionLoading === block.id}>
+                              {actionLoading === block.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Desbloquear"}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <Table>
                     <TableHeader>
                       <TableRow>
                         <TableHead>IP</TableHead>
                         <TableHead>Motivo</TableHead>
-                        <TableHead className="hidden md:table-cell">Bloqueado em</TableHead>
+                        <TableHead>Bloqueado em</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Ações</TableHead>
                       </TableRow>
@@ -332,7 +356,7 @@ export default function Security() {
                         <TableRow key={block.id}>
                           <TableCell className="font-mono font-medium">{block.ip_address}</TableCell>
                           <TableCell className="text-sm max-w-[200px] truncate">{block.reason}</TableCell>
-                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground">{formatDate(block.blocked_at)}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground">{formatDate(block.blocked_at)}</TableCell>
                           <TableCell>
                             <Badge variant={block.is_active ? "destructive" : "secondary"}>
                               {block.is_active ? "Ativo" : "Inativo"}
@@ -340,12 +364,9 @@ export default function Security() {
                           </TableCell>
                           <TableCell>
                             {block.is_active && (
-                              <Button
-                                size="sm"
-                                variant="outline"
+                              <Button size="sm" variant="outline"
                                 onClick={() => handleAction(block.id, () => unblockIp(block.id), "IP desbloqueado")}
-                                disabled={actionLoading === block.id}
-                              >
+                                disabled={actionLoading === block.id}>
                                 {actionLoading === block.id ? <Loader2 className="h-3 w-3 animate-spin" /> : "Desbloquear"}
                               </Button>
                             )}
