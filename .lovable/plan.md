@@ -1,50 +1,45 @@
 
 
-# Isenção de Transações de Verificação (R$ 0,01) do Sistema de Pendências
+# Marco Zero (Cut-off) para Comprovantes
 
 ## Resumo
 
-Transações de R$ 0,01 (probe de verificação de beneficiário) serão excluídas de toda lógica de pendência, bloqueio e obrigatoriedade de foto. Serão ocultadas por padrão no extrato.
+Criar uma constante `RECEIPT_CUTOFF_DATE` e aplicá-la em todos os pontos de verificação de pendência (frontend e server-side), ignorando transações anteriores a essa data.
 
 ## Alterações
 
-### 1. `src/hooks/usePendingReceipts.ts` — Filtrar R$ 0,01
+### 1. `src/constants/app.ts` — Constante de cut-off
 
-Adicionar filtro `.gt("amount", 0.01)` nas duas queries (completed e stuck) para excluir probes da contagem de pendências.
+Adicionar:
+```typescript
+export const RECEIPT_CUTOFF_DATE = '2025-05-22T00:00:00Z';
+```
 
-### 2. `src/hooks/useDashboardData.ts` — Filtrar R$ 0,01
+### 2. `src/hooks/usePendingReceipts.ts` — Filtro por cut-off
 
-No `eligibleForManualReceipt`, adicionar condição `Number(t.amount) > 0.01` para excluir probes da lista de missing receipts e dos totais do dashboard.
+Substituir `.gte("created_at", thirtyDaysAgo)` por `.gte("created_at", RECEIPT_CUTOFF_DATE)` nas duas queries (completed e stuck). O filtro de 30 dias se torna redundante se o cut-off for mais recente; manter o `Math.max` entre ambos para futuro-proofing.
 
-### 3. Edge Functions (`pix-pay-dict`, `pix-pay-qrc`, `billet-pay`) — Filtrar R$ 0,01 no check server-side
+### 3. `src/hooks/useDashboardData.ts` — Filtro por cut-off
 
-Na query de pendência server-side, adicionar `.gt('amount', 0.01)` para que probes não bloqueiem novos pagamentos.
+No `eligibleForManualReceipt`, adicionar condição `new Date(t.created_at) >= new Date(RECEIPT_CUTOFF_DATE)` para excluir transações antigas dos missing receipts do dashboard.
 
-### 4. `src/pages/Transactions.tsx` — Ocultar probes por padrão
+### 4. Edge Functions (`pix-pay-dict`, `pix-pay-qrc`, `billet-pay`) — Filtro server-side
 
-Adicionar filtro no `filteredTransactions` para esconder transações com `amount <= 0.01` por padrão. Adicionar toggle/checkbox "Mostrar verificações" para exibi-las quando necessário.
+Adicionar `.gte('created_at', '2025-05-22T00:00:00Z')` na query de pendência de cada função, para que transações antigas não bloqueiem novos pagamentos.
 
-### 5. `src/pages/ReceiptCapture.tsx` — Skip para probes
+### 5. Toast de boas-vindas (opcional) — `src/components/dashboard/MobileDashboard.tsx`
 
-Se a transação carregada tiver `amount <= 0.01`, redirecionar automaticamente de volta (não exigir captura).
-
-## Sobre a classificação automática
-
-A classificação automática com categoria "Verificação de Dados" exigiria criar essa categoria no banco para cada empresa. Em vez disso, os probes simplesmente serão ignorados pelo sistema de pendências (não precisam de categoria nem foto). Isso é mais simples e robusto.
-
-## Sobre transferência do nome do beneficiário
-
-O nome capturado no probe já é persistido na transação de R$ 0,01 (`beneficiary_name`). O fluxo existente (PixKeyDialog) já copia esse nome para a transação principal no Step 4 — não requer alteração.
+Exibir toast uma única vez (flag no `localStorage`) informando: "Sistema atualizado. Novas regras de comprovação ativas a partir de hoje."
 
 ## Arquivos modificados
 
 | Arquivo | Alteração |
 |---|---|
-| `src/hooks/usePendingReceipts.ts` | `.gt("amount", 0.01)` nas queries |
-| `src/hooks/useDashboardData.ts` | Filtro `amount > 0.01` no eligibleForManualReceipt |
-| `supabase/functions/pix-pay-dict/index.ts` | `.gt('amount', 0.01)` no check |
-| `supabase/functions/pix-pay-qrc/index.ts` | `.gt('amount', 0.01)` no check |
-| `supabase/functions/billet-pay/index.ts` | `.gt('amount', 0.01)` no check |
-| `src/pages/Transactions.tsx` | Ocultar probes + toggle "Mostrar verificações" |
-| `src/pages/ReceiptCapture.tsx` | Redirect automático se amount ≤ 0.01 |
+| `src/constants/app.ts` | Adicionar `RECEIPT_CUTOFF_DATE` |
+| `src/hooks/usePendingReceipts.ts` | Usar cut-off no `.gte()` |
+| `src/hooks/useDashboardData.ts` | Filtrar eligibleForManualReceipt por cut-off |
+| `supabase/functions/pix-pay-dict/index.ts` | `.gte('created_at', CUTOFF)` na query |
+| `supabase/functions/pix-pay-qrc/index.ts` | Mesmo filtro |
+| `supabase/functions/billet-pay/index.ts` | Mesmo filtro |
+| `src/components/dashboard/MobileDashboard.tsx` | Toast one-time de atualização |
 
