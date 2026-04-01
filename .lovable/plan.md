@@ -1,31 +1,39 @@
 
 
-# Adicionar Campo "Nome da Empresa" nos Pagamentos QR Code e Boleto
+# Corrigir: Perfil "Caixa" sem permissão de classificação não consegue salvar comprovante
 
 ## Problema
 
-Nos fluxos de QR Code e Boleto, o sistema não solicita o nome da empresa que está recebendo o pagamento, dificultando o rastreamento.
+Quando o usuário tem perfil "Caixa" sem permissões de classificação (`classificar_insumo` e `classificar_despesa` ambos desativados), a tela de anexo de comprovante fica travada:
+
+- Os botões de classificação (Custo/Despesa) não aparecem
+- Nenhuma classificação automática é aplicada
+- `receiptData.classification` permanece `null`
+- Os botões "Salvar Comprovante" e "Salvar classificação sem comprovante" ficam desabilitados permanentemente
 
 ## Solução
 
-Adicionar um campo obrigatório "Nome da Empresa" na etapa de confirmação de ambos os fluxos. O campo será pré-preenchido com dados disponíveis (nome do recebedor do QR ou beneficiário do boleto) e salvo no campo `beneficiary_name` da tabela `transactions`.
+Quando o usuário **não tem nenhuma permissão de classificação**, o fluxo deve permitir que ele apenas anexe o comprovante (foto) e a descrição, **sem exigir classificação**. A classificação será feita depois por alguém com permissão (gestor).
 
-## Alterações
+### Alterações em `src/pages/ReceiptCapture.tsx`
 
-### 1. `src/components/pix/PixQrPaymentDrawer.tsx`
-- Adicionar input "Nome da Empresa *" no Step 3 (confirmação), pré-preenchido com `merchantName`
-- Validar que o campo está preenchido antes de confirmar
-- Salvar no update da transaction como `beneficiary_name`
+1. **Detectar ausência total de permissão de classificação:**
+   ```
+   const hasNoClassificationAccess = !canClassifyCost && !canClassifyExpense;
+   ```
 
-### 2. `src/components/payment/BoletoPaymentDrawer.tsx`
-- Adicionar input "Nome da Empresa *" no Step 2 (confirmação), pré-preenchido com `consultInfo.recipient_name`
-- Validar que o campo está preenchido antes de confirmar
-- Passar como `beneficiary_name` junto com a descrição
+2. **Esconder o card de classificação** quando `hasNoClassificationAccess` é `true` — não mostrar botões Custo/Despesa nem categorias.
 
-## Arquivos modificados
+3. **Ajustar validação de submit:**
+   - `canSubmit`: quando sem permissão de classificação, exigir apenas `receiptData.file` (sem classificação)
+   - `handleSubmit`: pular validação de `classification` se `hasNoClassificationAccess`
+   - Remover o botão "Salvar sem comprovante" para esse perfil (Caixa deve sempre anexar a foto)
+
+4. **Mostrar aviso informativo** dizendo que a classificação será feita pelo gestor.
+
+## Arquivo modificado
 
 | Arquivo | Alteração |
 |---|---|
-| `src/components/pix/PixQrPaymentDrawer.tsx` | Input obrigatório + validação + salvar beneficiary_name |
-| `src/components/payment/BoletoPaymentDrawer.tsx` | Input obrigatório + validação + salvar beneficiary_name |
+| `src/pages/ReceiptCapture.tsx` | Permitir salvar sem classificação quando usuário não tem permissão |
 
