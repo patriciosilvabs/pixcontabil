@@ -594,6 +594,7 @@ export type Database = {
           id: string
           is_active: boolean
           name: string
+          receipt_required: boolean
           request_order_number: boolean
           sort_order: number
           suggested_classification: string | null
@@ -605,6 +606,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name: string
+          receipt_required?: boolean
           request_order_number?: boolean
           sort_order?: number
           suggested_classification?: string | null
@@ -616,6 +618,7 @@ export type Database = {
           id?: string
           is_active?: boolean
           name?: string
+          receipt_required?: boolean
           request_order_number?: boolean
           sort_order?: number
           suggested_classification?: string | null
@@ -830,6 +833,7 @@ export type Database = {
           pix_qrcode: string | null
           pix_txid: string | null
           pix_type: Database["public"]["Enums"]["pix_type"]
+          receipt_required: boolean
           status: Database["public"]["Enums"]["transaction_status"]
           updated_at: string
         }
@@ -860,6 +864,7 @@ export type Database = {
           pix_qrcode?: string | null
           pix_txid?: string | null
           pix_type: Database["public"]["Enums"]["pix_type"]
+          receipt_required?: boolean
           status?: Database["public"]["Enums"]["transaction_status"]
           updated_at?: string
         }
@@ -890,6 +895,7 @@ export type Database = {
           pix_qrcode?: string | null
           pix_txid?: string | null
           pix_type?: Database["public"]["Enums"]["pix_type"]
+          receipt_required?: boolean
           status?: Database["public"]["Enums"]["transaction_status"]
           updated_at?: string
         }
