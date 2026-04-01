@@ -276,21 +276,25 @@ export default function ReceiptCapture() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado");
 
+      const updateData: Record<string, any> = {
+        description: paymentDescription.trim(),
+      };
+
       if (receiptData.subcategory) {
         const selectedCategory = categories.find(
           (c) => c.name === receiptData.subcategory && c.classification === receiptData.classification
         );
         if (selectedCategory) {
-          await supabase
-            .from("transactions")
-            .update({
-              category_id: selectedCategory.id,
-              classified_by: user.id,
-              classified_at: new Date().toISOString(),
-            })
-            .eq("id", transactionId);
+          updateData.category_id = selectedCategory.id;
+          updateData.classified_by = user.id;
+          updateData.classified_at = new Date().toISOString();
         }
       }
+
+      await supabase
+        .from("transactions")
+        .update(updateData)
+        .eq("id", transactionId);
 
       invalidateDashboardCache();
       toast({
