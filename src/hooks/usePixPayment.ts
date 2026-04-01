@@ -10,6 +10,7 @@ interface PayDictParams {
   creditor_document?: string;
   priority?: 'HIGH' | 'NORM';
   payment_flow?: 'INSTANT' | 'APPROVAL_REQUIRED';
+  receipt_required?: boolean;
 }
 
 interface PayQrcParams {

@@ -29,7 +29,6 @@ export default function QuickTags() {
   const [formName, setFormName] = useState("");
   const [formClassification, setFormClassification] = useState<string>("none");
   const [formRequestOrder, setFormRequestOrder] = useState(false);
-  const [formReceiptRequired, setFormReceiptRequired] = useState(true);
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [formPlaceholder, setFormPlaceholder] = useState("");
   const [formDescriptionRequired, setFormDescriptionRequired] = useState(true);
@@ -40,7 +39,6 @@ export default function QuickTags() {
     setFormName("");
     setFormClassification("none");
     setFormRequestOrder(false);
-    setFormReceiptRequired(true);
     setFormSortOrder(tags.length);
     setFormPlaceholder("");
     setFormDescriptionRequired(true);
@@ -52,7 +50,6 @@ export default function QuickTags() {
     setFormName(tag.name);
     setFormClassification(tag.suggested_classification || "none");
     setFormRequestOrder(tag.request_order_number);
-    setFormReceiptRequired(tag.receipt_required);
     setFormSortOrder(tag.sort_order);
     setFormPlaceholder(tag.description_placeholder || "");
     setFormDescriptionRequired(tag.description_required);
@@ -73,7 +70,6 @@ export default function QuickTags() {
           name: formName.trim(),
           suggested_classification: classification,
           request_order_number: formRequestOrder,
-          receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
           description_placeholder: placeholder,
           description_required: formDescriptionRequired,
@@ -84,7 +80,6 @@ export default function QuickTags() {
           name: formName.trim(),
           suggested_classification: classification,
           request_order_number: formRequestOrder,
-          receipt_required: formReceiptRequired,
           sort_order: formSortOrder,
           description_placeholder: placeholder,
           description_required: formDescriptionRequired,
