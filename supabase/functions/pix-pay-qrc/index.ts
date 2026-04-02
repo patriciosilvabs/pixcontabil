@@ -86,6 +86,181 @@ async function delegateQrToPixPayDict({
   };
 }
 
+async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
+  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+
+  if (!proxyUrl || !proxyApiKey) {
+    throw new Error('ONZ proxy is not configured');
+  }
+
+  const proxyBody: Record<string, unknown> = { url, method, headers };
+  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
+
+  const resp = await fetch(`${proxyUrl}/proxy`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Proxy-API-Key': proxyApiKey,
+    },
+    body: JSON.stringify(proxyBody),
+  });
+
+  const text = await resp.text();
+  let data: any;
+
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(`Proxy returned non-JSON response (HTTP ${resp.status})`);
+  }
+
+  return {
+    proxyStatus: resp.status,
+    status: data?.status ?? resp.status,
+    data: data?.data ?? data,
+  };
+}
+
+function generateOnzIdempotencyKey(rawKey?: string): string {
+  const sanitized = String(rawKey || '').replace(/[^a-zA-Z0-9]/g, '');
+
+  if (sanitized.length >= 8) {
+    return sanitized.slice(0, 50);
+  }
+
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let result = '';
+  for (let i = 0; i < 35; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+function resolveOnzPriority(explicitPriority: string | undefined, creditorDocument: string): 'HIGH' | 'NORM' {
+  if (!creditorDocument) return 'NORM';
+  return explicitPriority === 'NORM' ? 'NORM' : 'HIGH';
+}
+
+function getProviderErrorType(payload: any): string | null {
+  return payload?.type || payload?.error?.type || payload?.provider_error?.type || null;
+}
+
+function getProviderErrorMessage(payload: any, fallback: string): string {
+  if (typeof payload === 'string' && payload.trim()) return payload;
+
+  const detail = payload?.detail || payload?.error?.detail || payload?.provider_error?.detail;
+  if (Array.isArray(detail)) {
+    const joined = detail
+      .map((item: any) => item?.message || item?.field || String(item))
+      .filter(Boolean)
+      .join('; ');
+
+    if (joined) return joined;
+  }
+
+  const candidates = [
+    payload?.message,
+    payload?.title,
+    payload?.error,
+    payload?.details,
+    payload?.error?.message,
+    payload?.error?.title,
+    payload?.provider_error?.message,
+    payload?.provider_error?.title,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate;
+    }
+  }
+
+  return fallback;
+}
+
+async function getOnzAccessToken(authHeader: string, companyId: string, forceNew = false): Promise<string> {
+  const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+    method: 'POST',
+    headers: {
+      'Authorization': authHeader,
+      'Content-Type': 'application/json',
+      'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+    },
+    body: JSON.stringify({
+      company_id: companyId,
+      purpose: 'cash_out',
+      force_new: forceNew,
+    }),
+  });
+
+  if (!authResponse.ok) {
+    throw new Error(await authResponse.text() || 'Failed to authenticate with provider');
+  }
+
+  const authData = await authResponse.json();
+  if (!authData?.access_token) {
+    throw new Error('Provider token was not returned');
+  }
+
+  return authData.access_token;
+}
+
+function buildOnzHeaders(accessToken: string, onzIdempotencyKey: string, providerCompanyId?: string | null) {
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${accessToken}`,
+    'Content-Type': 'application/json',
+    'x-idempotency-key': onzIdempotencyKey,
+  };
+
+  if (providerCompanyId) {
+    headers['X-Company-ID'] = providerCompanyId;
+  }
+
+  return headers;
+}
+
+async function callOnzQrcWithTokenRetry({
+  authHeader,
+  companyId,
+  config,
+  payload,
+  onzIdempotencyKey,
+}: {
+  authHeader: string;
+  companyId: string;
+  config: any;
+  payload: Record<string, any>;
+  onzIdempotencyKey: string;
+}) {
+  const url = `${config.base_url}/api/v2/pix/payments/qrc`;
+
+  let accessToken = await getOnzAccessToken(authHeader, companyId, false);
+  let result = await callOnzViaProxy(
+    url,
+    'POST',
+    buildOnzHeaders(accessToken, onzIdempotencyKey, config.provider_company_id),
+    JSON.stringify(payload),
+  );
+  let normalizedData = result.data?.data ?? result.data;
+
+  if (result.status === 401 || getProviderErrorType(normalizedData) === 'onz-0018') {
+    accessToken = await getOnzAccessToken(authHeader, companyId, true);
+    result = await callOnzViaProxy(
+      url,
+      'POST',
+      buildOnzHeaders(accessToken, onzIdempotencyKey, config.provider_company_id),
+      JSON.stringify(payload),
+    );
+    normalizedData = result.data?.data ?? result.data;
+  }
+
+  return {
+    status: result.status,
+    data: normalizedData,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
@@ -173,8 +348,135 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (config.provider === 'onz' && qrType === 'dynamic') {
+      console.log('[pix-pay-qrc] ONZ dynamic QR - paying via /pix/payments/qrc');
+
+      const creditorDocumentDigits = creditor_document
+        ? String(creditor_document).replace(/\D/g, '')
+        : '';
+      const paymentPriority = resolveOnzPriority(priority, creditorDocumentDigits);
+      const onzIdempotencyKey = generateOnzIdempotencyKey(idempotency_key);
+
+      const buildQrcPayload = (qrCodeValue: string) => {
+        const payload: Record<string, any> = {
+          qrCode: qrCodeValue,
+          priority: paymentPriority,
+          description: descricao || 'Pagamento via QR Code',
+          paymentFlow: payment_flow || 'INSTANT',
+          payment: {
+            currency: 'BRL',
+            amount: Number(paymentAmount.toFixed(2)),
+          },
+        };
+
+        if (creditorDocumentDigits) {
+          payload.creditorDocument = creditorDocumentDigits;
+        }
+
+        return payload;
+      };
+
+      let onzPayment = await callOnzQrcWithTokenRetry({
+        authHeader,
+        companyId: company_id,
+        config,
+        payload: buildQrcPayload(qr_code),
+        onzIdempotencyKey,
+      });
+
+      if (onzPayment.status >= 400 && getProviderErrorType(onzPayment.data) === 'onz-0010' && qrcInfo?.payload_url) {
+        console.log('[pix-pay-qrc] ONZ rejected raw EMV, retrying with payload_url');
+        onzPayment = await callOnzQrcWithTokenRetry({
+          authHeader,
+          companyId: company_id,
+          config,
+          payload: buildQrcPayload(qrcInfo.payload_url),
+          onzIdempotencyKey,
+        });
+      }
+
+      if (onzPayment.status >= 400 && getProviderErrorType(onzPayment.data) === 'onz-0010' && qrcInfo?.pix_key) {
+        console.log('[pix-pay-qrc] ONZ still rejected QR payload, falling back to pix-pay-dict');
+        const delegated = await delegateQrToPixPayDict({
+          authHeader,
+          companyId: company_id,
+          qrCode: qr_code,
+          paymentAmount,
+          descricao,
+          idempotencyKey: idempotency_key,
+          qrcInfo,
+          creditorDocument: creditor_document,
+          priority,
+          paymentFlow: payment_flow,
+        });
+
+        return new Response(JSON.stringify({
+          ...delegated.body,
+          amount: paymentAmount,
+          qr_info: qrcInfo,
+          fallback: 'dict_after_qrc_failure',
+        }), {
+          status: delegated.status,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      if (onzPayment.status >= 400) {
+        console.error('[pix-pay-qrc] ONZ qrc payment error:', JSON.stringify(onzPayment.data));
+        return new Response(JSON.stringify({
+          error: getProviderErrorMessage(onzPayment.data, 'Falha no pagamento via QR Code'),
+          provider_error: onzPayment.data,
+        }), {
+          status: 502,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const paymentData = onzPayment.data;
+      const endToEndId = paymentData?.endToEndId || paymentData?.e2eId || null;
+      const onzId = paymentData?.correlationID || paymentData?.id || onzIdempotencyKey;
+      const externalId = `onz:${onzId}:${endToEndId || ''}`;
+
+      const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
+        company_id,
+        created_by: userId,
+        amount: paymentAmount,
+        description: descricao || 'Pagamento via QR Code dinâmico',
+        pix_type: 'qrcode',
+        pix_copia_cola: qr_code,
+        pix_key: qrcInfo.pix_key || null,
+        pix_txid: qrcInfo.txid || null,
+        pix_e2eid: endToEndId,
+        external_id: externalId,
+        beneficiary_name: qrcInfo.merchant_name || null,
+        status: 'pending',
+        pix_provider_response: paymentData,
+      }).select('id').single();
+
+      if (txError) {
+        console.error('[pix-pay-qrc] Transaction insert error:', txError);
+        return new Response(JSON.stringify({ error: 'Failed to save transaction' }), {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        transaction_id: transaction.id,
+        id_envio: externalId,
+        end_to_end_id: endToEndId,
+        status: paymentData?.status || 'PROCESSING',
+        amount: paymentAmount,
+        qr_info: qrcInfo,
+        provider_response: paymentData,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     if (config.provider === 'onz') {
-      console.log(`[pix-pay-qrc] ONZ ${qrType} QR - delegating to pix-pay-dict using decoded Pix key`);
+      console.log('[pix-pay-qrc] ONZ static QR - delegating to pix-pay-dict using decoded Pix key');
       const delegated = await delegateQrToPixPayDict({
         authHeader,
         companyId: company_id,
@@ -194,8 +496,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // STATIC QR CODE: For ONZ, try QRC endpoint with full EMV first (preserves txid/context)
-    // For other providers, delegate to pix-pay-dict as before
+    // STATIC QR CODE for non-ONZ providers: delegate to pix-pay-dict
     if (qrType !== 'dynamic') {
       // Non-ONZ providers: delegate to pix-pay-dict as before
       const destKey = qrcInfo.pix_key;
