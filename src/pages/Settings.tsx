@@ -166,6 +166,36 @@ export default function Settings() {
             </CardContent>
           </Card>
 
+          {/* Operation Rules (admin only) */}
+          {isAdmin && currentCompany && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings2 className="h-5 w-5 text-primary" />
+                  Regras de Operação
+                </CardTitle>
+                <CardDescription>Configurações operacionais da empresa</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">
+                      Bloquear novos pagamentos com comprovantes pendentes
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Se ativado, o operador deve anexar o comprovante antes de realizar outro pagamento.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={blockOnPendingReceipt}
+                    onCheckedChange={handleToggleBlockRule}
+                    disabled={isSavingRule}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Settings Links */}
           {settingsLinks.length > 0 && (
             <Card>

@@ -102,7 +102,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   };
 
   const checkPendencyAndBlock = (): boolean => {
-    if (pendingCount > 0) {
+    if (blockOnPending && pendingCount > 0) {
       toast.error("Finalize o comprovante da transação anterior antes de iniciar uma nova.");
       navigate(`/pix/receipt/${blockingReceipts[0].id}`);
       return true;

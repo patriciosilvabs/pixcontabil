@@ -340,7 +340,7 @@ export default function NewPayment() {
 
   const handleConfirmPayment = async () => {
     // Block if there are blocking receipts (completed transactions missing manual receipt)
-    if (pendingCount > 0) {
+    if (blockOnPending && pendingCount > 0) {
       toast({
         variant: "destructive",
         title: "Pendência de comprovante",
