@@ -12,7 +12,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Loader2, User, Shield, Link2, ChevronRight, Save, Settings2 } from "lucide-react";
 
 export default function Settings() {
-  const { user, profile, isAdmin, refreshProfile } = useAuth();
+  const { user, profile, isAdmin, currentCompany, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || "");
@@ -21,6 +21,32 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [blockOnPendingReceipt, setBlockOnPendingReceipt] = useState(currentCompany?.block_on_pending_receipt ?? true);
+  const [isSavingRule, setIsSavingRule] = useState(false);
+
+  useEffect(() => {
+    setBlockOnPendingReceipt(currentCompany?.block_on_pending_receipt ?? true);
+  }, [currentCompany]);
+
+  const handleToggleBlockRule = async (checked: boolean) => {
+    if (!currentCompany) return;
+    setBlockOnPendingReceipt(checked);
+    setIsSavingRule(true);
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .update({ block_on_pending_receipt: checked } as any)
+        .eq("id", currentCompany.id);
+      if (error) throw error;
+      await refreshProfile();
+      toast({ title: checked ? "Bloqueio ativado" : "Bloqueio desativado" });
+    } catch (error: any) {
+      setBlockOnPendingReceipt(!checked);
+      toast({ variant: "destructive", title: "Erro", description: error.message });
+    } finally {
+      setIsSavingRule(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
