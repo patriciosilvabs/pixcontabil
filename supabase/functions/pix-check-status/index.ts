@@ -129,7 +129,10 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const statusData = result.data;
+      const rawStatusData = result.data;
+      const statusData = rawStatusData?.data && typeof rawStatusData.data === 'object' && !Array.isArray(rawStatusData.data)
+        ? rawStatusData.data
+        : rawStatusData;
       const rawStatus = String(statusData.status || '').toUpperCase();
       const statusMap: Record<string, string> = {
         'LIQUIDATED': 'completed', 'REALIZADO': 'completed', 'CONFIRMED': 'completed',
