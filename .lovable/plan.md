@@ -1,81 +1,35 @@
 
-Problema confirmado: o toggle foi aplicado no frontend, mas o bloqueio principal continua ativo no backend.
 
-O que encontrei
-- Em `src/pages/Settings.tsx`, o switch salva corretamente `companies.block_on_pending_receipt`.
-- Em `src/pages/NewPayment.tsx` e `src/components/dashboard/MobileDashboard.tsx`, o frontend só bloqueia quando `currentCompany?.block_on_pending_receipt !== false`.
-- Porém as funções de pagamento no backend ainda ignoram essa configuração e fazem o bloqueio sempre.
+## Problema
 
-Ponto exato da falha
-As seguintes funções ainda retornam o erro:
-`Você possui comprovante(s) pendente(s). Anexe a nota fiscal antes de realizar um novo pagamento.`
+O BoletoPaymentDrawer usa a função `billet-check-status` para fazer polling de confirmação. Essa função recebe 404 do proxy e retorna 502, sem nenhuma lógica de recuperação. O polling fica eternamente em "processando".
 
-Arquivos afetados:
-- `supabase/functions/pix-pay-dict/index.ts`
-- `supabase/functions/pix-pay-qrc/index.ts`
-- `supabase/functions/billet-pay/index.ts`
-- `supabase/functions/batch-pay/index.ts`
+Enquanto isso, a função `pix-check-status` já possui toda a lógica robusta para boletos:
+- Roteamento correto (`/status/billet/:id` vs `/status/pix/:id`)
+- Recuperação de 404 (marca como `failed` se transação > 10min)
+- Unwrapping de respostas aninhadas do proxy
+- Atualização automática da transação no banco
 
-Hoje elas fazem:
-1. buscar transações concluídas sem comprovante manual;
-2. se existir alguma, retornar `403 PENDING_RECEIPT`;
-3. sem consultar `companies.block_on_pending_receipt`.
+Existem duas funções fazendo a mesma coisa de forma divergente.
 
-Por isso, mesmo com o toggle desligado, o backend ainda barra o pagamento.
+## Correção
 
-Plano de correção
-1. Ajustar a checagem server-side em todas as funções de pagamento
-- Antes de validar comprovantes pendentes, buscar a empresa pelo `company_id`.
-- Ler `block_on_pending_receipt`.
-- Só executar o bloqueio se esse campo for `true`.
-- Se for `false`, continuar o pagamento normalmente.
+**Consolidar o polling de boleto para usar `pix-check-status` em vez de `billet-check-status`.**
 
-2. Padronizar a lógica nas 4 funções
-- Aplicar a mesma regra em:
-  - `pix-pay-dict`
-  - `pix-pay-qrc`
-  - `billet-pay`
-  - `batch-pay`
-- Evitar divergência futura entre tipos de pagamento.
+### 1. Alterar `BoletoPaymentDrawer.tsx`
+- Trocar a chamada de `checkBilletStatus(txId, true)` por uma invocação direta de `pix-check-status` com `transaction_id`
+- Usar `supabase.functions.invoke('pix-check-status', { body: { transaction_id: txId } })` diretamente no polling
+- Remover dependência de `checkBilletStatus` do hook `useBilletPayment` neste componente
 
-3. Manter segurança do backend
-- O bloqueio não deve depender apenas do frontend.
-- A regra precisa continuar no backend, mas agora condicionada à configuração da empresa.
-- Se a coluna vier nula por qualquer motivo, tratar como `true` para manter comportamento seguro.
+### 2. Tratar resposta no formato de `pix-check-status`
+- O retorno já tem `internal_status`, `is_completed`, `status` -- mesmo formato esperado pelo polling atual
+- Ajustar o catch para lidar com 502 sem travar (continuar polling até MAX_POLL_ATTEMPTS)
 
-4. Validar o comportamento esperado
-Cenário A — toggle desligado:
-- aviso pode continuar visível no app;
-- pagamento novo deve seguir normalmente;
-- backend não deve retornar `PENDING_RECEIPT`.
+### Arquivos alterados
+- `src/components/payment/BoletoPaymentDrawer.tsx`: trocar polling para `pix-check-status`
 
-Cenário B — toggle ligado:
-- backend continua barrando nova transação quando houver comprovante pendente;
-- mensagem atual pode ser mantida.
+### Resultado
+- Boletos passam a usar a mesma lógica de status que Pix (já testada e funcional)
+- Se o proxy retornar 404 para transação antiga, ela será marcada como `failed` automaticamente
+- O polling para de ficar preso em "processando" indefinidamente
 
-Detalhes técnicos
-Padrão esperado dentro das funções:
-```text
-buscar company -> verificar block_on_pending_receipt -> 
-se true, rodar pendency check -> se false, pular check
-```
-
-Exemplo da lógica a inserir:
-```text
-const { data: company } = await supabaseAdmin
-  .from('companies')
-  .select('block_on_pending_receipt')
-  .eq('id', company_id)
-  .single();
-
-const shouldBlock = company?.block_on_pending_receipt !== false;
-
-if (shouldBlock) {
-  // lógica atual de completedTxs + receipts
-}
-```
-
-Resultado esperado
-- Com o toggle desligado, o sistema para de exigir anexo antes de um novo pagamento.
-- O comportamento fica consistente entre tela e backend.
-- A mensagem vermelha do print deixa de aparecer nesses casos.
