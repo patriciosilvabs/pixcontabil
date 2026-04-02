@@ -108,11 +108,22 @@ Deno.serve(async (req) => {
 
     if (config.provider === 'onz') {
       // ========== ONZ via novo proxy: GET /status/pix/:id ==========
+      // Try e2eId first, then onzId (correlationID)
       const e2eId = parsedIds.e2eId || transactionE2eId;
-      if (!e2eId) return new Response(JSON.stringify({ error: 'end_to_end_id not available for this transaction' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const onzId = parsedIds.onzId;
+      const statusId = e2eId || onzId;
 
-      const result = await callNewProxy(`/status/pix/${e2eId}`, 'GET');
-      console.log(`[pix-check-status] Proxy response for e2e ${e2eId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+      if (!statusId) {
+        // No ID available yet — transaction is still in initial processing
+        return new Response(JSON.stringify({
+          success: true, status: 'PROCESSING', internal_status: 'pending',
+          is_completed: false, provider: 'onz', payload: { status: 'PROCESSING' },
+          message: 'Transação em processamento inicial. Aguarde alguns segundos.',
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const result = await callNewProxy(`/status/pix/${statusId}`, 'GET');
+      console.log(`[pix-check-status] Proxy response for id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
