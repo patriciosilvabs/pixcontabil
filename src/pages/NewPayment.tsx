@@ -338,14 +338,14 @@ export default function NewPayment() {
   };
 
   const handleConfirmPayment = async () => {
-    // Block if there are pending receipts
+    // Block if there are blocking receipts (completed transactions missing manual receipt)
     if (pendingCount > 0) {
       toast({
         variant: "destructive",
         title: "Pendência de comprovante",
         description: "Finalize o comprovante da transação anterior antes de iniciar uma nova.",
       });
-      navigate(`/pix/receipt/${pendingReceipts[0].id}`);
+      navigate(`/pix/receipt/${blockingReceipts[0].id}`);
       return;
     }
 
