@@ -397,8 +397,57 @@ Deno.serve(async (req) => {
         const normalizedData = qrcResult?.data ?? qrcResult;
 
         if (!qrcResponse.ok) {
-          console.warn('[pix-pay-qrc] QRC endpoint failed, falling back to pix-pay-dict');
-          // Fallback to dict
+          console.warn('[pix-pay-qrc] NEW_PROXY QRC failed (HTTP ' + qrcResponse.status + '), trying OLD_PROXY QRC...');
+
+          // Fallback 1: OLD_PROXY via callOnzQrcWithTokenRetry (still prints on POS)
+          try {
+            const onzIdempotencyKey = generateOnzIdempotencyKey(idempotency_key);
+            const resolvedCreditorDoc = creditor_document || qrcInfo?.creditor_document || '';
+            const onzPriority = resolveOnzPriority(priority, resolvedCreditorDoc);
+            const qrcPayload: Record<string, any> = {
+              emv: qr_code,
+              payment: { currency: 'BRL', amount: paymentAmount },
+              description: descricao || 'Pagamento via QR Code',
+              priority: onzPriority,
+              paymentFlow: payment_flow || 'INSTANT',
+            };
+            if (resolvedCreditorDoc) qrcPayload.creditorDocument = resolvedCreditorDoc;
+
+            const oldProxyResult = await callOnzQrcWithTokenRetry({
+              authHeader, companyId: company_id, config, payload: qrcPayload, onzIdempotencyKey,
+            });
+
+            if (oldProxyResult.status >= 200 && oldProxyResult.status < 300) {
+              console.log('[pix-pay-qrc] OLD_PROXY QRC succeeded');
+              const e2eid2 = oldProxyResult.data?.endToEndId || oldProxyResult.data?.e2eId || null;
+              const providerTxId2 = oldProxyResult.data?.id || oldProxyResult.data?.transactionId || null;
+              const providerStatus2 = oldProxyResult.data?.status || '';
+              const mappedStatus2 = ['LIQUIDATED', 'REALIZADO', 'CONFIRMED', 'COMPLETED'].includes(providerStatus2?.toUpperCase?.()) ? 'completed' : 'pending';
+
+              const { data: tx2, error: txErr2 } = await supabaseAdmin.from('transactions').insert({
+                company_id, created_by: userId, amount: paymentAmount,
+                description: descricao || 'Pagamento via QR Code dinâmico',
+                pix_type: 'qrcode', pix_copia_cola: qr_code,
+                pix_txid: qrcInfo?.txid || null, pix_e2eid: e2eid2,
+                external_id: providerTxId2, beneficiary_name: qrcInfo?.merchant_name || null,
+                pix_key: qrcInfo?.pix_key || null,
+                status: mappedStatus2, pix_provider_response: oldProxyResult.data,
+                paid_at: mappedStatus2 === 'completed' ? new Date().toISOString() : null,
+              }).select('id').single();
+              if (txErr2) console.error('[pix-pay-qrc] TX insert error (old proxy):', txErr2);
+
+              return new Response(JSON.stringify({
+                success: true, transaction_id: tx2?.id || null,
+                amount: paymentAmount, qr_info: qrcInfo, provider_response: oldProxyResult.data,
+                status: mappedStatus2, fallback: 'old_proxy_qrc',
+              }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            }
+            console.warn('[pix-pay-qrc] OLD_PROXY QRC also failed (status ' + oldProxyResult.status + '), falling back to dict');
+          } catch (oldProxyErr: any) {
+            console.warn('[pix-pay-qrc] OLD_PROXY QRC error:', oldProxyErr.message, '- falling back to dict');
+          }
+
+          // Fallback 2: dict (last resort - does NOT print on POS)
           const resolvedCreditorDoc = creditor_document || qrcInfo?.creditor_document || '';
           const delegated = await delegateQrToPixPayDict({
             authHeader, companyId: company_id, qrCode: qr_code, paymentAmount,
