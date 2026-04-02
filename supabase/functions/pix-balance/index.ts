@@ -5,18 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL')!;
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY')!;
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 Deno.serve(async (req) => {
@@ -42,86 +45,51 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true, balance: null, available: false, provider: null, message: 'Nenhuma configuração Pix ativa encontrada' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const fetchBalance = async (forceNewToken = false): Promise<Response> => {
-      const authBody: any = { company_id, purpose: 'cash_out' };
-      if (forceNewToken) authBody.force_new = true;
+    if (config.provider === 'onz') {
+      // ========== ONZ via novo proxy: GET /saldo ==========
+      const result = await callNewProxy('/saldo', 'GET');
 
+      if (result.status === 401) {
+        return new Response(JSON.stringify({ error: 'Falha de autenticação com o proxy' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      if (result.status >= 400) {
+        console.error('[pix-balance] Proxy error:', JSON.stringify(result.data));
+        return new Response(JSON.stringify({ error: result.data?.message || 'Falha ao consultar saldo', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      console.log('[pix-balance] Proxy response:', JSON.stringify(result.data));
+
+      // Extract balance from proxy response
+      const balanceAmount = result.data?.balanceAmount ?? result.data?.balance ?? result.data?.available ?? 0;
+      const balance = Number(balanceAmount) || 0;
+
+      return new Response(JSON.stringify({ success: true, balance, available: true, provider: 'onz' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    } else {
+      // ========== TRANSFEERA (unchanged) ==========
       const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/pix-auth`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-        body: JSON.stringify(authBody),
+        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
       });
       if (!authResponse.ok) {
         const authError = await authResponse.text();
-        const status = authResponse.status === 401 || authResponse.status === 403 ? 401 : 502;
-        const errorMessage = status === 401 ? 'Invalid token' : 'Falha ao autenticar com o provedor';
-
-        return new Response(
-          JSON.stringify({ error: errorMessage, details: authError }),
-          { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor', details: authError }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
       const { access_token } = await authResponse.json();
 
-      if (config.provider === 'onz') {
-        // ONZ: GET /api/v2/accounts/balances/
-        const onzHeaders: Record<string, string> = { 'Authorization': `Bearer ${access_token}` };
-        if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
-
-        const normalizedBaseUrl = config.base_url.replace(/\/+$/, '').endsWith('/api/v2')
-          ? config.base_url.replace(/\/+$/, '')
-          : `${config.base_url.replace(/\/+$/, '')}/api/v2`;
-
-        const result = await callOnzViaProxy(`${normalizedBaseUrl}/accounts/balances/`, 'GET', onzHeaders);
-
-        if (result.status === 401 && !forceNewToken) {
-          console.log('[pix-balance] ONZ token rejected, retrying...');
-          return fetchBalance(true);
-        }
-
-        if (result.status >= 400) {
-          return new Response(JSON.stringify({ error: 'Falha ao consultar saldo', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        console.log('[pix-balance] ONZ response:', JSON.stringify(result.data));
-
-        // ONZ may return either an array or an object wrapped in { data: [...] }
-        const rawBalances = Array.isArray(result.data)
-          ? result.data
-          : Array.isArray(result.data?.data)
-            ? result.data.data
-            : [result.data];
-        const firstBalance = rawBalances[0] ?? null;
-        const balanceObj = firstBalance?.balanceAmount ?? firstBalance;
-        const normalizedBalance = balanceObj?.available ?? balanceObj?.amount ?? balanceObj?.value ?? 0;
-        const balance = Number(normalizedBalance) || 0;
-
-        return new Response(JSON.stringify({ success: true, balance, available: true, provider: 'onz' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      } else {
-        // TRANSFEERA: GET /statement/balance
-        const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
-        const balanceResponse = await fetch(`${apiBase}/statement/balance`, {
-          method: 'GET',
-          headers: { 'Authorization': `Bearer ${access_token}`, 'User-Agent': 'PixContabil (contato@pixcontabil.com.br)' },
-        });
-        if (!balanceResponse.ok) {
-          if (!forceNewToken && balanceResponse.status === 401) {
-            console.log('[pix-balance] Token rejected, retrying...');
-            return fetchBalance(true);
-          }
-          const errText = await balanceResponse.text();
-          return new Response(JSON.stringify({ error: 'Falha ao consultar saldo', details: errText }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-        const data = await balanceResponse.json();
-        console.log('[pix-balance] Transfeera response:', JSON.stringify(data));
-        const balance = parseFloat(data.value ?? data.balance ?? '0');
-        return new Response(JSON.stringify({ success: true, balance, available: true, provider: 'transfeera' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
+      const balanceResponse = await fetch(`${apiBase}/statement/balance`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${access_token}`, 'User-Agent': 'PixContabil (contato@pixcontabil.com.br)' },
+      });
+      if (!balanceResponse.ok) {
+        const errText = await balanceResponse.text();
+        return new Response(JSON.stringify({ error: 'Falha ao consultar saldo', details: errText }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-    };
-
-    try {
-      return await fetchBalance();
-    } catch (fetchError) {
-      return new Response(JSON.stringify({ error: 'Falha na conexão com o provedor', details: fetchError.message }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const data = await balanceResponse.json();
+      console.log('[pix-balance] Transfeera response:', JSON.stringify(data));
+      const balance = parseFloat(data.value ?? data.balance ?? '0');
+      return new Response(JSON.stringify({ success: true, balance, available: true, provider: 'transfeera' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
   } catch (error) {

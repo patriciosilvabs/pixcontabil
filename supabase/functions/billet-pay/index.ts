@@ -5,60 +5,26 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 function parsePositiveAmount(value: unknown): number | undefined {
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
-}
-
-function mod10(block: string): string {
-  let sum = 0;
-  let weight = 2;
-  for (let i = block.length - 1; i >= 0; i--) {
-    let prod = parseInt(block[i], 10) * weight;
-    if (prod >= 10) prod = Math.floor(prod / 10) + (prod % 10);
-    sum += prod;
-    weight = weight === 2 ? 1 : 2;
-  }
-  const remainder = sum % 10;
-  return remainder === 0 ? '0' : String(10 - remainder);
-}
-
-function convertToLinhaDigitavel(code: string): string {
-  const clean = code.replace(/[\s.\-]/g, '');
-  // Already linha digitável (47 or 48 digits) or convênio (starts with 8)
-  if (clean.length !== 44 || clean[0] === '8') return clean;
-
-  const bankCurrency = clean.substring(0, 4);
-  const checkDigit = clean[4];
-  const dueFactor = clean.substring(5, 9);
-  const amount = clean.substring(9, 19);
-  const freeField1 = clean.substring(19, 24);
-  const freeField2 = clean.substring(24, 34);
-  const freeField3 = clean.substring(34, 44);
-
-  const check1 = mod10(bankCurrency + freeField1);
-  const check2 = mod10(freeField2);
-  const check3 = mod10(freeField3);
-
-  return bankCurrency + freeField1 + check1
-       + freeField2 + check2
-       + freeField3 + check3
-       + checkDigit + dueFactor + amount;
 }
 
 Deno.serve(async (req) => {
@@ -134,80 +100,49 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST',
-      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-    });
-
-    if (!authResponse.ok) {
-      return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const { access_token } = await authResponse.json();
     const cleanBarcode = codigo_barras.replace(/[\s.\-]/g, '');
     const informedValue = parsePositiveAmount(valor);
 
     if (config.provider === 'onz') {
-      // ========== ONZ: POST /api/v2/billets/payments ==========
-      // ONZ requires digitableCode in linha digitável format (47 digits)
-      const digitableCode = convertToLinhaDigitavel(cleanBarcode);
-      const idempotencyKey = crypto.randomUUID();
-      const onzBody = {
-        digitableCode,
-        description: descricao || 'Pagamento de boleto',
-        paymentFlow: 'INSTANT',
-      };
+      // ========== ONZ via novo proxy: POST /billets/pagar ==========
+      console.log(`[billet-pay] ONZ proxy: paying billet ${cleanBarcode}`);
 
-      console.log(`[billet-pay] ONZ: paying billet ${cleanBarcode}`);
+      const result = await callNewProxy('/billets/pagar', 'POST', {
+        linhaDigitavel: cleanBarcode,
+        valor: informedValue || 0,
+        descricao: descricao || 'Pagamento de boleto',
+      });
 
-      const result = await callOnzViaProxy(
-        `${config.base_url}/api/v2/billets/payments`,
-        'POST',
-        {
-          'Authorization': `Bearer ${access_token}`,
-          'Content-Type': 'application/json',
-          'x-idempotency-key': idempotencyKey,
-        },
-        JSON.stringify(onzBody),
-      );
+      if (result.status === 401) {
+        return new Response(JSON.stringify({ error: 'Falha de autenticação com o proxy' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
       if (result.status >= 400) {
-        console.error('[billet-pay] ONZ error:', JSON.stringify(result.data));
-        return new Response(JSON.stringify({ error: 'Falha ao pagar boleto via ONZ', provider_error: JSON.stringify(result.data) }),
+        console.error('[billet-pay] Proxy error:', JSON.stringify(result.data));
+        return new Response(JSON.stringify({ error: result.data?.message || 'Falha ao pagar boleto', provider_error: JSON.stringify(result.data) }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       const paymentData = result.data;
-      console.log('[billet-pay] ONZ payment result:', JSON.stringify(paymentData));
+      console.log('[billet-pay] Proxy payment result:', JSON.stringify(paymentData));
 
       const onzId = paymentData.id || '';
       const externalId = `onz:${onzId}`;
-      // Prioritize ONZ adjusted amount (includes interest/fines) over user-informed value
       const onzAmount = parsePositiveAmount(paymentData.payment?.amount) || parsePositiveAmount(paymentData.amount);
       const amount = onzAmount || informedValue || 0;
-      console.log(`[billet-pay] ONZ amount resolution: onzAmount=${onzAmount}, informedValue=${informedValue}, final=${amount}`);
 
-      // Save transaction
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
       const { data: newTransaction, error: insertError } = await supabaseAdmin
         .from('transactions')
         .insert({
-          company_id,
-          created_by: userId,
-          amount,
-          status: 'pending',
-          pix_type: 'boleto' as const,
-          boleto_code: codigo_barras,
+          company_id, created_by: userId, amount, status: 'pending',
+          pix_type: 'boleto' as const, boleto_code: codigo_barras,
           description: descricao || 'Pagamento de boleto',
-          external_id: externalId,
-          pix_provider_response: paymentData,
+          external_id: externalId, pix_provider_response: paymentData,
         })
-        .select('id')
-        .single();
+        .select('id').single();
 
       if (insertError) {
         console.error('[billet-pay] Failed to create transaction:', insertError);
@@ -222,17 +157,25 @@ Deno.serve(async (req) => {
       });
 
       return new Response(JSON.stringify({
-        success: true,
-        transaction_id: newTransaction.id,
-        external_id: externalId,
-        billet_id: onzId,
-        status: paymentData.status || 'PROCESSING',
-        provider: 'onz',
-        provider_response: paymentData,
+        success: true, transaction_id: newTransaction.id, external_id: externalId,
+        billet_id: onzId, status: paymentData.status || 'PROCESSING',
+        provider: 'onz', provider_response: paymentData,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } else {
-      // ========== TRANSFEERA ==========
+      // ========== TRANSFEERA (unchanged) ==========
+      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+      });
+
+      if (!authResponse.ok) {
+        return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const { access_token } = await authResponse.json();
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
 
       // Consult billet first

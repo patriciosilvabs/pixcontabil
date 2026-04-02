@@ -5,18 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL')!;
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY')!;
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 function parseIdsFromExternalId(externalId: string | null | undefined): { batchId: string | null; transferId: string | null; isOnz: boolean; onzId: string | null; e2eId: string | null } {
@@ -101,40 +104,22 @@ Deno.serve(async (req) => {
     }
     if (!config) return new Response(JSON.stringify({ error: 'Pix configuration not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id }),
-    });
-    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { access_token } = await authResponse.json();
-
-    let statusData: any = null;
-    let resolvedTransferId = transfer_id || null;
-    let resolvedBatchId = batch_id || null;
     const parsedIds = parseIdsFromExternalId(transactionExternalId);
 
     if (config.provider === 'onz') {
-      // ONZ: GET /pix/payments/{endToEndId}
+      // ========== ONZ via novo proxy: GET /status/pix/:id ==========
       const e2eId = parsedIds.e2eId || transactionE2eId;
       if (!e2eId) return new Response(JSON.stringify({ error: 'end_to_end_id not available for this transaction' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-      const onzHeaders: Record<string, string> = { 'Authorization': `Bearer ${access_token}` };
-      if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
+      const result = await callNewProxy(`/status/pix/${e2eId}`, 'GET');
+      console.log(`[pix-check-status] Proxy response for e2e ${e2eId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
-      const result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/${e2eId}`, 'GET', onzHeaders);
-      console.log(`[pix-check-status] ONZ raw response for e2e ${e2eId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Normalize nested ONZ response: { data: { status: ... } } -> { status: ... }
-      const onzPayload = result.data?.data && typeof result.data.data === 'object' && result.data.data.status
-        ? result.data.data
-        : result.data;
-      statusData = onzPayload;
-      console.log(`[pix-check-status] ONZ normalized payload status: ${onzPayload.status}`);
-
-      const rawStatus = String(onzPayload.status || '').toUpperCase();
+      const statusData = result.data;
+      const rawStatus = String(statusData.status || '').toUpperCase();
       const statusMap: Record<string, string> = {
         'LIQUIDATED': 'completed', 'REALIZADO': 'completed', 'CONFIRMED': 'completed',
         'PROCESSING': 'pending', 'EM_PROCESSAMENTO': 'pending', 'ACTIVE': 'pending',
@@ -147,18 +132,15 @@ Deno.serve(async (req) => {
         const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document, company_id').eq('id', transaction_id).single();
         const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
         if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
-          console.log(`[pix-check-status] Skipping update: tx ${transaction_id} already ${currentTx.status}, not overwriting with ${internalStatus}`);
           internalStatus = currentTx.status;
         } else {
           const updateData: any = { status: internalStatus, pix_provider_response: statusData, pix_e2eid: e2eId };
           if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
-          // Extract beneficiary from ONZ payload (only if not already set)
           const ben = extractBeneficiary(statusData);
           if (ben.name && !currentTx?.beneficiary_name) updateData.beneficiary_name = ben.name;
           if (ben.doc && !currentTx?.beneficiary_document) updateData.beneficiary_document = ben.doc;
           await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
 
-          // Trigger receipt generation on completion (beneficiary is now saved)
           if (internalStatus === 'completed' && currentTx?.company_id) {
             fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
               method: 'POST',
@@ -170,12 +152,23 @@ Deno.serve(async (req) => {
       }
 
       return new Response(JSON.stringify({
-        success: true, status: onzPayload.status, internal_status: internalStatus,
+        success: true, status: statusData.status, internal_status: internalStatus,
         is_completed: internalStatus === 'completed', provider: 'onz', payload: statusData,
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // TRANSFEERA flow
+    // ========== TRANSFEERA flow (unchanged) ==========
+    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+      body: JSON.stringify({ company_id }),
+    });
+    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const { access_token } = await authResponse.json();
+
+    let statusData: any = null;
+    let resolvedTransferId = transfer_id || null;
+    let resolvedBatchId = batch_id || null;
+
     try {
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
 
@@ -221,11 +214,9 @@ Deno.serve(async (req) => {
     let internalStatus = statusMap[rawStatus] || 'pending';
 
     if (transaction_id) {
-      // Check current status to avoid overwriting completed/failed with pending
       const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, company_id, beneficiary_name, beneficiary_document').eq('id', transaction_id).single();
       const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
       if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
-        console.log(`[pix-check-status] Skipping update: tx ${transaction_id} already ${currentTx.status}, not overwriting with ${internalStatus}`);
         internalStatus = currentTx.status;
       } else {
         const existingIds = parseIdsFromExternalId(transactionExternalId);
@@ -239,7 +230,6 @@ Deno.serve(async (req) => {
         if (ben.doc && !currentTx?.beneficiary_document) updateData.beneficiary_document = ben.doc;
         await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
 
-        // Trigger receipt generation on completion
         if (internalStatus === 'completed' && currentTx?.company_id) {
           fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
             method: 'POST',
