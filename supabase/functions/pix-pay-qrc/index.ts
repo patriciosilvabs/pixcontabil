@@ -5,21 +5,85 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callNewProxy(path: string, method: string, body?: any) {
-  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
-  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
-  const headers: Record<string, string> = {
-    'x-proxy-key': proxyKey,
-    'Content-Type': 'application/json',
-  };
-  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
-  const resp = await fetch(`${proxyUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+async function delegateQrToPixPayDict({
+  authHeader,
+  companyId,
+  qrCode,
+  paymentAmount,
+  descricao,
+  idempotencyKey,
+  qrcInfo,
+  creditorDocument,
+  priority,
+  paymentFlow,
+}: {
+  authHeader: string;
+  companyId: string;
+  qrCode: string;
+  paymentAmount: number;
+  descricao?: string;
+  idempotencyKey?: string;
+  qrcInfo: any;
+  creditorDocument?: string;
+  priority?: string;
+  paymentFlow?: string;
+}) {
+  const destKey = qrcInfo?.pix_key;
+
+  if (!destKey) {
+    return {
+      status: 400,
+      body: { error: 'Could not extract Pix key from QR Code' },
+    };
+  }
+
+  const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
+    method: 'POST',
+    headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      company_id: companyId,
+      pix_key: destKey,
+      valor: paymentAmount,
+      descricao: descricao || 'Pagamento via QR Code',
+      idempotency_key: idempotencyKey,
+      creditor_document: creditorDocument,
+      priority,
+      payment_flow: paymentFlow,
+    }),
   });
-  const data = await resp.json();
-  return { status: resp.status, data };
+
+  const dictText = await dictResponse.text();
+  let dictResult: any;
+
+  try {
+    dictResult = dictText ? JSON.parse(dictText) : {};
+  } catch {
+    dictResult = { error: dictText || 'Falha ao iniciar pagamento Pix' };
+  }
+
+  if (dictResult?.transaction_id) {
+    const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const txUpdate: Record<string, any> = {
+      pix_type: 'qrcode',
+      pix_copia_cola: qrCode,
+    };
+
+    if (qrcInfo?.txid) txUpdate.pix_txid = qrcInfo.txid;
+    if (qrcInfo?.merchant_name) txUpdate.beneficiary_name = qrcInfo.merchant_name;
+    if (qrcInfo?.pix_key) txUpdate.pix_key = qrcInfo.pix_key;
+
+    await supabaseAdmin.from('transactions').update(txUpdate).eq('id', dictResult.transaction_id);
+  }
+
+  return {
+    status: dictResponse.status,
+    body: {
+      ...dictResult,
+      amount: paymentAmount,
+      qr_info: qrcInfo,
+      delegated: 'dict',
+    },
+  };
 }
 
 Deno.serve(async (req) => {
@@ -35,7 +99,7 @@ Deno.serve(async (req) => {
 
     const userId = user.id;
     const body = await req.json();
-    const { company_id, qr_code: rawQrCode, valor, descricao, idempotency_key } = body;
+    const { company_id, qr_code: rawQrCode, valor, descricao, idempotency_key, creditor_document, priority, payment_flow } = body;
 
     if (!company_id || !rawQrCode) return new Response(JSON.stringify({ error: 'company_id and qr_code are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
@@ -96,8 +160,6 @@ Deno.serve(async (req) => {
     const MAX_PAYMENT_VALUE = 1_000_000;
     if (paymentAmount <= 0 || paymentAmount > MAX_PAYMENT_VALUE) return new Response(JSON.stringify({ error: 'Valor inválido.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const destKey = qrcInfo.pix_key;
-
     // IDEMPOTENCY CHECK
     if (idempotency_key) {
       const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -111,68 +173,32 @@ Deno.serve(async (req) => {
       }
     }
 
+    if (config.provider === 'onz') {
+      console.log(`[pix-pay-qrc] ONZ ${qrType} QR - delegating to pix-pay-dict using decoded Pix key`);
+      const delegated = await delegateQrToPixPayDict({
+        authHeader,
+        companyId: company_id,
+        qrCode: qr_code,
+        paymentAmount,
+        descricao,
+        idempotencyKey: idempotency_key,
+        qrcInfo,
+        creditorDocument: creditor_document,
+        priority,
+        paymentFlow: payment_flow,
+      });
+
+      return new Response(JSON.stringify(delegated.body), {
+        status: delegated.status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // STATIC QR CODE: For ONZ, try QRC endpoint with full EMV first (preserves txid/context)
     // For other providers, delegate to pix-pay-dict as before
     if (qrType !== 'dynamic') {
-      if (!destKey && !qr_code) return new Response(JSON.stringify({ error: 'Could not extract Pix key from QR Code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-      if (config.provider === 'onz') {
-        console.log('[pix-pay-qrc] Static QR + ONZ - sending full EMV via new proxy QRC endpoint');
-
-        const onzPayload = {
-          qrCode: qr_code,
-          payment: { amount: Number(paymentAmount.toFixed(2)), currency: 'BRL' },
-          description: descricao || 'Pagamento via QR Code',
-        };
-
-        const result = await callNewProxy('/pix/payments/qrc', 'POST', onzPayload);
-
-        // If QRC fails, fallback to DICT
-        if (result.status >= 400) {
-          console.log('[pix-pay-qrc] Static QR via QRC failed, falling back to DICT. Error:', JSON.stringify(result.data));
-          if (destKey) {
-            const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
-              method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
-            });
-            const dictResult = await dictResponse.json();
-            if (dictResult.transaction_id) {
-              const sa = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-              await sa.from('transactions').update({ pix_type: 'qrcode', pix_copia_cola: qr_code }).eq('id', dictResult.transaction_id);
-            }
-            return new Response(JSON.stringify({ ...dictResult, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }), { status: dictResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-          }
-          return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-
-        // Unwrap proxy response
-        const rawData = result.data;
-        const paymentData = rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data) ? rawData.data : rawData;
-        const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
-        const onzId = paymentData.correlationID || paymentData.id || '';
-        const externalId = `onz:${onzId}:${e2eId}`;
-
-        console.log('[pix-pay-qrc] Static QR via QRC succeeded:', JSON.stringify(paymentData));
-
-        const supabaseAdmin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-        const { data: transaction, error: txError } = await supabaseAdmin2.from('transactions').insert({
-          company_id, created_by: userId, amount: paymentAmount,
-          description: descricao || 'Pagamento via QR Code', pix_type: 'qrcode',
-          pix_copia_cola: qr_code, pix_key: destKey,
-          pix_e2eid: e2eId || null,
-          external_id: externalId, beneficiary_name: qrcInfo.merchant_name || null,
-          status: 'pending', pix_provider_response: paymentData,
-        }).select('id').single();
-
-        if (txError) console.error('[pix-pay-qrc] Static QR transaction insert error:', txError);
-
-        return new Response(JSON.stringify({
-          success: true, transaction_id: transaction?.id || null,
-          amount: paymentAmount, qr_info: qrcInfo, provider_response: paymentData,
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
       // Non-ONZ providers: delegate to pix-pay-dict as before
+      const destKey = qrcInfo.pix_key;
       if (!destKey) return new Response(JSON.stringify({ error: 'Could not extract Pix key from QR Code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       console.log('[pix-pay-qrc] Static QR - delegating to pix-pay-dict');
       const payResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
@@ -192,22 +218,34 @@ Deno.serve(async (req) => {
     console.log('[pix-pay-qrc] Dynamic QR - processing');
 
     let paymentData: any;
-    let externalId: string;
 
-    if (config.provider === 'onz') {
-      // ========== ONZ: POST /pix/payments/qrc via new proxy ==========
-      const onzPayload = {
-        qrCode: qr_code,
-        payment: { amount: Number(paymentAmount.toFixed(2)), currency: 'BRL' },
-        description: descricao || 'Pagamento via QR Code',
-      };
+    // ========== TRANSFEERA: batch with EMV ==========
+    // Get auth token for Transfeera
+    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+    });
+    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    const { access_token } = await authResponse.json();
 
-      const result = await callNewProxy('/pix/payments/qrc', 'POST', onzPayload);
+    const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
+    const idempotencyKey = crypto.randomUUID();
+    const batchPayload = {
+      name: `QRC_${Date.now()}`, type: 'TRANSFERENCIA', auto_close: true,
+      transfers: [{ value: Number(paymentAmount.toFixed(2)), idempotency_key: idempotencyKey, pix_description: descricao || 'Pagamento via QR Code', emv: qr_code }],
+    };
 
-      // If QRC fails and we have a key, fallback to dict
-      if (result.status >= 400) {
+    try {
+      const batchResponse = await fetch(`${apiBase}/batch`, {
+        method: 'POST', headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json', 'User-Agent': 'PixContabil (contato@pixcontabil.com.br)' },
+        body: JSON.stringify(batchPayload),
+      });
+      paymentData = await batchResponse.json();
+      if (!batchResponse.ok) {
+        console.error('[pix-pay-qrc] Transfeera error:', JSON.stringify(paymentData));
+        const destKey = qrcInfo.pix_key;
         if (destKey) {
-          console.log('[pix-pay-qrc] ONZ QRC rejected, falling back to pix-pay-dict. Error:', JSON.stringify(result.data));
+          console.log('[pix-pay-qrc] Falling back to pix-pay-dict');
           const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
             method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
             body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
@@ -219,65 +257,15 @@ Deno.serve(async (req) => {
           }
           return new Response(JSON.stringify({ ...dictResult, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }), { status: dictResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
-
-        console.error('[pix-pay-qrc] ONZ error:', JSON.stringify(result.data));
-        return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: paymentData }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
-
-      // Unwrap proxy response
-      const rawData = result.data;
-      paymentData = rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data) ? rawData.data : rawData;
-      const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
-      const onzId = paymentData.correlationID || paymentData.id || '';
-      externalId = `onz:${onzId}:${e2eId}`;
-    } else {
-      // ========== TRANSFEERA: batch with EMV ==========
-      // Get auth token for Transfeera
-      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-      });
-      if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      const { access_token } = await authResponse.json();
-
-      const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
-      const idempotencyKey = crypto.randomUUID();
-      const batchPayload = {
-        name: `QRC_${Date.now()}`, type: 'TRANSFERENCIA', auto_close: true,
-        transfers: [{ value: Number(paymentAmount.toFixed(2)), idempotency_key: idempotencyKey, pix_description: descricao || 'Pagamento via QR Code', emv: qr_code }],
-      };
-
-      try {
-        const batchResponse = await fetch(`${apiBase}/batch`, {
-          method: 'POST', headers: { 'Authorization': `Bearer ${access_token}`, 'Content-Type': 'application/json', 'User-Agent': 'PixContabil (contato@pixcontabil.com.br)' },
-          body: JSON.stringify(batchPayload),
-        });
-        paymentData = await batchResponse.json();
-        if (!batchResponse.ok) {
-          console.error('[pix-pay-qrc] Transfeera error:', JSON.stringify(paymentData));
-          if (destKey) {
-            console.log('[pix-pay-qrc] Falling back to pix-pay-dict');
-            const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
-              method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
-            });
-            const dictResult = await dictResponse.json();
-            if (dictResult.transaction_id) {
-              const sa = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-              await sa.from('transactions').update({ pix_type: 'qrcode', pix_copia_cola: qr_code }).eq('id', dictResult.transaction_id);
-            }
-            return new Response(JSON.stringify({ ...dictResult, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }), { status: dictResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-          }
-          return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: paymentData }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
-      } catch (e) {
-        return new Response(JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      const batchId = paymentData.id;
-      const transferId = paymentData.transfers?.[0]?.id || '';
-      externalId = `${batchId}:${transferId}`;
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'Falha na conexão com Transfeera', details: e.message }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    const batchId = paymentData.id;
+    const transferId = paymentData.transfers?.[0]?.id || '';
+    const externalId = `${batchId}:${transferId}`;
 
     console.log('[pix-pay-qrc] Payment created:', JSON.stringify(paymentData));
 
