@@ -1,50 +1,81 @@
 
+Problema confirmado: o toggle foi aplicado no frontend, mas o bloqueio principal continua ativo no backend.
 
-## Configuração de Bloqueio por Comprovante Pendente
+O que encontrei
+- Em `src/pages/Settings.tsx`, o switch salva corretamente `companies.block_on_pending_receipt`.
+- Em `src/pages/NewPayment.tsx` e `src/components/dashboard/MobileDashboard.tsx`, o frontend só bloqueia quando `currentCompany?.block_on_pending_receipt !== false`.
+- Porém as funções de pagamento no backend ainda ignoram essa configuração e fazem o bloqueio sempre.
 
-### O que muda
+Ponto exato da falha
+As seguintes funções ainda retornam o erro:
+`Você possui comprovante(s) pendente(s). Anexe a nota fiscal antes de realizar um novo pagamento.`
 
-Hoje o sistema sempre bloqueia novos pagamentos quando há comprovantes pendentes. Vamos tornar isso uma configuração por empresa, que o admin pode ligar/desligar na tela de Configurações.
+Arquivos afetados:
+- `supabase/functions/pix-pay-dict/index.ts`
+- `supabase/functions/pix-pay-qrc/index.ts`
+- `supabase/functions/billet-pay/index.ts`
+- `supabase/functions/batch-pay/index.ts`
 
-### Plano
+Hoje elas fazem:
+1. buscar transações concluídas sem comprovante manual;
+2. se existir alguma, retornar `403 PENDING_RECEIPT`;
+3. sem consultar `companies.block_on_pending_receipt`.
 
-**1. Criar coluna `block_on_pending_receipt` na tabela `companies`**
+Por isso, mesmo com o toggle desligado, o backend ainda barra o pagamento.
 
-Migração SQL:
-```sql
-ALTER TABLE public.companies 
-ADD COLUMN block_on_pending_receipt boolean NOT NULL DEFAULT true;
+Plano de correção
+1. Ajustar a checagem server-side em todas as funções de pagamento
+- Antes de validar comprovantes pendentes, buscar a empresa pelo `company_id`.
+- Ler `block_on_pending_receipt`.
+- Só executar o bloqueio se esse campo for `true`.
+- Se for `false`, continuar o pagamento normalmente.
+
+2. Padronizar a lógica nas 4 funções
+- Aplicar a mesma regra em:
+  - `pix-pay-dict`
+  - `pix-pay-qrc`
+  - `billet-pay`
+  - `batch-pay`
+- Evitar divergência futura entre tipos de pagamento.
+
+3. Manter segurança do backend
+- O bloqueio não deve depender apenas do frontend.
+- A regra precisa continuar no backend, mas agora condicionada à configuração da empresa.
+- Se a coluna vier nula por qualquer motivo, tratar como `true` para manter comportamento seguro.
+
+4. Validar o comportamento esperado
+Cenário A — toggle desligado:
+- aviso pode continuar visível no app;
+- pagamento novo deve seguir normalmente;
+- backend não deve retornar `PENDING_RECEIPT`.
+
+Cenário B — toggle ligado:
+- backend continua barrando nova transação quando houver comprovante pendente;
+- mensagem atual pode ser mantida.
+
+Detalhes técnicos
+Padrão esperado dentro das funções:
+```text
+buscar company -> verificar block_on_pending_receipt -> 
+se true, rodar pendency check -> se false, pular check
 ```
 
-Default `true` mantém o comportamento atual. Admin pode desativar.
+Exemplo da lógica a inserir:
+```text
+const { data: company } = await supabaseAdmin
+  .from('companies')
+  .select('block_on_pending_receipt')
+  .eq('id', company_id)
+  .single();
 
-**2. Expor a configuração no AuthContext**
+const shouldBlock = company?.block_on_pending_receipt !== false;
 
-- Ao carregar `currentCompany`, o valor de `block_on_pending_receipt` já estará disponível.
-- Atualizar `types/database.ts` (interface `Company`) para incluir o novo campo.
-- No `AuthContext`, expor via `currentCompany.block_on_pending_receipt`.
-
-**3. Remover bloqueio condicional no frontend**
-
-Em `NewPayment.tsx` e `MobileDashboard.tsx`, o check de `pendingCount > 0` passa a ser:
-```typescript
-if (currentCompany?.block_on_pending_receipt && pendingCount > 0) { ... }
+if (shouldBlock) {
+  // lógica atual de completedTxs + receipts
+}
 ```
 
-Se desativado, o aviso de pendência continua visível no dashboard (badge informativo), mas não impede novos pagamentos.
-
-**4. Adicionar toggle na página Settings**
-
-Na tela `/settings`, adicionar um card "Regras de Operação" (visível só para admin) com um Switch:
-- Label: "Bloquear novos pagamentos quando houver comprovantes pendentes"
-- Descrição: "Se ativado, o operador deve anexar o comprovante antes de realizar outro pagamento."
-- Ao mudar, atualiza `companies.block_on_pending_receipt` via Supabase e chama `refreshProfile` para propagar.
-
-### Arquivos alterados
-- **Migração SQL**: nova coluna em `companies`
-- `src/types/database.ts`: adicionar campo na interface `Company`
-- `src/pages/Settings.tsx`: novo card com Switch para admin
-- `src/pages/NewPayment.tsx`: condicionar bloqueio
-- `src/components/dashboard/MobileDashboard.tsx`: condicionar bloqueio
-- `src/components/layout/MainLayout.tsx`: manter badge informativo mesmo sem bloqueio
-
+Resultado esperado
+- Com o toggle desligado, o sistema para de exigir anexo antes de um novo pagamento.
+- O comportamento fica consistente entre tela e backend.
+- A mensagem vermelha do print deixa de aparecer nesses casos.
