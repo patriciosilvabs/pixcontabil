@@ -1,45 +1,43 @@
 
 
-## Auditoria: `apikey` ausente em chamadas internas entre Edge Functions
+## Correção: Confirmação automática de boletos via webhook
 
-### Resultado da análise
+### Problema
+Boletos pagos não estão sendo confirmados automaticamente. Três falhas identificadas:
 
-Todas as chamadas para `generate-pix-receipt` em **4 funções** estão sem o header `apikey`. Usam `SERVICE_ROLE_KEY` como Bearer token, mas o gateway do Supabase exige o header `apikey` separadamente.
+### 1. Status `PAID` não reconhecido no Gateway
+Em `pix-webhook-gateway/index.ts`, as funções `mapOnzEventType` (linha 93) e `mapOnzStatus` (linha 112) não incluem o status `PAID`, que a ONZ pode retornar para boletos liquidados. Resultado: o evento é normalizado como `payment.updated` com status `pending` em vez de `payment.confirmed` com status `completed`.
 
-### Chamadas com problema (sem `apikey`)
+**Correção**: Adicionar `PAID` nos dois mapeamentos.
 
-| Função | Linha(s) | Destino |
-|--------|----------|---------|
-| `pix-check-status` | 221, 308, 397 | `generate-pix-receipt` |
-| `pix-webhook` | 192, 271 | `generate-pix-receipt` |
-| `pix-webhook-gateway` | 271 | `generate-pix-receipt` |
-| `internal-payment-webhook` | 152 | `generate-pix-receipt` |
+### 2. Busca por ID com prefixo `onz:` no webhook interno
+Em `internal-payment-webhook/index.ts`, a função `handlePaymentConfirmed` (linha 121) usa comparação estrita:
+```
+query.or(`pix_txid.eq.${txid},external_id.eq.${txid}`)
+```
+Mas o `external_id` é salvo como `onz:<id>` (ex: `onz:abc123`), enquanto o webhook envia apenas `abc123`. A busca nunca encontra a transação.
 
-**Total: 7 chamadas sem `apikey`**
+**Correção**: Usar `ilike` com wildcard para `external_id`, igual ao que já é feito no gateway (linha 153):
+```
+external_id.ilike.%${txid}%
+```
+Aplicar a mesma correção em `handlePaymentFailed` (linha 177).
 
-### Chamadas já corretas (com `apikey`) — não precisam de alteração
+### 3. Status `PAID` também ausente no `COMPLETED` check do gateway
+A função `mapOnzEventType` linha 96 verifica `LIQUIDATED` e `COMPLETED` mas não `PAID`. Mesma lacuna no `mapOnzStatus`.
 
-- `pix-pay-qrc` → `pix-pay-dict`, `pix-qrc-info` (corrigido na última iteração)
-- `pix-pay-dict` → `pix-auth`
-- `pix-balance` → `pix-auth`
-- `pix-check-status` → `pix-auth`
-- `pix-dict-lookup` → `pix-auth`
-- `billet-pay` → `pix-auth`
-- `billet-check-status` → `pix-auth`
-- `billet-consult` → `pix-auth`
-- `register-transfeera-webhook` → `pix-auth`
+### Arquivos alterados (APENAS boleto-related)
+- **`supabase/functions/pix-webhook-gateway/index.ts`** — Adicionar `PAID` nos mapeamentos `mapOnzEventType` e `mapOnzStatus`
+- **`supabase/functions/internal-payment-webhook/index.ts`** — Usar `ilike` com wildcard na busca por `external_id` em `handlePaymentConfirmed` e `handlePaymentFailed`
 
-### Correção
-
-Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` nos headers de cada uma das 7 chamadas listadas acima.
-
-### Arquivos alterados
-- `supabase/functions/pix-check-status/index.ts` (3 ocorrências)
-- `supabase/functions/pix-webhook/index.ts` (2 ocorrências)
-- `supabase/functions/pix-webhook-gateway/index.ts` (1 ocorrência)
-- `supabase/functions/internal-payment-webhook/index.ts` (1 ocorrência)
+### O que NÃO será alterado
+- Nenhuma função de Pix (pix-pay-qrc, pix-pay-dict, etc.)
+- Nenhuma função de QR Code
+- Nenhum arquivo frontend
+- Nenhuma tabela ou política RLS
 
 ### Resultado esperado
-- Geração automática de comprovantes para de falhar silenciosamente
-- Todos os fluxos de confirmação (webhook, polling, gateway) geram recibo de forma confiável
+- Webhook com status `PAID` será reconhecido como `completed`
+- Busca por transaction_id encontrará boletos salvos com prefixo `onz:`
+- Confirmação automática + geração de comprovante funcionarão para boletos
 
