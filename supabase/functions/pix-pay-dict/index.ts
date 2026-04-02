@@ -175,21 +175,87 @@ Deno.serve(async (req) => {
       // ========== ONZ via novo proxy: POST /pix/pagar ==========
       console.log(`[pix-pay-dict] ONZ proxy: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      // Build payload - set priority=NORM to avoid requiring creditorDocument for all key types
+      // Build payload for the dedicated proxy
+      const amountValue = Number(valor.toFixed(2));
+      const beneficiaryDocument = body?.creditor_document
+        ? String(body.creditor_document).replace(/\D/g, '')
+        : ((resolvedPixKeyType === 'CPF' || resolvedPixKeyType === 'CNPJ')
+            ? normalizedPixKey.replace(/\D/g, '')
+            : '');
+
       const pixPayload: Record<string, any> = {
         chavePix: normalizedPixKey,
-        valor: Number(valor.toFixed(2)),
+        valor: amountValue,
         descricao: descricao || 'Pagamento Pix',
-        priority: 'NORM',
+        priority: beneficiaryDocument ? 'HIGH' : 'NORM',
       };
 
-      // If pix_key is CPF or CNPJ, include creditorDocument for faster settlement
-      if (resolvedPixKeyType === 'CPF' || resolvedPixKeyType === 'CNPJ') {
-        pixPayload.creditorDocument = normalizedPixKey.replace(/\D/g, '');
-        pixPayload.priority = 'HIGH';
+      if (beneficiaryDocument) {
+        pixPayload.creditorDocument = beneficiaryDocument;
       }
 
-      const result = await callNewProxy('/pix/pagar', 'POST', pixPayload);
+      let result = await callNewProxy('/pix/pagar', 'POST', pixPayload);
+
+      const needsLegacyOnzFallback =
+        result.status >= 400 &&
+        result.data?.type === 'onz-0002' &&
+        Array.isArray(result.data?.detail) &&
+        result.data.detail.some((d: any) => d?.field === 'creditorDocument' && d?.rule === 'requiredWhen');
+
+      if (needsLegacyOnzFallback) {
+        console.log('[pix-pay-dict] Dedicated proxy rejected creditorDocument; falling back to legacy ONZ route');
+
+        const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+          method: 'POST',
+          headers: {
+            'Authorization': authHeader,
+            'Content-Type': 'application/json',
+            'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+          },
+          body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
+        });
+
+        if (!authResponse.ok) {
+          return new Response(JSON.stringify({ error: 'Falha ao autenticar com ONZ para o fallback do pagamento Pix' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const { access_token } = await authResponse.json();
+        const legacyHeaders: Record<string, string> = {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'x-idempotency-key': crypto.randomUUID(),
+        };
+        if (config.provider_company_id) legacyHeaders['X-Company-ID'] = config.provider_company_id;
+
+        const legacyPayload: Record<string, any> = {
+          pixKey: normalizedPixKey,
+          payment: { amount: amountValue, currency: 'BRL' },
+          description: descricao || 'Pagamento Pix',
+          paymentFlow: 'INSTANT',
+          priority: beneficiaryDocument ? 'HIGH' : 'NORM',
+        };
+        if (beneficiaryDocument) legacyPayload.creditorDocument = beneficiaryDocument;
+
+        const legacyResp = await fetch(`${Deno.env.get('ONZ_PROXY_URL')}/proxy`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Proxy-API-Key': Deno.env.get('ONZ_PROXY_API_KEY')!,
+          },
+          body: JSON.stringify({
+            url: `${config.base_url}/api/v2/pix/payments/dict`,
+            method: 'POST',
+            headers: legacyHeaders,
+            body_raw: JSON.stringify(legacyPayload),
+          }),
+        });
+
+        const legacyJson = await legacyResp.json();
+        result = {
+          status: legacyJson.status || legacyResp.status,
+          data: legacyJson.data || legacyJson,
+        };
+      }
 
       if (result.status >= 400) {
         // Extract a string error message (detail can be an array of objects)
