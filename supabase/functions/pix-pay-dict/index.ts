@@ -78,6 +78,11 @@ function normalizePixKeyByType(key: string, keyType: string): string {
   return key.trim();
 }
 
+function resolveOnzPriority(explicitPriority: string | undefined, beneficiaryDocument: string): 'HIGH' | 'NORM' {
+  if (!beneficiaryDocument) return 'NORM';
+  return explicitPriority === 'NORM' ? 'NORM' : 'HIGH';
+}
+
 function extractBeneficiary(payload: any): { name: string; doc: string } {
   const p = payload || {};
   const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
@@ -175,25 +180,31 @@ Deno.serve(async (req) => {
       // ========== ONZ via novo proxy: POST /pix/pagar ==========
       console.log(`[pix-pay-dict] ONZ proxy: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      // Build payload for the dedicated proxy
-      // DO NOT send "priority" — the proxy/ONZ sets it internally.
-      // Always send creditorDocument when we can derive it (CPF/CNPJ key).
+      // Build payload for the dedicated proxy.
+      // ONZ exige creditorDocument quando a prioridade é HIGH,
+      // então forçamos NORM para chaves sem CPF/CNPJ extraível.
       const amountValue = Number(valor.toFixed(2));
       const beneficiaryDocument = body?.creditor_document
         ? String(body.creditor_document).replace(/\D/g, '')
         : ((resolvedPixKeyType === 'CPF' || resolvedPixKeyType === 'CNPJ')
             ? normalizedPixKey.replace(/\D/g, '')
             : '');
+      const paymentPriority = resolveOnzPriority(body?.priority, beneficiaryDocument);
 
       const pixPayload: Record<string, any> = {
         chavePix: normalizedPixKey,
         valor: amountValue,
         descricao: descricao || 'Pagamento Pix',
+        priority: paymentPriority,
       };
 
       // creditorDocument is required by ONZ when priority=HIGH (proxy default)
       if (beneficiaryDocument) {
         pixPayload.creditorDocument = beneficiaryDocument;
+      }
+
+      if (body?.payment_flow) {
+        pixPayload.paymentFlow = body.payment_flow;
       }
 
       console.log('[pix-pay-dict] Sending to proxy:', JSON.stringify(pixPayload));
@@ -282,6 +293,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({
       success: true, transaction_id: newTransaction.id, id_envio: externalId,
+      end_to_end_id: paymentData.e2eId || paymentData.endToEndId || null,
       status: paymentData.status || 'PROCESSING',
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

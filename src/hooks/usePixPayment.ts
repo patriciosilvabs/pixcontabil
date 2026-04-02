@@ -276,13 +276,40 @@ export function usePixPayment() {
         console.error('[usePixPayment] Pay by QRC error:', error);
         
         const isNetworkError = !error.context || error.message?.includes('Failed to send') || error.message?.includes('fetch');
+        let errorMessage = "Tente novamente mais tarde.";
+
+        try {
+          if (error.context && typeof error.context === 'object') {
+            const res = error.context as Response;
+            if (res?.json) {
+              const body = await res.json();
+              const rawError = body?.error;
+              const errorStr = typeof rawError === 'string'
+                ? rawError
+                : Array.isArray(rawError)
+                  ? rawError.map((e: any) => e?.message || String(e)).join('; ')
+                  : rawError && typeof rawError === 'object'
+                    ? JSON.stringify(rawError)
+                    : '';
+              const detailsStr = typeof body?.details === 'string'
+                ? body.details
+                : body?.details && typeof body.details === 'object'
+                  ? JSON.stringify(body.details)
+                  : '';
+
+              errorMessage = errorStr || detailsStr || body?.hint || errorMessage;
+            }
+          }
+        } catch {
+          // ignore parse errors and keep fallback message
+        }
         
         toast({
           variant: "destructive",
           title: isNetworkError ? "Conexão perdida" : "Erro ao iniciar pagamento Pix",
           description: isNetworkError 
             ? "A conexão caiu durante o processamento. Verifique o extrato antes de tentar novamente."
-            : (error.message || "Tente novamente mais tarde."),
+            : (errorMessage || error.message || "Tente novamente mais tarde."),
           duration: isNetworkError ? 10000 : 5000,
         });
         return null;
