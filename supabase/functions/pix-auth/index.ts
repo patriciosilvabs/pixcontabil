@@ -5,12 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
+async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any, bodyRaw?: string) {
   const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
+  const payload: any = { url, method, headers };
+  if (bodyRaw) {
+    payload.body_raw = bodyRaw;
+  } else if (body) {
+    payload.body = body;
+  }
   const resp = await fetch('https://pixmobile.com.br/proxy', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-    body: JSON.stringify({ url, method, headers, body }),
+    body: JSON.stringify(payload),
   });
   const text = await resp.text();
   let data: any;
