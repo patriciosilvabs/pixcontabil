@@ -104,10 +104,12 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       pollAttemptsRef.current++;
 
       try {
-        const result = await checkBilletStatus(txId, true);
+        const { data: result, error } = await supabase.functions.invoke('pix-check-status', {
+          body: { transaction_id: txId },
+        });
         if (!mountedRef.current) return;
 
-        if (!result) {
+        if (error || !result) {
           if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
             setStatusState("timeout");
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -124,7 +126,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
 
         if (result.internal_status === "failed") {
           setStatusState("failed");
-          setErrorMessage(result.error_code || "O pagamento do boleto foi recusado.");
+          setErrorMessage(result.error_code || result.error || "O pagamento do boleto foi recusado.");
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
           return;
         }
