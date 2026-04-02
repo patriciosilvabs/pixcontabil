@@ -44,7 +44,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const { profile, isAdmin, currentCompany, companies, setCurrentCompany, signOut, hasPageAccess } = useAuth();
   const location = useLocation();
   const { balanceVisible, toggleBalance } = useBalanceVisibility();
-  const { count: pendingReceiptsCount } = usePendingReceipts();
+  const { count: pendingReceiptsCount, stuckCount } = usePendingReceipts();
 
   const navigation = [
     { name: "Dashboard", href: "/", icon: Home, pageKey: "dashboard" },

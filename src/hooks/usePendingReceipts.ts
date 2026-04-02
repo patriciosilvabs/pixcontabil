@@ -14,17 +14,20 @@ export interface PendingReceipt {
 }
 
 /**
- * Checks if the current user has pending receipts (completed transactions
- * that have no manual receipt attached — ALL pix_types included).
+ * Returns two separate lists:
+ * - blockingReceipts: completed transactions missing a manual receipt (blocks new payments)
+ * - stuckTransactions: old pending transactions needing status sync (does NOT block)
  */
 export function usePendingReceipts() {
   const { user, currentCompany } = useAuth();
-  const [pending, setPending] = useState<PendingReceipt[]>([]);
+  const [blockingReceipts, setBlockingReceipts] = useState<PendingReceipt[]>([]);
+  const [stuckTransactions, setStuckTransactions] = useState<PendingReceipt[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     if (!user?.id || !currentCompany?.id) {
-      setPending([]);
+      setBlockingReceipts([]);
+      setStuckTransactions([]);
       setIsLoading(false);
       return;
     }
@@ -32,7 +35,6 @@ export function usePendingReceipts() {
     try {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      // Use whichever is more recent: 30-day window or cutoff date
       const effectiveSince = thirtyDaysAgo > RECEIPT_CUTOFF_DATE ? thirtyDaysAgo : RECEIPT_CUTOFF_DATE;
 
       // Get completed transactions without manual receipt
@@ -70,28 +72,28 @@ export function usePendingReceipts() {
         return !hasManual;
       });
 
-      const allPending = [
-        ...missingManual.map((tx: any) => ({
-          id: tx.id,
-          beneficiary_name: tx.beneficiary_name,
-          amount: Number(tx.amount),
-          pix_type: tx.pix_type,
-          created_at: tx.created_at,
-          description: tx.description ?? null,
-          status: "completed" as string,
-        })),
-        ...(stuckData || []).map((tx: any) => ({
-          id: tx.id,
-          beneficiary_name: tx.beneficiary_name,
-          amount: Number(tx.amount),
-          pix_type: tx.pix_type,
-          created_at: tx.created_at,
-          description: tx.description ?? null,
-          status: "pending" as string,
-        })),
-      ];
+      const blocking = missingManual.map((tx: any) => ({
+        id: tx.id,
+        beneficiary_name: tx.beneficiary_name,
+        amount: Number(tx.amount),
+        pix_type: tx.pix_type,
+        created_at: tx.created_at,
+        description: tx.description ?? null,
+        status: "completed" as string,
+      }));
 
-      setPending(allPending);
+      const stuck = (stuckData || []).map((tx: any) => ({
+        id: tx.id,
+        beneficiary_name: tx.beneficiary_name,
+        amount: Number(tx.amount),
+        pix_type: tx.pix_type,
+        created_at: tx.created_at,
+        description: tx.description ?? null,
+        status: "pending" as string,
+      }));
+
+      setBlockingReceipts(blocking);
+      setStuckTransactions(stuck);
     } catch (err) {
       console.error("[usePendingReceipts] Error:", err);
     } finally {
@@ -103,5 +105,20 @@ export function usePendingReceipts() {
     refresh();
   }, [refresh]);
 
-  return { pending, isLoading, refresh, count: pending.length };
+  // Legacy compat: "pending" = blockingReceipts only (what blocks actions)
+  // "all" combines both for display purposes
+  return {
+    /** Only completed transactions missing manual receipt — use for blocking */
+    blockingReceipts,
+    /** Old pending transactions needing sync — informational only */
+    stuckTransactions,
+    /** Legacy: same as blockingReceipts */
+    pending: blockingReceipts,
+    isLoading,
+    refresh,
+    /** Count of blocking receipts only */
+    count: blockingReceipts.length,
+    /** Count of stuck transactions */
+    stuckCount: stuckTransactions.length,
+  };
 }

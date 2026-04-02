@@ -59,7 +59,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
-  const { pending: pendingReceipts, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
+  const { blockingReceipts, stuckTransactions, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
   const [isSyncing, setIsSyncing] = useState(false);
 
   // One-time toast for cutoff update
@@ -71,7 +71,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
     }
   }, []);
 
-  const stuckTransactions = pendingReceipts.filter(p => p.status === "pending");
+  // stuckTransactions now comes directly from usePendingReceipts
 
   const handleSyncStuck = async () => {
     if (stuckTransactions.length === 0) return;
@@ -103,7 +103,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const checkPendencyAndBlock = (): boolean => {
     if (pendingCount > 0) {
       toast.error("Finalize o comprovante da transação anterior antes de iniciar uma nova.");
-      navigate(`/pix/receipt/${pendingReceipts[0].id}`);
+      navigate(`/pix/receipt/${blockingReceipts[0].id}`);
       return true;
     }
     return false;
@@ -175,7 +175,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         </Card>
       )}
 
-      {/* Missing receipts notification */}
+      {/* Blocking receipts notification */}
       {pendingCount > 0 && (
         <Card className="border-warning/50 bg-warning/5 shadow-sm">
           <CardContent className="p-3">
@@ -188,9 +188,9 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                   {pendingCount} comprovante{pendingCount > 1 ? "s" : ""} pendente{pendingCount > 1 ? "s" : ""}
                 </p>
                 <p className="text-[10px] text-muted-foreground mt-0.5 truncate">
-                  {pendingReceipts[0].beneficiary_name ?? "Sem nome"}
-                  {pendingReceipts[0].amount ? ` — ${formatCurrency(pendingReceipts[0].amount)}` : ""}
-                  {pendingReceipts[0].description ? ` — ${pendingReceipts[0].description}` : ""}
+                  {blockingReceipts[0].beneficiary_name ?? "Sem nome"}
+                  {blockingReceipts[0].amount ? ` — ${formatCurrency(blockingReceipts[0].amount)}` : ""}
+                  {blockingReceipts[0].description ? ` — ${blockingReceipts[0].description}` : ""}
                   {pendingCount > 1 ? ` e mais ${pendingCount - 1}` : ""}
                 </p>
               </div>
@@ -198,25 +198,41 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
                 size="sm"
                 variant="outline"
                 className="shrink-0 h-8 text-xs font-bold border-warning/50 text-warning hover:bg-warning/10"
-                onClick={() => navigate(`/pix/receipt/${pendingReceipts[0].id}`)}
+                onClick={() => navigate(`/pix/receipt/${blockingReceipts[0].id}`)}
               >
                 Anexar
               </Button>
             </div>
-            {stuckTransactions.length > 0 && (
-              <div className="mt-2 pt-2 border-t border-warning/20">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="w-full h-7 text-[10px] font-bold text-warning hover:bg-warning/10"
-                  onClick={handleSyncStuck}
-                  disabled={isSyncing}
-                >
-                  <RefreshCw className={`h-3 w-3 mr-1 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isSyncing ? "Sincronizando..." : `Sincronizar ${stuckTransactions.length} transação(ões) parada(s)`}
-                </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stuck transactions sync notification (separate, non-blocking) */}
+      {stuckTransactions.length > 0 && pendingCount === 0 && (
+        <Card className="border-muted-foreground/30 bg-muted/30 shadow-sm">
+          <CardContent className="p-3">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center shrink-0">
+                <RefreshCw className={`h-4 w-4 text-muted-foreground ${isSyncing ? 'animate-spin' : ''}`} />
               </div>
-            )}
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                  {stuckTransactions.length} transação(ões) aguardando sincronização
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">
+                  Pagamentos antigos com status pendente no provedor.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 h-8 text-xs font-bold"
+                onClick={handleSyncStuck}
+                disabled={isSyncing}
+              >
+                {isSyncing ? "..." : "Sincronizar"}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

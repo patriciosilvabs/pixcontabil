@@ -57,6 +57,8 @@ export default function ReceiptCapture() {
   const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [statusCheckFailed, setStatusCheckFailed] = useState(false);
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
   const [transactionInfo, setTransactionInfo] = useState<{
     beneficiary_name: string | null;
@@ -71,7 +73,11 @@ export default function ReceiptCapture() {
     if (!transactionId) return;
 
     let isMounted = true;
+    let failureCount = 0;
+    const MAX_FAILURES = 5;
     setIsLoadingStatus(true);
+    setStatusCheckFailed(false);
+    setConsecutiveFailures(0);
 
     const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
@@ -106,17 +112,33 @@ export default function ReceiptCapture() {
         currentStatus !== "cancelled";
 
       if (shouldSyncProvider) {
-        const providerStatus = await checkStatus(transactionId, true);
-        const syncedStatus = providerStatus?.internal_status || currentStatus;
+        try {
+          const providerStatus = await checkStatus(transactionId, true);
+          const syncedStatus = providerStatus?.internal_status || currentStatus;
 
-        if (!isMounted) return syncedStatus;
+          if (!isMounted) return syncedStatus;
 
-        if (syncedStatus && syncedStatus !== currentStatus) {
-          setTransactionStatus(syncedStatus);
+          if (syncedStatus && syncedStatus !== currentStatus) {
+            setTransactionStatus(syncedStatus);
+          }
+          // Reset failure count on success
+          failureCount = 0;
+          if (isMounted) setConsecutiveFailures(0);
+
+          setIsLoadingStatus(false);
+          return syncedStatus;
+        } catch (err) {
+          console.error('[ReceiptCapture] Provider sync error:', err);
+          failureCount++;
+          if (isMounted) {
+            setConsecutiveFailures(failureCount);
+            if (failureCount >= MAX_FAILURES) {
+              setStatusCheckFailed(true);
+              setIsLoadingStatus(false);
+            }
+          }
+          return currentStatus;
         }
-
-        setIsLoadingStatus(false);
-        return syncedStatus;
       }
 
       setIsLoadingStatus(false);
@@ -129,6 +151,10 @@ export default function ReceiptCapture() {
 
     // Poll every 3s if not yet completed
     const interval = setInterval(async () => {
+      if (failureCount >= MAX_FAILURES) {
+        clearInterval(interval);
+        return;
+      }
       pollCount += 1;
       const status = await loadTransactionStatus(pollCount % 2 === 0);
 
@@ -480,15 +506,47 @@ export default function ReceiptCapture() {
           </Card>
         )}
 
-        {/* Waiting for confirmation */}
+        {/* Waiting for confirmation — with recovery if status check keeps failing */}
         {!isLoadingStatus && !isTransactionCompleted && !isTransactionFinalFailed && (
-          <Card className="border-primary/30 bg-primary/5 mb-6">
+          <Card className={cn("mb-6", statusCheckFailed ? "border-amber-500/50 bg-amber-500/5" : "border-primary/30 bg-primary/5")}>
             <CardContent className="flex flex-col items-center gap-3 p-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="font-medium">Aguardando confirmação do pagamento</p>
-              <p className="text-sm text-muted-foreground text-center">
-                O comprovante só pode ser anexado após a confirmação oficial do pagamento pelo provedor.
-              </p>
+              {statusCheckFailed ? (
+                <>
+                  <AlertCircle className="h-8 w-8 text-amber-600" />
+                  <p className="font-medium">Não foi possível confirmar o pagamento</p>
+                  <p className="text-sm text-muted-foreground text-center">
+                    A consulta de status falhou {consecutiveFailures} vezes seguidas. O pagamento pode ter sido processado, mas o provedor não está respondendo.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setStatusCheckFailed(false);
+                        setConsecutiveFailures(0);
+                        setIsLoadingStatus(true);
+                        // Re-trigger the effect by navigating to same page
+                        window.location.reload();
+                      }}
+                    >
+                      Tentar novamente
+                    </Button>
+                    <Button variant="ghost" onClick={() => navigate("/")}>
+                      Voltar ao Início
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="font-medium">Aguardando confirmação do pagamento</p>
+                  <p className="text-sm text-muted-foreground text-center">
+                    O comprovante só pode ser anexado após a confirmação oficial do pagamento pelo provedor.
+                  </p>
+                  <Button variant="ghost" size="sm" className="mt-2" onClick={() => navigate("/")}>
+                    Voltar ao Início
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         )}

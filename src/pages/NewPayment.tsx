@@ -124,7 +124,7 @@ export default function NewPayment() {
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany, user } = useAuth();
-  const { pending: pendingReceipts, count: pendingCount } = usePendingReceipts();
+  const { blockingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
   const { tags: quickTags } = useQuickTags();
@@ -338,14 +338,14 @@ export default function NewPayment() {
   };
 
   const handleConfirmPayment = async () => {
-    // Block if there are pending receipts
+    // Block if there are blocking receipts (completed transactions missing manual receipt)
     if (pendingCount > 0) {
       toast({
         variant: "destructive",
         title: "Pendência de comprovante",
         description: "Finalize o comprovante da transação anterior antes de iniciar uma nova.",
       });
-      navigate(`/pix/receipt/${pendingReceipts[0].id}`);
+      navigate(`/pix/receipt/${blockingReceipts[0].id}`);
       return;
     }
 
