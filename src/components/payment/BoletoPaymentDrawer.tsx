@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, DollarSign, CheckCircle2, AlertTriangle, XCircle, C
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 import { toast } from "sonner";
 import { useBilletPayment, BilletConsultResult } from "@/hooks/useBilletPayment";
+import { supabase } from "@/integrations/supabase/client";
 import { parseBoleto } from "@/utils/boletoParser";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 
