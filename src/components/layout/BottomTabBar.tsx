@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Home, LayoutGrid, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 const allTabs = [
   { name: "Menu", href: "/menu", icon: LayoutGrid, position: "left" },
