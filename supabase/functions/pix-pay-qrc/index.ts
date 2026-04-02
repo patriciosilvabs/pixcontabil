@@ -351,6 +351,9 @@ Deno.serve(async (req) => {
     if (config.provider === 'onz' && qrType === 'dynamic') {
       console.log('[pix-pay-qrc] ONZ dynamic QR - delegating to pix-pay-dict via new proxy');
 
+      // Use creditor_document from request, or try to extract from COBV devedor payload
+      const resolvedCreditorDoc = creditor_document || qrcInfo?.creditor_document || '';
+
       const delegated = await delegateQrToPixPayDict({
         authHeader,
         companyId: company_id,
@@ -359,7 +362,7 @@ Deno.serve(async (req) => {
         descricao,
         idempotencyKey: idempotency_key,
         qrcInfo,
-        creditorDocument: creditor_document,
+        creditorDocument: resolvedCreditorDoc,
         priority,
         paymentFlow: payment_flow,
       });
