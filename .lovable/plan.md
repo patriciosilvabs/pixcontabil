@@ -1,51 +1,86 @@
 
-# Corrigir bug: transação com tag ainda vira “comprovante pendente”
 
-## O bug real encontrado
-A regra da tag hoje está aplicada só na interface, não na persistência:
+# Refatoração: Migrar para Proxy Dedicado com Endpoints Específicos
 
-- `src/pages/NewPayment.tsx` esconde o botão “Anexar Comprovante”, mas não salva a transação com `receipt_required = false`
-- `src/components/pix/PixKeyDialog.tsx` tenta corrigir isso depois do pagamento com um `update`, mas isso é frágil e não pode ser a regra principal
-- `supabase/functions/pix-pay-dict/index.ts` cria a transação sem informar `receipt_required`, então o banco usa o padrão `true`
+## Contexto
 
-Por isso, na próxima transação, o sistema lê a transação anterior como pendente. O `usePendingReceipts` não está errado; ele só está lendo um dado salvo errado.
+O sistema atual usa um proxy genérico (`/proxy`) que recebe a URL completa da ONZ e faz o forward com mTLS. O novo proxy em `http://72.61.25.92:3000` já gerencia OAuth internamente e expõe endpoints de negócio diretos, eliminando a necessidade de gerenciar tokens no backend.
 
-## Plano de correção
-1. `src/hooks/usePixPayment.ts`
-   - ampliar `payByKey` para aceitar `receipt_required?: boolean`
-   - enviar esse campo para a function `pix-pay-dict`
+## Novos Endpoints do Proxy
 
-2. `supabase/functions/pix-pay-dict/index.ts`
-   - ler `receipt_required` do body
-   - salvar a transação já no `insert` com `receipt_required: receipt_required ?? true`
-   - manter `true` como padrão para pagamentos sem tag
+| Método | Rota | Uso |
+|--------|------|-----|
+| GET | `/saldo` | Saldo da conta |
+| POST | `/pix/pagar` | Pagamento Pix por chave |
+| POST | `/billets/pagar` | Pagamento de boleto |
+| GET | `/status/:tipo/:id` | Status de Pix ou Boleto |
+| GET | `/recibo/:tipo/:id` | Comprovante PDF (base64) |
 
-3. `src/pages/NewPayment.tsx`
-   - no pagamento real com tag, chamar `payByKey(..., receipt_required: false)`
-   - não enviar esse campo na transação de verificação de R$ 0,01
-   - manter um fallback silencioso pós-retorno do `transaction_id` para atualizar `receipt_required = false`, cobrindo duplicate/retry
+**Headers obrigatórios:** `x-proxy-key` (secret) + `x-idempotency-key` (para pagamentos)
 
-4. `src/components/pix/PixKeyDialog.tsx`
-   - aplicar a mesma regra do desktop
-   - deixar de depender só do `update` pós-pagamento
-   - usar o `update` local apenas como proteção extra, não como fonte principal da regra
+## Plano de Execução
 
-5. Consistência administrativa
-   - `src/pages/QuickTags.tsx`
-   - `src/hooks/useQuickTags.ts`
-   - remover o uso real de `receipt_required` no cadastro/edição de tags, porque hoje toda tag dispensa comprovante manual por definição
-   - isso evita nova confusão entre configuração da tag e comportamento real do sistema
+### Passo 1 — Salvar secrets
+- Salvar `NEW_PROXY_URL` = `http://72.61.25.92:3000`
+- Salvar `NEW_PROXY_KEY` = credencial fornecida
+- Manter os secrets antigos (`ONZ_PROXY_URL`, `ONZ_PROXY_API_KEY`) pois o Transfeera e operações não cobertas (QR Code, webhook) ainda usam o proxy genérico
 
-## Resultado esperado
-- pagamento com tag nasce no banco com `receipt_required = false`
-- a tela final continua sem “Anexar Comprovante”
-- ao iniciar um novo pagamento, o sistema não bloqueia nem cobra o comprovante da transação anterior
-- `usePendingReceipts` e os bloqueios do backend passam a funcionar corretamente sem gambiarra
+### Passo 2 — Criar helper compartilhado
+Substituir `callOnzViaProxy` por uma nova função `callNewProxy` em cada edge function afetada:
 
-## Detalhes técnicos
-- não precisa migration: a coluna `transactions.receipt_required` já existe
-- não vou mexer no `usePendingReceipts`, porque ele já está correto
-- fluxo afetado: Pix por chave com Quick Tag
+```text
+callNewProxy(path, method, body?)
+  → fetch(NEW_PROXY_URL + path)
+  → headers: x-proxy-key, x-idempotency-key (se POST), Content-Type
+  → retorna { status, data }
+```
 
-## Observação importante
-Isso corrige a causa do bug para as próximas transações. A transação já criada com o flag errado pode continuar pendente, porque hoje ela não guarda qual tag foi usada; então esse histórico antigo não dá para corrigir automaticamente com segurança.
+### Passo 3 — Refatorar Edge Functions (branch ONZ apenas)
+
+| Edge Function | Antes | Depois |
+|---|---|---|
+| `pix-balance` | `pix-auth` + `callOnzViaProxy(base_url/api/v2/accounts/balances/)` | `GET /saldo` direto |
+| `pix-pay-dict` | `pix-auth` + `callOnzViaProxy(base_url/api/v2/pix/payments/dict)` | `POST /pix/pagar` com `{chavePix, valor, descricao}` |
+| `billet-pay` | `pix-auth` + `callOnzViaProxy(base_url/api/v2/billets/payments)` | `POST /billets/pagar` com `{linhaDigitavel, valor, descricao}` |
+| `pix-check-status` | `pix-auth` + `callOnzViaProxy(base_url/api/v2/pix/payments/:id)` | `GET /status/pix/:id` |
+| `billet-check-status` | `pix-auth` + `callOnzViaProxy(...)` | `GET /status/billet/:id` |
+| `pix-receipt` | `pix-auth` + `callOnzViaProxy(base_url/api/v2/pix/payments/receipt/:id)` | `GET /recibo/pix/:id` |
+| `billet-receipt` | `pix-auth` + `callOnzViaProxy(...)` | `GET /recibo/billet/:id` |
+| `batch-pay` | Loop com `pix-auth` + `callOnzViaProxy` | Loop com `POST /pix/pagar` ou `POST /billets/pagar` |
+
+**Nota:** `pix-auth` continua existindo para Transfeera. A chamada a `pix-auth` é removida apenas no branch `provider === 'onz'`.
+
+### Passo 4 — Consulta de boleto (`billet-consult`)
+O branch ONZ atualmente faz um POST com `paymentFlow: "APPROVAL_REQUIRED"` para simular consulta. Com o novo proxy, verificar se `POST /billets/pagar` retorna dados suficientes para pré-visualização, ou manter o proxy genérico para essa operação específica.
+
+### Passo 5 — QR Code (`pix-pay-qrc`, `pix-qrc-info`)
+O novo proxy não tem endpoint para QR Code. Essas funções continuam usando o proxy genérico (`callOnzViaProxy` com `/proxy`) até que novos endpoints sejam adicionados.
+
+### Passo 6 — Webhook (`register-transfeera-webhook`)
+Não coberto pelo novo proxy. Continua usando o proxy genérico.
+
+## O que NÃO muda
+- Todo o fluxo **Transfeera** permanece idêntico
+- `pix-auth` continua funcionando para Transfeera
+- `pix-pay-qrc`, `pix-qrc-info`, `register-transfeera-webhook` mantêm o proxy genérico
+- Frontend não precisa de alteração (as edge functions mantêm a mesma interface)
+- RLS, transactions, audit_logs — tudo igual
+
+## Mapeamento de erros do novo proxy
+- 400 → mensagem do proxy (ex: "Chave Pix Inválida", "Saldo Insuficiente")
+- 401 → "Falha de autenticação com o proxy"
+- 500 → "Erro de conexão com o banco"
+
+## Arquivos modificados
+
+| Arquivo | Tipo de alteração |
+|---|---|
+| `supabase/functions/pix-balance/index.ts` | ONZ branch → `GET /saldo` |
+| `supabase/functions/pix-pay-dict/index.ts` | ONZ branch → `POST /pix/pagar` |
+| `supabase/functions/billet-pay/index.ts` | ONZ branch → `POST /billets/pagar` |
+| `supabase/functions/pix-check-status/index.ts` | ONZ branch → `GET /status/pix/:id` |
+| `supabase/functions/billet-check-status/index.ts` | ONZ branch → `GET /status/billet/:id` |
+| `supabase/functions/pix-receipt/index.ts` | ONZ branch → `GET /recibo/pix/:id` |
+| `supabase/functions/billet-receipt/index.ts` | ONZ branch → `GET /recibo/billet/:id` |
+| `supabase/functions/batch-pay/index.ts` | ONZ loops → novos endpoints |
+
