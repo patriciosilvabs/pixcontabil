@@ -1,33 +1,21 @@
 
 
-## Status das Correções e Diagnóstico do Erro /saldo
+## Diagnóstico e Correção: Erro 502 no `pix-balance`
 
-### Correções 1, 2 e 3 — Já Aplicadas
+### Problema raiz
 
-Todas as três correções do plano de boletos **já estão no código atual**:
+O código no repositório **já trata** o erro 404 do proxy graciosamente (retorna HTTP 200 com `available: false`). Porém, a resposta real do Edge Function (`{"error":"Route GET:/saldo not found","provider_error":...}`) **não corresponde** ao formato do código atual — indica que a versão deployada está desatualizada.
 
-| Correção | Arquivo | Status |
-|----------|---------|--------|
-| `PAID`/`COMPLETED`/`ON_QUEUE` no webhook | `pix-webhook/index.ts` L140-151 | ✅ Aplicado |
-| Campos `linhaDigitavel`/`valor`/`descricao` | `billet-consult/index.ts` | ✅ Aplicado |
-| `COMPLETED`/`ON_QUEUE` no polling | `pix-check-status/index.ts` L205-210 e L293-298 | ✅ Aplicado |
+### Plano
 
-**Não há alterações de código pendentes.**
+**1. Redeployar `pix-balance`**
+- Fazer deploy da versão atual que já contém o `unavailableBalanceResponse` e tratamento de 404/503
+- Isso resolverá o erro 502 e a tela em branco, mostrando "Saldo indisponível" em vez de crashar
 
-### Erro `GET /saldo` → 404
+**2. Testar após deploy**
+- Invocar `pix-balance` para confirmar que retorna `{ success: true, available: false, message: "..." }` em vez de 502
 
-O erro atual é do **proxy v3.1**, não do Edge Function. O `pix-balance` chama `GET /saldo` (rota que você confirmou ser a correta), mas o proxy retorna:
+### Nota sobre o proxy
 
-```json
-{"message":"Route GET:/saldo not found","error":"Not Found","statusCode":404}
-```
-
-**Ação necessária**: Verificar no proxy v3.1 se a rota `GET /saldo` está registrada. Possíveis causas:
-- A rota não foi incluída na v3.1
-- A rota está registrada com outro método (POST em vez de GET)
-- O Fastify precisa de restart após o deploy
-
-### Teste do Boleto 13351767
-
-Para testar o polling, posso invocar a Edge Function `pix-check-status` diretamente com o ID do boleto. Isso confirmará se o proxy v3.1 com busca tripla está retornando o status corretamente. **Deseja que eu execute esse teste?**
+O erro `Route GET:/saldo not found` é do **seu proxy v3.1** — a rota `/saldo` não está registrada nele. O trecho que você compartilhou diz `// ... (mantenha rotas de saldo iguais)`, mas aparentemente essa rota não está ativa. Isso precisa ser corrigido no lado do proxy para que o saldo funcione de fato. O deploy do Edge Function apenas garante que a ausência da rota não quebre o dashboard.
 
