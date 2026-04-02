@@ -1,37 +1,22 @@
 
 
-## Diagnóstico: Por que o boleto retorna 404
+## Reverter boleto para novo proxy em `pix-check-status`
 
-Analisei a documentação ONZ API e o código. O endpoint correto para consultar status de boleto é:
+O proxy novo (`http://72.61.25.92:3000`) já foi corrigido e agora roteia corretamente `GET /status/billet/{id}` para `GET /billets/{id}` na ONZ. Não há mais necessidade de usar o proxy antigo.
 
-```text
-GET /billets/{id}    (documentação ONZ, página 24-26)
-```
+### Alteração em `supabase/functions/pix-check-status/index.ts`
 
-O `pix-check-status` chama `callNewProxy('/status/billet/{id}', 'GET')` -- ou seja, depende de uma rota no novo proxy que deveria mapear para `GET /billets/{id}` na ONZ. O 404 vem da ONZ (`"Desculpe, não conseguimos encontrar o que você está procurando."`), o que indica que o novo proxy provavelmente está encaminhando para um endpoint incorreto (possivelmente `/billets/payments/{id}` que não existe como GET na ONZ).
+1. **Remover `callOnzViaProxy`** (linhas 25-37) e **`getOnzToken`** (linhas 39-52) — não são mais necessários
 
-Enquanto isso, a `billet-consult` já usa o **proxy antigo** (`ONZ_PROXY_URL`) com sucesso, passando a URL completa da ONZ diretamente.
+2. **Substituir o bloco de boleto (linhas 181-260)** para usar `callNewProxy` em vez do proxy antigo:
+   - Trocar `callOnzViaProxy(billetUrl, 'GET', headers)` por `callNewProxy('/status/billet/' + statusId, 'GET')`
+   - Remover a chamada de autenticação via `pix-auth` (o novo proxy gerencia tokens internamente)
+   - Manter toda a lógica de mapeamento de status, tratamento de 404 e atualização de transação
 
-## Correção
-
-Modificar `pix-check-status` para usar o **proxy antigo** (`callOnzViaProxy`) para consultas de status de boleto, em vez do novo proxy. Isso garante que a URL correta da ONZ (`GET {base_url}/api/v2/billets/{id}`) seja chamada diretamente.
-
-### Alterações em `supabase/functions/pix-check-status/index.ts`
-
-1. **Adicionar função `callOnzViaProxy`** (mesma usada em `billet-consult`) que chama o proxy antigo com URL exata da ONZ
-
-2. **Para boletos ONZ, trocar o fluxo:**
-   - Obter token via `pix-auth`
-   - Buscar `base_url` do `pix_configs` (já disponível em `config`)
-   - Chamar `callOnzViaProxy('{base_url}/api/v2/billets/{id}', 'GET', headers)` diretamente
-   - Manter todo o mapeamento de status e lógica de 404/failed existente
-
-3. **Manter o fluxo Pix pelo novo proxy** (funciona normalmente para Pix)
-
-### Fluxo resultante
+3. **Resultado**: boleto e pix seguem o mesmo padrão via novo proxy
 
 ```text
-Boleto ONZ: pix-check-status → pix-auth (token) → proxy antigo → GET /api/v2/billets/{id}
+Boleto ONZ: pix-check-status → novo proxy → GET /status/billet/{id} → ONZ GET /billets/{id}
 Pix ONZ:    pix-check-status → novo proxy → GET /status/pix/{e2eId}
 ```
 
