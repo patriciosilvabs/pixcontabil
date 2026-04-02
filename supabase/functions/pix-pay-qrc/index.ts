@@ -349,32 +349,97 @@ Deno.serve(async (req) => {
     }
 
     if (config.provider === 'onz' && qrType === 'dynamic') {
-      console.log('[pix-pay-qrc] ONZ dynamic QR - delegating to pix-pay-dict via new proxy');
+      console.log('[pix-pay-qrc] ONZ dynamic QR - calling proxy /pix/pagar-qrc (QRC endpoint)');
 
-      // Use creditor_document from request, or try to extract from COBV devedor payload
-      const resolvedCreditorDoc = creditor_document || qrcInfo?.creditor_document || '';
+      const newProxyUrl = Deno.env.get('NEW_PROXY_URL');
+      const newProxyKey = Deno.env.get('NEW_PROXY_KEY');
 
-      const delegated = await delegateQrToPixPayDict({
-        authHeader,
-        companyId: company_id,
-        qrCode: qr_code,
-        paymentAmount,
-        descricao,
-        idempotencyKey: idempotency_key,
-        qrcInfo,
-        creditorDocument: resolvedCreditorDoc,
-        priority,
-        paymentFlow: payment_flow,
-      });
+      if (!newProxyUrl || !newProxyKey) {
+        console.error('[pix-pay-qrc] NEW_PROXY_URL or NEW_PROXY_KEY not configured');
+        return new Response(JSON.stringify({ error: 'Proxy not configured for QRC payments' }), {
+          status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
 
-      return new Response(JSON.stringify({
-        ...delegated.body,
-        amount: paymentAmount,
-        qr_info: qrcInfo,
-      }), {
-        status: delegated.status,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      const qrcIdempotencyKey = idempotency_key || `qrc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+      try {
+        const qrcResponse = await fetch(`${newProxyUrl}/pix/pagar-qrc`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-proxy-key': newProxyKey,
+            'x-idempotency-key': qrcIdempotencyKey,
+          },
+          body: JSON.stringify({
+            emv: qr_code,
+            valor: paymentAmount,
+            descricao: descricao || 'Pagamento via QR Code',
+          }),
+        });
+
+        const qrcText = await qrcResponse.text();
+        let qrcResult: any;
+        try { qrcResult = qrcText ? JSON.parse(qrcText) : {}; } catch { qrcResult = { raw: qrcText }; }
+
+        console.log('[pix-pay-qrc] QRC proxy response:', JSON.stringify({ status: qrcResponse.status, body: qrcResult }));
+
+        // Normalize nested data
+        const normalizedData = qrcResult?.data ?? qrcResult;
+
+        if (!qrcResponse.ok) {
+          console.warn('[pix-pay-qrc] QRC endpoint failed, falling back to pix-pay-dict');
+          // Fallback to dict
+          const resolvedCreditorDoc = creditor_document || qrcInfo?.creditor_document || '';
+          const delegated = await delegateQrToPixPayDict({
+            authHeader, companyId: company_id, qrCode: qr_code, paymentAmount,
+            descricao, idempotencyKey: idempotency_key, qrcInfo,
+            creditorDocument: resolvedCreditorDoc, priority, paymentFlow: payment_flow,
+          });
+          return new Response(JSON.stringify({ ...delegated.body, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }), {
+            status: delegated.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          });
+        }
+
+        // Success - create transaction in DB
+        const e2eid = normalizedData?.endToEndId || normalizedData?.e2eId || normalizedData?.e2eid || null;
+        const providerTxId = normalizedData?.id || normalizedData?.transactionId || null;
+        const providerStatus = normalizedData?.status || '';
+
+        const mappedStatus = ['LIQUIDATED', 'REALIZADO', 'CONFIRMED', 'COMPLETED'].includes(providerStatus?.toUpperCase?.())
+          ? 'completed' : 'pending';
+
+        const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
+          company_id, created_by: userId, amount: paymentAmount,
+          description: descricao || 'Pagamento via QR Code dinâmico',
+          pix_type: 'qrcode', pix_copia_cola: qr_code,
+          pix_txid: qrcInfo?.txid || null, pix_e2eid: e2eid,
+          external_id: providerTxId, beneficiary_name: qrcInfo?.merchant_name || null,
+          pix_key: qrcInfo?.pix_key || null,
+          status: mappedStatus, pix_provider_response: normalizedData,
+          paid_at: mappedStatus === 'completed' ? new Date().toISOString() : null,
+        }).select('id').single();
+
+        if (txError) console.error('[pix-pay-qrc] Transaction insert error:', txError);
+
+        return new Response(JSON.stringify({
+          success: true, transaction_id: transaction?.id || null,
+          amount: paymentAmount, qr_info: qrcInfo, provider_response: normalizedData,
+          status: mappedStatus,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      } catch (networkErr: any) {
+        console.error('[pix-pay-qrc] QRC proxy network error, falling back to dict:', networkErr.message);
+        const resolvedCreditorDoc = creditor_document || qrcInfo?.creditor_document || '';
+        const delegated = await delegateQrToPixPayDict({
+          authHeader, companyId: company_id, qrCode: qr_code, paymentAmount,
+          descricao, idempotencyKey: idempotency_key, qrcInfo,
+          creditorDocument: resolvedCreditorDoc, priority, paymentFlow: payment_flow,
+        });
+        return new Response(JSON.stringify({ ...delegated.body, amount: paymentAmount, qr_info: qrcInfo, fallback: 'dict' }), {
+          status: delegated.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
     }
 
     if (config.provider === 'onz') {
