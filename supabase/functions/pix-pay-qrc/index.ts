@@ -524,7 +524,7 @@ Deno.serve(async (req) => {
         if (destKey) {
           console.log('[pix-pay-qrc] Falling back to pix-pay-dict');
           const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
-            method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
             body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
           });
           const dictResult = await dictResponse.json();
