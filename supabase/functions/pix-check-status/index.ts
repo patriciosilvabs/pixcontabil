@@ -22,34 +22,6 @@ async function callNewProxy(path: string, method: string, body?: any) {
   return { status: resp.status, data };
 }
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
-  const proxyBody: any = { url, method, headers };
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
-  });
-  const data = await resp.json();
-  return { status: data.status || resp.status, data: data.data || data };
-}
-
-async function getOnzToken(companyId: string, authHeader: string): Promise<string> {
-  const resp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-    method: 'POST',
-    headers: {
-      'Authorization': authHeader,
-      'Content-Type': 'application/json',
-      'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
-    },
-    body: JSON.stringify({ company_id: companyId }),
-  });
-  if (!resp.ok) throw new Error('Failed to get ONZ token via pix-auth');
-  const { access_token } = await resp.json();
-  return access_token;
-}
 
 function parseIdsFromExternalId(externalId: string | null | undefined): { batchId: string | null; transferId: string | null; isOnz: boolean; onzId: string | null; e2eId: string | null } {
   const raw = String(externalId || '').trim();
@@ -179,15 +151,9 @@ Deno.serve(async (req) => {
       }
 
       if (isBoleto) {
-        // Boleto: use old proxy with direct ONZ API URL (GET /api/v2/billets/{id})
-        const onzToken = await getOnzToken(company_id!, authHeader);
-        const billetUrl = `${config.base_url}/api/v2/billets/${statusId}`;
-        console.log(`[pix-check-status] Boleto status check via old proxy: ${billetUrl}`);
-        const result = await callOnzViaProxy(billetUrl, 'GET', {
-          'Authorization': `Bearer ${onzToken}`,
-          'Content-Type': 'application/json',
-        });
-        console.log(`[pix-check-status] Old proxy response for billet ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+        // Boleto: use new proxy (GET /status/billet/{id} → ONZ GET /billets/{id})
+        const result = await callNewProxy(`/status/billet/${statusId}`, 'GET');
+        console.log(`[pix-check-status] New proxy response for billet ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
         if (result.status >= 400) {
           if (result.status === 404 && transaction_id) {
