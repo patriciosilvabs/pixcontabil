@@ -506,15 +506,47 @@ export default function ReceiptCapture() {
           </Card>
         )}
 
-        {/* Waiting for confirmation */}
+        {/* Waiting for confirmation — with recovery if status check keeps failing */}
         {!isLoadingStatus && !isTransactionCompleted && !isTransactionFinalFailed && (
-          <Card className="border-primary/30 bg-primary/5 mb-6">
+          <Card className={cn("mb-6", statusCheckFailed ? "border-amber-500/50 bg-amber-500/5" : "border-primary/30 bg-primary/5")}>
             <CardContent className="flex flex-col items-center gap-3 p-8">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="font-medium">Aguardando confirmação do pagamento</p>
-              <p className="text-sm text-muted-foreground text-center">
-                O comprovante só pode ser anexado após a confirmação oficial do pagamento pelo provedor.
-              </p>
+              {statusCheckFailed ? (
+                <>
+                  <AlertCircle className="h-8 w-8 text-amber-600" />
+                  <p className="font-medium">Não foi possível confirmar o pagamento</p>
+                  <p className="text-sm text-muted-foreground text-center">
+                    A consulta de status falhou {consecutiveFailures} vezes seguidas. O pagamento pode ter sido processado, mas o provedor não está respondendo.
+                  </p>
+                  <div className="flex gap-2 mt-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setStatusCheckFailed(false);
+                        setConsecutiveFailures(0);
+                        setIsLoadingStatus(true);
+                        // Re-trigger the effect by navigating to same page
+                        window.location.reload();
+                      }}
+                    >
+                      Tentar novamente
+                    </Button>
+                    <Button variant="ghost" onClick={() => navigate("/")}>
+                      Voltar ao Início
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  <p className="font-medium">Aguardando confirmação do pagamento</p>
+                  <p className="text-sm text-muted-foreground text-center">
+                    O comprovante só pode ser anexado após a confirmação oficial do pagamento pelo provedor.
+                  </p>
+                  <Button variant="ghost" size="sm" className="mt-2" onClick={() => navigate("/")}>
+                    Voltar ao Início
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         )}

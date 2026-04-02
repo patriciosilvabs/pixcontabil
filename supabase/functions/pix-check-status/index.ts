@@ -155,6 +155,35 @@ Deno.serve(async (req) => {
       console.log(`[pix-check-status] Proxy response for ${isBoleto ? 'billet' : 'pix'} id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {
+        // If provider returns 404, check if this is an old transaction that should be marked as failed
+        if (result.status === 404 && transaction_id) {
+          const { data: stuckTx } = await supabaseAdmin.from('transactions')
+            .select('status, created_at')
+            .eq('id', transaction_id)
+            .single();
+
+          if (stuckTx && stuckTx.status === 'pending') {
+            const txAge = Date.now() - new Date(stuckTx.created_at).getTime();
+            const TEN_MINUTES = 10 * 60 * 1000;
+
+            if (txAge > TEN_MINUTES) {
+              // Transaction is old and provider can't find it — mark as failed
+              await supabaseAdmin.from('transactions').update({
+                status: 'failed',
+                pix_provider_response: { provider_404: true, checked_at: new Date().toISOString(), raw: result.data },
+              }).eq('id', transaction_id);
+
+              console.log(`[pix-check-status] Marked old transaction ${transaction_id} as failed (provider 404, age ${Math.round(txAge/60000)}min)`);
+
+              return new Response(JSON.stringify({
+                success: true, status: 'NOT_FOUND', internal_status: 'failed',
+                is_completed: false, provider: 'onz',
+                payload: { status: 'NOT_FOUND', reason: 'Transação não localizada no provedor após período de processamento.' },
+              }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+            }
+          }
+        }
+
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
