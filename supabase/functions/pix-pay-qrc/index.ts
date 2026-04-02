@@ -117,24 +117,7 @@ Deno.serve(async (req) => {
       if (!destKey && !qr_code) return new Response(JSON.stringify({ error: 'Could not extract Pix key from QR Code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       if (config.provider === 'onz') {
-        // ONZ: send full EMV via /pix/payments/qrc even for static QR codes
-        // This preserves transaction context (txid, creditor info) that DICT loses
-        console.log('[pix-pay-qrc] Static QR + ONZ - sending full EMV via QRC endpoint');
-
-        const authResponse2 = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-          method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-          body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-        });
-        if (!authResponse2.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        const { access_token: staticToken } = await authResponse2.json();
-
-        const idempKey = generateIdempotencyKey();
-        const onzHeaders: Record<string, string> = {
-          'Authorization': `Bearer ${staticToken}`,
-          'Content-Type': 'application/json',
-          'x-idempotency-key': idempKey,
-        };
-        if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
+        console.log('[pix-pay-qrc] Static QR + ONZ - sending full EMV via new proxy QRC endpoint');
 
         const onzPayload = {
           qrCode: qr_code,
@@ -142,19 +125,7 @@ Deno.serve(async (req) => {
           description: descricao || 'Pagamento via QR Code',
         };
 
-        let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-
-        // Token retry
-        if (result.status === 401 || result.data?.type === 'onz-0018') {
-          console.log('[pix-pay-qrc] Static QR token rejected, retrying...');
-          const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-            method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-            body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-          });
-          const { access_token: newToken } = await retryAuth.json();
-          onzHeaders['Authorization'] = `Bearer ${newToken}`;
-          result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-        }
+        const result = await callNewProxy('/pix/payments/qrc', 'POST', onzPayload);
 
         // If QRC fails, fallback to DICT
         if (result.status >= 400) {
@@ -174,16 +145,17 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        // Success - save transaction
-        const paymentData = result.data;
+        // Unwrap proxy response
+        const rawData = result.data;
+        const paymentData = rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data) ? rawData.data : rawData;
         const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
         const onzId = paymentData.correlationID || paymentData.id || '';
         const externalId = `onz:${onzId}:${e2eId}`;
 
         console.log('[pix-pay-qrc] Static QR via QRC succeeded:', JSON.stringify(paymentData));
 
-        const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-        const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
+        const supabaseAdmin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+        const { data: transaction, error: txError } = await supabaseAdmin2.from('transactions').insert({
           company_id, created_by: userId, amount: paymentAmount,
           description: descricao || 'Pagamento via QR Code', pix_type: 'qrcode',
           pix_copia_cola: qr_code, pix_key: destKey,
