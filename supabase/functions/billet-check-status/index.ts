@@ -101,9 +101,13 @@ Deno.serve(async (req) => {
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      statusData = result.data;
+      const rawStatusData = result.data;
+      statusData = rawStatusData?.data && typeof rawStatusData.data === 'object' && !Array.isArray(rawStatusData.data)
+        ? rawStatusData.data
+        : rawStatusData;
 
-      const rawStatus = String(statusData.status || '').toUpperCase();
+      const isStatusEnvelope = statusData !== rawStatusData;
+      const rawStatus = String(statusData?.status || statusData?.operationStatus || rawStatusData?.status || rawStatusData?.operationStatus || '').toUpperCase();
       const statusMap: Record<string, string> = {
         'LIQUIDATED': 'completed',
         'PAID': 'completed',
@@ -115,6 +119,13 @@ Deno.serve(async (req) => {
         'REFUNDED': 'refunded',
       };
       internalStatus = statusMap[rawStatus] || 'pending';
+
+      console.log('[billet-check-status] Billet reconciliation:', JSON.stringify({
+        enveloped: isStatusEnvelope,
+        provider_status: rawStatus || null,
+        internal_status: internalStatus,
+        transaction_id: transaction_id ?? null,
+      }));
 
     } else {
       // ========== TRANSFEERA (unchanged) ==========
@@ -162,7 +173,7 @@ Deno.serve(async (req) => {
     return new Response(JSON.stringify({
       success: true,
       billet_id: billetExternalId,
-      status: statusData.status,
+      status: statusData?.status || statusData?.operationStatus || null,
       internal_status: internalStatus,
       is_completed: internalStatus === 'completed',
       provider: config.provider,

@@ -379,7 +379,7 @@ export default function NewPayment() {
         });
 
         if (result) {
-          startBilletPolling(result.external_id?.toString() || result.transaction_id);
+          startBilletPolling(result.transaction_id);
           navigate(`/pix/receipt/${result.transaction_id}`);
         }
       } else if (pixData.type === 'key') {

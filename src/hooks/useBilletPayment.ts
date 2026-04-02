@@ -186,6 +186,7 @@ export function useBilletPayment() {
 
     try {
       const body: any = { company_id: currentCompany.id };
+      const functionName = isTransactionId ? 'pix-check-status' : 'billet-check-status';
 
       if (isTransactionId) {
         body.transaction_id = billetIdOrTransactionId;
@@ -193,7 +194,7 @@ export function useBilletPayment() {
         body.billet_id = billetIdOrTransactionId;
       }
 
-      const { data, error } = await supabase.functions.invoke('billet-check-status', {
+      const { data, error } = await supabase.functions.invoke(functionName, {
         body,
       });
 
@@ -212,16 +213,16 @@ export function useBilletPayment() {
     }
   }, [currentCompany, session]);
 
-  const startPolling = useCallback((billetId: string, intervalMs = 5000, maxAttempts = 60) => {
+  const startPolling = useCallback((transactionId: string, intervalMs = 5000, maxAttempts = 60) => {
     let attempts = 0;
 
     const poll = async () => {
       attempts++;
       console.log(`[useBilletPayment] Polling attempt ${attempts}/${maxAttempts}`);
 
-      const status = await checkBilletStatus(billetId);
+      const status = await checkBilletStatus(transactionId, true);
 
-      if (status?.is_completed) {
+      if (status?.is_completed || status?.internal_status === 'completed') {
         console.log('[useBilletPayment] Billet payment confirmed!');
         stopPolling();
         toast({
@@ -231,7 +232,13 @@ export function useBilletPayment() {
         return;
       }
 
-      if (status?.status === 'CANCELED' || status?.status === 'FAILED') {
+      if (
+        status?.internal_status === 'failed' ||
+        status?.internal_status === 'cancelled' ||
+        status?.status === 'CANCELED' ||
+        status?.status === 'FAILED' ||
+        status?.status === 'NOT_FOUND'
+      ) {
         console.log('[useBilletPayment] Billet payment failed/cancelled');
         stopPolling();
         toast({
