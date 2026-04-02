@@ -180,6 +180,14 @@ Deno.serve(async (req) => {
                   payload: { status: 'NOT_FOUND', reason: 'Transação não localizada no provedor após período de processamento.' },
                 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
               }
+
+              // Billet is young and provider returns 404 — still processing (ON_QUEUE)
+              console.log(`[pix-check-status] Billet ${statusId} not yet available at provider (404), age ${Math.round(txAge/60000)}min — returning PROCESSING`);
+              return new Response(JSON.stringify({
+                success: true, status: 'PROCESSING', internal_status: 'pending',
+                is_completed: false, provider: 'onz',
+                payload: { status: 'PROCESSING', reason: 'Boleto em fila de processamento. Aguarde.' },
+              }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
             }
           }
 
