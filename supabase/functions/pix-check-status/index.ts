@@ -151,15 +151,9 @@ Deno.serve(async (req) => {
       }
 
       if (isBoleto) {
-        // Boleto: use old proxy with direct ONZ API URL (GET /api/v2/billets/{id})
-        const onzToken = await getOnzToken(company_id!, authHeader);
-        const billetUrl = `${config.base_url}/api/v2/billets/${statusId}`;
-        console.log(`[pix-check-status] Boleto status check via old proxy: ${billetUrl}`);
-        const result = await callOnzViaProxy(billetUrl, 'GET', {
-          'Authorization': `Bearer ${onzToken}`,
-          'Content-Type': 'application/json',
-        });
-        console.log(`[pix-check-status] Old proxy response for billet ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+        // Boleto: use new proxy (GET /status/billet/{id} → ONZ GET /billets/{id})
+        const result = await callNewProxy(`/status/billet/${statusId}`, 'GET');
+        console.log(`[pix-check-status] New proxy response for billet ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
         if (result.status >= 400) {
           if (result.status === 404 && transaction_id) {
