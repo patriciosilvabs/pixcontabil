@@ -39,7 +39,7 @@ async function delegateQrToPixPayDict({
 
   const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
     method: 'POST',
-    headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
     body: JSON.stringify({
       company_id: companyId,
       pix_key: destKey,
@@ -327,7 +327,7 @@ Deno.serve(async (req) => {
 
     // Decode QR code info locally
     const qrcInfoResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-qrc-info`, {
-      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
       body: JSON.stringify({ company_id, qr_code }),
     });
     if (!qrcInfoResponse.ok) {
