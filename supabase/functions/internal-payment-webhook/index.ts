@@ -174,7 +174,7 @@ async function handlePaymentFailed(supabase: any, event: any) {
   const { data: txns } = await supabase
     .from("transactions")
     .select("id, status")
-    .or(`pix_txid.eq.${txid},external_id.eq.${txid}`)
+    .or(`pix_txid.eq.${txid},external_id.eq.${txid},external_id.ilike.%${txid}%`)
     .limit(1);
 
   const tx = txns?.[0];

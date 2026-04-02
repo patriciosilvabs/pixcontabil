@@ -111,7 +111,7 @@ function mapTransfeeraEventType(object: string, status: string): string {
 
 function mapOnzStatus(status: string): string {
   const m: Record<string, string> = {
-    'LIQUIDATED': 'completed', 'PROCESSING': 'pending', 'CREATED': 'pending',
+    'LIQUIDATED': 'completed', 'PAID': 'completed', 'PROCESSING': 'pending', 'CREATED': 'pending',
     'SCHEDULED': 'pending', 'CANCELED': 'failed', 'FAILED': 'failed', 'REFUNDED': 'refunded',
   };
   return m[status] || 'pending';
