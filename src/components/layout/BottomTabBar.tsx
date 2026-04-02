@@ -3,6 +3,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Home, LayoutGrid, ArrowLeftRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 const allTabs = [
   { name: "Menu", href: "/menu", icon: LayoutGrid, position: "left" },
@@ -13,7 +14,10 @@ const allTabs = [
 export const BottomTabBar = React.memo(function BottomTabBar() {
   const { hasPageAccess } = useAuth();
   const location = useLocation();
+  const isKeyboardVisible = useKeyboardVisible();
   const tabs = allTabs.filter(t => !t.pageKey || hasPageAccess(t.pageKey));
+
+  if (isKeyboardVisible) return null;
   const isActive = (href: string) => {
     if (href === "/") return location.pathname === "/";
     return location.pathname.startsWith(href);
