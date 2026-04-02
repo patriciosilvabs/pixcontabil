@@ -71,7 +71,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
     }
   }, []);
 
-  const stuckTransactions = pendingReceipts.filter(p => p.status === "pending");
+  // stuckTransactions now comes directly from usePendingReceipts
 
   const handleSyncStuck = async () => {
     if (stuckTransactions.length === 0) return;
