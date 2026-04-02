@@ -211,7 +211,11 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: errorMsg, provider_error: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      paymentData = result.data;
+      // Proxy may wrap response in { data: { ... } } — unwrap if needed
+      const rawPaymentData = result.data;
+      paymentData = rawPaymentData?.data && typeof rawPaymentData.data === 'object' && !Array.isArray(rawPaymentData.data)
+        ? rawPaymentData.data
+        : rawPaymentData;
       const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
       const onzId = paymentData.correlationID || paymentData.id || '';
       externalId = `onz:${onzId}:${e2eId}`;
