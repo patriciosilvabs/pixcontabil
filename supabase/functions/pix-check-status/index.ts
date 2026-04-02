@@ -203,8 +203,8 @@ Deno.serve(async (req) => {
           billetData?.status || billetData?.operationStatus || rawBilletData?.status || rawBilletData?.operationStatus || ''
         ).toUpperCase();
         const billetStatusMap: Record<string, string> = {
-          'LIQUIDATED': 'completed', 'PAID': 'completed',
-          'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending',
+          'LIQUIDATED': 'completed', 'PAID': 'completed', 'COMPLETED': 'completed',
+          'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending', 'ON_QUEUE': 'pending',
           'CANCELED': 'failed', 'FAILED': 'failed',
           'REFUNDED': 'refunded',
         };

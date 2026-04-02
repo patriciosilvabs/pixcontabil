@@ -168,8 +168,9 @@ Deno.serve(async (req) => {
         console.log(`[billet-consult] ONZ APPROVAL_REQUIRED request via new proxy for: ${digitableCode}`);
 
         const result = await callNewProxy('/billets/pagar', 'POST', {
-          digitableCode: digitableCode,
-          description: 'Consulta de boleto',
+          linhaDigitavel: digitableCode,
+          valor: parsed.amount || 0,
+          descricao: 'Consulta de boleto',
           paymentFlow: 'APPROVAL_REQUIRED',
         });
 
