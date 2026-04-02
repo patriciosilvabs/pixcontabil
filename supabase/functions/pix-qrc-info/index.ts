@@ -178,6 +178,9 @@ Deno.serve(async (req) => {
       ? (pixUrl.startsWith('http') ? pixUrl : `https://${pixUrl}`)
       : null;
 
+    // Extract devedor (debtor/creditor) document from COBV payload if available
+    const devedorDocument = cobPayload?.devedor?.cpf || cobPayload?.devedor?.cnpj || null;
+
     return new Response(
       JSON.stringify({
         success: true,
@@ -190,6 +193,7 @@ Deno.serve(async (req) => {
         txid: txid,
         end_to_end_id: null,
         payload_url: payloadUrl,
+        creditor_document: devedorDocument,
         payload: cobPayload || emvTags,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
