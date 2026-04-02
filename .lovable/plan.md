@@ -1,43 +1,86 @@
 
 
-## Correção: Confirmação automática de boletos via webhook
+## Auditoria: Chamadas diretas à API ONZ vs Novo Proxy
 
-### Problema
-Boletos pagos não estão sendo confirmados automaticamente. Três falhas identificadas:
+### Resultado da auditoria
 
-### 1. Status `PAID` não reconhecido no Gateway
-Em `pix-webhook-gateway/index.ts`, as funções `mapOnzEventType` (linha 93) e `mapOnzStatus` (linha 112) não incluem o status `PAID`, que a ONZ pode retornar para boletos liquidados. Resultado: o evento é normalizado como `payment.updated` com status `pending` em vez de `payment.confirmed` com status `completed`.
+Busquei em todas as Edge Functions por dois padrões:
+1. **`callNewProxy`** (NEW_PROXY_URL) — padrão correto, proxy dedicado na VPS
+2. **`callOnzViaProxy`** (ONZ_PROXY_URL) — padrão legado, proxy antigo
 
-**Correção**: Adicionar `PAID` nos dois mapeamentos.
+### Funções já migradas para o Novo Proxy (OK)
 
-### 2. Busca por ID com prefixo `onz:` no webhook interno
-Em `internal-payment-webhook/index.ts`, a função `handlePaymentConfirmed` (linha 121) usa comparação estrita:
+| Função | Endpoint do proxy usado |
+|--------|------------------------|
+| `pix-balance` | `/saldo` |
+| `pix-pay-dict` | `/pix/pagar` |
+| `pix-pay-qrc` | `/pix/pagar-qrc` |
+| `pix-check-status` | `/status/pix/:id`, `/status/billet/:id` |
+| `pix-receipt` | `/recibo/pix/:id` |
+| `billet-pay` | `/billets/pagar` |
+| `billet-check-status` | `/status/billet/:id` |
+| `billet-receipt` | `/recibo/billet/:id` |
+| `batch-pay` | `/pix/pagar`, `/billets/pagar` |
+
+### Funções ainda usando o proxy LEGADO (`callOnzViaProxy` + `ONZ_PROXY_URL`)
+
+| Função | O que faz com ONZ | Impacto em boletos? |
+|--------|-------------------|---------------------|
+| **`billet-consult`** | Consulta boleto via `APPROVAL_REQUIRED` | **SIM — diretamente** |
+| `pix-auth` | Obtém token OAuth da ONZ | Indireto (usado por `billet-consult`) |
+| `pix-refund` | Estorna Pix | Não (Pix, não boleto) |
+| `pix-dict-lookup` | Tem função mas não chama ONZ para lookup | Não |
+| `pix-pay-qrc` | Tem `callOnzViaProxy` como fallback legado | Não (já usa novo proxy) |
+| `register-transfeera-webhook` | Registro de webhook ONZ | Não |
+
+### Plano de correção (APENAS boletos)
+
+Conforme a instrução do usuário, **não alterar nada que já funciona** (Pix, QR Code, etc).
+
+#### Arquivo: `supabase/functions/billet-consult/index.ts`
+
+**Problema**: A consulta de boletos ONZ (linhas 186-195) usa `callOnzViaProxy` para chamar `${config.base_url}/api/v2/billets/payments` com `APPROVAL_REQUIRED`. Isso passa pelo proxy legado, que por sua vez tenta acessar a API ONZ. O novo proxy na VPS já gerencia mTLS e OAuth internamente.
+
+**Correção**:
+1. Substituir `callOnzViaProxy` por `callNewProxy` (usando `NEW_PROXY_URL` + `x-proxy-key`)
+2. Chamar `/billets/pagar` no novo proxy com o payload `paymentFlow: APPROVAL_REQUIRED`
+3. Remover a chamada desnecessária para `pix-auth` no fluxo ONZ (o novo proxy gerencia OAuth internamente)
+4. Manter o fluxo Transfeera 100% inalterado
+
+**Antes**:
+```typescript
+// Obtém token via pix-auth
+const authResponse = await fetch('.../pix-auth', ...);
+const { access_token } = await authResponse.json();
+// Chama ONZ via proxy legado
+const result = await callOnzViaProxy(
+  `${config.base_url}/api/v2/billets/payments`, 'POST',
+  { 'Authorization': `Bearer ${access_token}`, ... },
+  JSON.stringify({ digitableCode, paymentFlow: 'APPROVAL_REQUIRED' })
+);
 ```
-query.or(`pix_txid.eq.${txid},external_id.eq.${txid}`)
-```
-Mas o `external_id` é salvo como `onz:<id>` (ex: `onz:abc123`), enquanto o webhook envia apenas `abc123`. A busca nunca encontra a transação.
 
-**Correção**: Usar `ilike` com wildcard para `external_id`, igual ao que já é feito no gateway (linha 153):
+**Depois**:
+```typescript
+// Chama novo proxy diretamente (auth gerenciada pelo proxy)
+const result = await callNewProxy('/billets/pagar', 'POST', {
+  digitableCode: digitableCode,
+  description: 'Consulta de boleto',
+  paymentFlow: 'APPROVAL_REQUIRED',
+});
 ```
-external_id.ilike.%${txid}%
-```
-Aplicar a mesma correção em `handlePaymentFailed` (linha 177).
-
-### 3. Status `PAID` também ausente no `COMPLETED` check do gateway
-A função `mapOnzEventType` linha 96 verifica `LIQUIDATED` e `COMPLETED` mas não `PAID`. Mesma lacuna no `mapOnzStatus`.
-
-### Arquivos alterados (APENAS boleto-related)
-- **`supabase/functions/pix-webhook-gateway/index.ts`** — Adicionar `PAID` nos mapeamentos `mapOnzEventType` e `mapOnzStatus`
-- **`supabase/functions/internal-payment-webhook/index.ts`** — Usar `ilike` com wildcard na busca por `external_id` em `handlePaymentConfirmed` e `handlePaymentFailed`
 
 ### O que NÃO será alterado
-- Nenhuma função de Pix (pix-pay-qrc, pix-pay-dict, etc.)
-- Nenhuma função de QR Code
+- `pix-auth` (usado por outras funções Pix que já funcionam)
+- `pix-refund` (Pix, não boleto)
+- `pix-dict-lookup` (Pix, não boleto)
+- `pix-pay-qrc` (Pix QR, já usa novo proxy)
+- `register-transfeera-webhook` (Transfeera, não ONZ boleto)
+- `generate-pix-receipt` (não faz chamadas externas)
 - Nenhum arquivo frontend
-- Nenhuma tabela ou política RLS
 
 ### Resultado esperado
-- Webhook com status `PAID` será reconhecido como `completed`
-- Busca por transaction_id encontrará boletos salvos com prefixo `onz:`
-- Confirmação automática + geração de comprovante funcionarão para boletos
+- Consulta de boletos ONZ passa pelo novo proxy (mTLS + OAuth automáticos)
+- Eliminação de erros por tokens expirados ou certificados ausentes na consulta
+- Todo o fluxo de boletos (consulta → pagamento → status → recibo) usa o novo proxy
 
