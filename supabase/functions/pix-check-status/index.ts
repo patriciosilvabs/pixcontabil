@@ -163,12 +163,19 @@ Deno.serve(async (req) => {
         ? rawStatusData.data
         : rawStatusData;
       const rawStatus = String(statusData.status || '').toUpperCase();
-      const statusMap: Record<string, string> = {
+      const pixStatusMap: Record<string, string> = {
         'LIQUIDATED': 'completed', 'REALIZADO': 'completed', 'CONFIRMED': 'completed',
         'PROCESSING': 'pending', 'EM_PROCESSAMENTO': 'pending', 'ACTIVE': 'pending',
         'CANCELED': 'failed', 'NAO_REALIZADO': 'failed',
         'REFUNDED': 'refunded', 'PARTIALLY_REFUNDED': 'refunded',
       };
+      const billetStatusMap: Record<string, string> = {
+        'LIQUIDATED': 'completed', 'PAID': 'completed',
+        'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending',
+        'CANCELED': 'failed', 'FAILED': 'failed',
+        'REFUNDED': 'refunded',
+      };
+      const statusMap = isBoleto ? billetStatusMap : pixStatusMap;
       let internalStatus = statusMap[rawStatus] || 'pending';
 
       if (transaction_id) {
