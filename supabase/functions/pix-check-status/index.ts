@@ -71,6 +71,7 @@ Deno.serve(async (req) => {
     let company_id = url.searchParams.get('company_id');
     let transfer_id = url.searchParams.get('transfer_id');
     let batch_id = url.searchParams.get('batch_id');
+    let end_to_end_id: string | null = url.searchParams.get('end_to_end_id');
     let transactionExternalId: string | null = null;
     let transactionE2eId: string | null = null;
 
@@ -80,6 +81,30 @@ Deno.serve(async (req) => {
       company_id = company_id || body.company_id;
       transfer_id = transfer_id || body.transfer_id;
       batch_id = batch_id || body.batch_id;
+      end_to_end_id = end_to_end_id || body.end_to_end_id;
+    }
+
+    // If we only have end_to_end_id (no transaction_id), look up transaction by pix_e2eid
+    if (!transaction_id && end_to_end_id && company_id) {
+      const supabaseAdmin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+      const { data: txByE2e } = await supabaseAdmin2.from('transactions')
+        .select('id, company_id, external_id, pix_e2eid')
+        .eq('pix_e2eid', end_to_end_id)
+        .eq('company_id', company_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (txByE2e) {
+        transaction_id = txByE2e.id;
+        transactionExternalId = txByE2e.external_id || null;
+        transactionE2eId = txByE2e.pix_e2eid || null;
+        const parsedIds = parseIdsFromExternalId(txByE2e.external_id);
+        batch_id = batch_id || parsedIds.batchId;
+        transfer_id = transfer_id || parsedIds.transferId;
+      } else {
+        // No transaction found yet — use e2eId directly for proxy query
+        transactionE2eId = end_to_end_id;
+      }
     }
 
     if (transaction_id && (!company_id || !transfer_id || !batch_id)) {
