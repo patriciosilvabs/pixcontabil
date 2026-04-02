@@ -84,6 +84,65 @@ interface ReceiptResult {
   content_type: string;
 }
 
+const stringifyFunctionError = (value: unknown): string => {
+  if (value == null) return "";
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "";
+
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        return stringifyFunctionError(JSON.parse(trimmed));
+      } catch {
+        return trimmed;
+      }
+    }
+
+    return trimmed;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyFunctionError(item)).filter(Boolean).join("; ");
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return (
+      stringifyFunctionError(record.message) ||
+      stringifyFunctionError(record.error) ||
+      stringifyFunctionError(record.details) ||
+      stringifyFunctionError(record.hint) ||
+      JSON.stringify(value)
+    );
+  }
+
+  return String(value);
+};
+
+const extractFunctionErrorMessage = async (error: any, fallback: string): Promise<string> => {
+  try {
+    if (error?.context && typeof error.context === "object") {
+      const response = error.context as Response;
+      if (typeof response.clone === "function") {
+        const body = await response.clone().json().catch(() => null);
+        const detailedMessage = [
+          stringifyFunctionError(body?.error),
+          stringifyFunctionError(body?.details),
+          stringifyFunctionError(body?.provider_error),
+          stringifyFunctionError(body?.hint),
+        ].filter(Boolean)[0];
+
+        if (detailedMessage) return detailedMessage;
+      }
+    }
+  } catch {
+    // ignore parsing failures and fall back below
+  }
+
+  return stringifyFunctionError(error?.message) || fallback;
+};
+
 export function usePixPayment() {
   const { currentCompany, session } = useAuth();
   const { toast } = useToast();
@@ -395,9 +454,16 @@ export function usePixPayment() {
         body,
       });
 
-      if (error || !data.success) {
-        console.error('[usePixPayment] Check status error:', error || data.error);
-        return null;
+      if (error) {
+        const message = await extractFunctionErrorMessage(error, "Não foi possível consultar o status do pagamento.");
+        console.error('[usePixPayment] Check status error:', message, error);
+        throw new Error(message);
+      }
+
+      if (!data?.success) {
+        const message = stringifyFunctionError(data?.error) || stringifyFunctionError(data?.details) || "Não foi possível consultar o status do pagamento.";
+        console.error('[usePixPayment] Check status error:', message, data);
+        throw new Error(message);
       }
 
       setPaymentStatus(data);
@@ -405,7 +471,7 @@ export function usePixPayment() {
 
     } catch (error: any) {
       console.error('[usePixPayment] Check status exception:', error);
-      return null;
+      throw error instanceof Error ? error : new Error("Falha na comunicação com o servidor.");
     } finally {
       setIsChecking(false);
     }
@@ -419,7 +485,17 @@ export function usePixPayment() {
       attempts++;
       console.log(`[usePixPayment] Polling attempt ${attempts}/${maxAttempts}`);
 
-      const status = await checkStatus(endToEndId);
+      let status: PaymentStatus | null = null;
+
+      try {
+        status = await checkStatus(endToEndId);
+      } catch (error) {
+        console.error('[usePixPayment] Polling status error:', error);
+        if (attempts >= maxAttempts) {
+          stopPolling();
+        }
+        return;
+      }
 
       if (status?.is_completed || status?.is_liquidated || status?.internal_status === 'completed') {
         console.log('[usePixPayment] Payment confirmed!');

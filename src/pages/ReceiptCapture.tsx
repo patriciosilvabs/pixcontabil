@@ -58,8 +58,10 @@ export default function ReceiptCapture() {
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [statusCheckFailed, setStatusCheckFailed] = useState(false);
+  const [statusErrorMessage, setStatusErrorMessage] = useState<string | null>(null);
   const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
+  const [retryTick, setRetryTick] = useState(0);
   const [transactionInfo, setTransactionInfo] = useState<{
     beneficiary_name: string | null;
     amount: number | null;
@@ -77,6 +79,7 @@ export default function ReceiptCapture() {
     const MAX_FAILURES = 5;
     setIsLoadingStatus(true);
     setStatusCheckFailed(false);
+    setStatusErrorMessage(null);
     setConsecutiveFailures(0);
 
     const loadTransactionStatus = async (syncWithProvider = false) => {
@@ -123,7 +126,11 @@ export default function ReceiptCapture() {
           }
           // Reset failure count on success
           failureCount = 0;
-          if (isMounted) setConsecutiveFailures(0);
+          if (isMounted) {
+            setConsecutiveFailures(0);
+            setStatusErrorMessage(null);
+            setStatusCheckFailed(false);
+          }
 
           setIsLoadingStatus(false);
           return syncedStatus;
@@ -131,6 +138,7 @@ export default function ReceiptCapture() {
           console.error('[ReceiptCapture] Provider sync error:', err);
           failureCount++;
           if (isMounted) {
+            setStatusErrorMessage(err instanceof Error ? err.message : "Não foi possível consultar o status do pagamento.");
             setConsecutiveFailures(failureCount);
             if (failureCount >= MAX_FAILURES) {
               setStatusCheckFailed(true);
@@ -167,7 +175,7 @@ export default function ReceiptCapture() {
       isMounted = false;
       clearInterval(interval);
     };
-  }, [transactionId, currentCompany?.id, checkStatus]);
+  }, [transactionId, currentCompany?.id, checkStatus, retryTick]);
 
   useEffect(() => {
     if (!currentCompany) return;
@@ -508,24 +516,24 @@ export default function ReceiptCapture() {
 
         {/* Waiting for confirmation — with recovery if status check keeps failing */}
         {!isLoadingStatus && !isTransactionCompleted && !isTransactionFinalFailed && (
-          <Card className={cn("mb-6", statusCheckFailed ? "border-amber-500/50 bg-amber-500/5" : "border-primary/30 bg-primary/5")}>
+          <Card className={cn("mb-6", statusCheckFailed ? "border-warning/50 bg-warning/5" : "border-primary/30 bg-primary/5")}>
             <CardContent className="flex flex-col items-center gap-3 p-8">
               {statusCheckFailed ? (
                 <>
-                  <AlertCircle className="h-8 w-8 text-amber-600" />
+                  <AlertCircle className="h-8 w-8 text-warning" />
                   <p className="font-medium">Não foi possível confirmar o pagamento</p>
                   <p className="text-sm text-muted-foreground text-center">
-                    A consulta de status falhou {consecutiveFailures} vezes seguidas. O pagamento pode ter sido processado, mas o provedor não está respondendo.
+                    {statusErrorMessage || `A consulta de status falhou ${consecutiveFailures} vezes seguidas. O pagamento pode ter sido processado, mas o provedor não respondeu como esperado.`}
                   </p>
                   <div className="flex gap-2 mt-2">
                     <Button
                       variant="outline"
                       onClick={() => {
                         setStatusCheckFailed(false);
+                        setStatusErrorMessage(null);
                         setConsecutiveFailures(0);
                         setIsLoadingStatus(true);
-                        // Re-trigger the effect by navigating to same page
-                        window.location.reload();
+                        setRetryTick((current) => current + 1);
                       }}
                     >
                       Tentar novamente
