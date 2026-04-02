@@ -5,19 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
-  });
+async function callNewProxy(path: string, method: string, body?: Record<string, unknown>) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL');
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY');
+  if (!proxyUrl || !proxyKey) throw new Error('NEW_PROXY_URL and NEW_PROXY_KEY must be configured');
+  const opts: RequestInit = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-proxy-key': proxyKey },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(`${proxyUrl}${path}`, opts);
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data: data.data || data };
 }
 
 function toNumber(value: unknown): number | undefined {
@@ -166,50 +165,26 @@ Deno.serve(async (req) => {
       let onzInterestValue: number | undefined;
 
       try {
-        // Get auth token for ONZ
-        const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-          method: 'POST',
-          headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-          body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+        console.log(`[billet-consult] ONZ APPROVAL_REQUIRED request via new proxy for: ${digitableCode}`);
+
+        const result = await callNewProxy('/billets/pagar', 'POST', {
+          digitableCode: digitableCode,
+          description: 'Consulta de boleto',
+          paymentFlow: 'APPROVAL_REQUIRED',
         });
 
-        if (authResponse.ok) {
-          const { access_token } = await authResponse.json();
-          const onzBody = {
-            digitableCode: digitableCode,
-            description: 'Consulta de boleto',
-            paymentFlow: 'APPROVAL_REQUIRED',
-          };
+        console.log(`[billet-consult] ONZ APPROVAL_REQUIRED response status=${result.status}:`, JSON.stringify(result.data));
 
-          console.log(`[billet-consult] ONZ APPROVAL_REQUIRED request for: ${digitableCode}`);
-
-          const result = await callOnzViaProxy(
-            `${config.base_url}/api/v2/billets/payments`,
-            'POST',
-            {
-              'Authorization': `Bearer ${access_token}`,
-              'Content-Type': 'application/json',
-              'x-idempotency-key': crypto.randomUUID(),
-            },
-            JSON.stringify(onzBody),
-          );
-
-          console.log(`[billet-consult] ONZ APPROVAL_REQUIRED response status=${result.status}:`, JSON.stringify(result.data));
-
-          if (result.status < 400 && result.data) {
-            const d = result.data;
-            // ONZ returns amount with interest/fines calculated
-            onzAmount = toNumber(d.payment?.amount) || toNumber(d.amount);
-            onzRecipientName = d.creditor?.name || d.payment?.creditor?.name;
-            onzRecipientDocument = d.creditor?.document || d.payment?.creditor?.document;
-            onzDueDate = d.dueDate || d.payment?.dueDate;
-            
-            // Calculate interest/fine as difference between adjusted and original
-            if (onzAmount && parsed.amount > 0 && onzAmount > parsed.amount) {
-              const totalCharges = onzAmount - parsed.amount;
-              // ONZ doesn't separate fine vs interest, so we put it all as interest
-              onzInterestValue = Math.round(totalCharges * 100) / 100;
-            }
+        if (result.status < 400 && result.data) {
+          const d = result.data;
+          onzAmount = toNumber(d.payment?.amount) || toNumber(d.amount);
+          onzRecipientName = d.creditor?.name || d.payment?.creditor?.name;
+          onzRecipientDocument = d.creditor?.document || d.payment?.creditor?.document;
+          onzDueDate = d.dueDate || d.payment?.dueDate;
+          
+          if (onzAmount && parsed.amount > 0 && onzAmount > parsed.amount) {
+            const totalCharges = onzAmount - parsed.amount;
+            onzInterestValue = Math.round(totalCharges * 100) / 100;
           }
         }
       } catch (e) {
