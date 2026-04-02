@@ -195,13 +195,18 @@ Deno.serve(async (req) => {
         chavePix: normalizedPixKey,
         valor: amountValue,
         descricao: descricao || 'Pagamento Pix',
-        priority: paymentPriority,
       };
 
-      // creditorDocument is required by ONZ when priority=HIGH (proxy default)
+      // CRITICAL: ONZ requires creditorDocument when priority=HIGH.
+      // Only set HIGH when we actually have a document; otherwise always NORM.
       if (beneficiaryDocument) {
         pixPayload.creditorDocument = beneficiaryDocument;
+        pixPayload.priority = paymentPriority;
+      } else {
+        pixPayload.priority = 'NORM';
       }
+      
+      console.log(`[pix-pay-dict] priority=${pixPayload.priority}, hasDoc=${!!beneficiaryDocument}`);
 
       if (body?.payment_flow) {
         pixPayload.paymentFlow = body.payment_flow;
