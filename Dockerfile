@@ -1,4 +1,4 @@
-FROM node:20
+FROM node:20-alpine
 
 WORKDIR /app
 
@@ -9,7 +9,6 @@ COPY . .
 
 RUN npm run build
 
-# instala serve
 RUN npm install -g serve
 
 EXPOSE 3000
