@@ -5,19 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
-  });
+async function callNewProxy(path: string, method: string, body?: Record<string, unknown>) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL');
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY');
+  if (!proxyUrl || !proxyKey) throw new Error('NEW_PROXY_URL and NEW_PROXY_KEY must be configured');
+  const opts: RequestInit = {
+    method,
+    headers: { 'Content-Type': 'application/json', 'x-proxy-key': proxyKey },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(`${proxyUrl}${path}`, opts);
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data: data.data || data };
 }
 
 function toNumber(value: unknown): number | undefined {
