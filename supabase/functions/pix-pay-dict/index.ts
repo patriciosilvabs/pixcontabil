@@ -5,21 +5,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callNewProxy(path: string, method: string, body?: any) {
-  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
-  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
-  const headers: Record<string, string> = {
-    'x-proxy-key': proxyKey,
-    'Content-Type': 'application/json',
-  };
-  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
-  const resp = await fetch(`${proxyUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
+  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
+  const resp = await fetch('https://pixmobile.com.br/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+    body: JSON.stringify({ url, method, headers, body }),
   });
   const data = await resp.json();
-  return { status: resp.status, data };
+  return { status: resp.status, data: data.data || data };
 }
 
 function isValidCpf(cpf: string): boolean {
@@ -172,12 +166,17 @@ Deno.serve(async (req) => {
     let externalId: string;
 
     if (config.provider === 'onz') {
-      // ========== ONZ via novo proxy: POST /pix/pagar ==========
+      // ========== ONZ via pixmobile proxy ==========
+      // Get OAuth token
+      const tokenResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+      });
+      if (!tokenResponse.ok) return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { access_token } = await tokenResponse.json();
+
       console.log(`[pix-pay-dict] ONZ proxy: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      // Build payload for the dedicated proxy
-      // DO NOT send "priority" — the proxy/ONZ sets it internally.
-      // Always send creditorDocument when we can derive it (CPF/CNPJ key).
       const amountValue = Number(valor.toFixed(2));
       const beneficiaryDocument = body?.creditor_document
         ? String(body.creditor_document).replace(/\D/g, '')
@@ -186,21 +185,28 @@ Deno.serve(async (req) => {
             : '');
 
       const pixPayload: Record<string, any> = {
-        chavePix: normalizedPixKey,
-        valor: amountValue,
-        descricao: descricao || 'Pagamento Pix',
+        dictKey: normalizedPixKey,
+        amount: amountValue,
+        description: descricao || 'Pagamento Pix',
       };
 
-      // creditorDocument is required by ONZ when priority=HIGH (proxy default)
       if (beneficiaryDocument) {
         pixPayload.creditorDocument = beneficiaryDocument;
       }
 
       console.log('[pix-pay-dict] Sending to proxy:', JSON.stringify(pixPayload));
-      const result = await callNewProxy('/pix/pagar', 'POST', pixPayload);
+      const result = await callPixMobileProxy(
+        `${config.base_url}/api/v2/pix/payments/dict`,
+        'POST',
+        {
+          'Authorization': `Bearer ${access_token}`,
+          'Content-Type': 'application/json',
+          'x-idempotency-key': crypto.randomUUID(),
+        },
+        pixPayload,
+      );
 
       if (result.status >= 400) {
-        // Extract a string error message (detail can be an array of objects)
         let errorMsg = result.data?.title || result.data?.message || 'Failed to initiate Pix payment';
         if (Array.isArray(result.data?.detail)) {
           errorMsg = result.data.detail.map((d: any) => d?.message || d?.field || String(d)).join('; ');
@@ -211,7 +217,6 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: errorMsg, provider_error: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Proxy may wrap response in { data: { ... } } — unwrap if needed
       const rawPaymentData = result.data;
       paymentData = rawPaymentData?.data && typeof rawPaymentData.data === 'object' && !Array.isArray(rawPaymentData.data)
         ? rawPaymentData.data
