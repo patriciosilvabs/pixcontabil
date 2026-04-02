@@ -167,7 +167,25 @@ export function PaymentStatusScreen({
               </Button>
             ) : redirectToReceiptCapture ? (
               <>
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    onClick={handleShareReceipt}
+                    className="h-11 text-sm font-bold uppercase tracking-wider"
+                  >
+                    <Share2 className="mr-2 h-5 w-5" />
+                    Compartilhar
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveReceipt}
+                    className="h-11 text-sm font-bold uppercase tracking-wider"
+                  >
+                    <Download className="mr-2 h-5 w-5" />
+                    Salvar
+                  </Button>
+                </div>
                 <Button
+                  variant="secondary"
                   onClick={() => {
                     onClose();
                     navigate(`/pix/receipt/${transactionId}`);
