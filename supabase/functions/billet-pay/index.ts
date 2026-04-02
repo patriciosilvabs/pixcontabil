@@ -113,14 +113,10 @@ Deno.serve(async (req) => {
         descricao: descricao || 'Pagamento de boleto',
       });
 
-      if (result.status === 401) {
-        return new Response(JSON.stringify({ error: 'Falha de autenticação com o proxy' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
       if (result.status >= 400) {
+        const errorMsg = result.data?.detail || result.data?.message || 'Falha ao pagar boleto';
         console.error('[billet-pay] Proxy error:', JSON.stringify(result.data));
-        return new Response(JSON.stringify({ error: result.data?.message || 'Falha ao pagar boleto', provider_error: JSON.stringify(result.data) }),
+        return new Response(JSON.stringify({ error: errorMsg, provider_error: result.data }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
