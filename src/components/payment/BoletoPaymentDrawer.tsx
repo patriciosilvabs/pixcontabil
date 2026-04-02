@@ -8,6 +8,7 @@ import { ArrowLeft, Loader2, DollarSign, CheckCircle2, AlertTriangle, XCircle, C
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
 import { toast } from "sonner";
 import { useBilletPayment, BilletConsultResult } from "@/hooks/useBilletPayment";
+import { supabase } from "@/integrations/supabase/client";
 import { parseBoleto } from "@/utils/boletoParser";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 
@@ -21,7 +22,7 @@ type StatusState = "polling" | "completed" | "failed" | "timeout";
 
 export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPaymentDrawerProps) {
   const navigate = useNavigate();
-  const { payBillet, isProcessing, consultBillet, checkBilletStatus } = useBilletPayment();
+  const { payBillet, isProcessing, consultBillet } = useBilletPayment();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState<string | null>(null);
@@ -103,10 +104,12 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       pollAttemptsRef.current++;
 
       try {
-        const result = await checkBilletStatus(txId, true);
+        const { data: result, error } = await supabase.functions.invoke('pix-check-status', {
+          body: { transaction_id: txId },
+        });
         if (!mountedRef.current) return;
 
-        if (!result) {
+        if (error || !result) {
           if (pollAttemptsRef.current >= MAX_POLL_ATTEMPTS) {
             setStatusState("timeout");
             if (pollTimerRef.current) clearInterval(pollTimerRef.current);
@@ -123,7 +126,7 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
 
         if (result.internal_status === "failed") {
           setStatusState("failed");
-          setErrorMessage(result.error_code || "O pagamento do boleto foi recusado.");
+          setErrorMessage(result.error_code || result.error || "O pagamento do boleto foi recusado.");
           if (pollTimerRef.current) clearInterval(pollTimerRef.current);
           return;
         }
