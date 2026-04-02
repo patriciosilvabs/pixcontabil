@@ -59,7 +59,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const navigate = useNavigate();
   const { hasFeatureAccess } = useAuth();
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
-  const { pending: pendingReceipts, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
+  const { blockingReceipts, stuckTransactions, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
   const [isSyncing, setIsSyncing] = useState(false);
 
   // One-time toast for cutoff update
