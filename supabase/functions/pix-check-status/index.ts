@@ -107,12 +107,15 @@ Deno.serve(async (req) => {
       }
     }
 
+    let transactionPixType: string | null = null;
+
     if (transaction_id && (!company_id || !transfer_id || !batch_id)) {
-      const { data: txData } = await supabase.from('transactions').select('company_id, external_id, pix_e2eid').eq('id', transaction_id).single();
+      const { data: txData } = await supabase.from('transactions').select('company_id, external_id, pix_e2eid, pix_type').eq('id', transaction_id).single();
       if (txData) {
         company_id = company_id || txData.company_id;
         transactionExternalId = txData.external_id || null;
         transactionE2eId = txData.pix_e2eid || null;
+        transactionPixType = txData.pix_type || null;
         const parsedIds = parseIdsFromExternalId(txData.external_id);
         batch_id = batch_id || parsedIds.batchId;
         transfer_id = transfer_id || parsedIds.transferId;
