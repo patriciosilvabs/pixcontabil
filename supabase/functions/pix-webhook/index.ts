@@ -191,7 +191,7 @@ async function handleOnzWebhook(supabaseAdmin: any, type: string, data: any, ip_
         try {
           fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
             body: JSON.stringify({ transaction_id: transaction.id, company_id: transaction.company_id }),
           }).catch(e => console.error('[pix-webhook] Auto-receipt failed:', e));
         } catch (e) { console.error('[pix-webhook] Error triggering receipt:', e); }
