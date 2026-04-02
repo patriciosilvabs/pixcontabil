@@ -5,15 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
-  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
-  const resp = await fetch('https://pixmobile.com.br/proxy', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-    body: JSON.stringify({ url, method, headers, body }),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { status: resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 Deno.serve(async (req) => {
@@ -40,23 +46,8 @@ Deno.serve(async (req) => {
     }
 
     if (config.provider === 'onz') {
-      // ========== ONZ via pixmobile proxy ==========
-      // Get OAuth token first
-      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/functions/v1/pix-auth`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': authHeader, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-      });
-      if (!authResponse.ok) {
-        const authError = await authResponse.text();
-        return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor', details: authError }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      const { access_token } = await authResponse.json();
-
-      const balanceUrl = `${config.base_url}/api/v2/accounts/balances/`;
-      const result = await callPixMobileProxy(balanceUrl, 'GET', {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-      });
+      // ========== ONZ via novo proxy: GET /saldo ==========
+      const result = await callNewProxy('/saldo', 'GET');
       console.log(`[pix-balance] Proxy response: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {
@@ -64,16 +55,20 @@ Deno.serve(async (req) => {
         const isAuthError = result.data?.type === 'onz-0018' || result.status === 401;
         console.error(`[pix-balance] Proxy error (auth=${isAuthError}):`, JSON.stringify(result.data));
         return new Response(JSON.stringify({ 
-          error: isAuthError ? 'Token ONZ expirado. Tente novamente.' : errorMsg,
+          error: isAuthError ? 'Token ONZ expirado. O proxy precisa renovar o token OAuth.' : errorMsg,
           provider_error: result.data 
         }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const entries = result.data?.data || result.data;
+      console.log('[pix-balance] Proxy response:', JSON.stringify(result.data));
+
+      // Extract balance - proxy returns { data: [{ balanceAmount: { available: N } }] }
+      const entries = result.data?.data;
       let balance = 0;
       if (Array.isArray(entries) && entries.length > 0) {
         balance = Number(entries[0]?.balanceAmount?.available) || 0;
       } else {
+        // Fallback for flat response
         balance = Number(result.data?.balanceAmount?.available ?? result.data?.balance ?? result.data?.available ?? 0);
       }
 

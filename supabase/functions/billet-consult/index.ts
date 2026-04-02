@@ -5,12 +5,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
-  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
-  const resp = await fetch('https://pixmobile.com.br/proxy', {
+async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
+  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
+  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
+  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
+  const proxyBody: any = { url, method, headers };
+  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
+  const resp = await fetch(`${proxyUrl}/proxy`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
-    body: JSON.stringify({ url, method, headers, body }),
+    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
+    body: JSON.stringify(proxyBody),
   });
   const data = await resp.json();
   return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
@@ -54,42 +58,82 @@ function convertToLinhaDigitavel(code: string): string {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } });
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+      { global: { headers: { Authorization: authHeader } } }
+    );
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (authError || !user) {
+      return new Response(JSON.stringify({ error: 'Invalid token' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     const body = await req.json();
     const { company_id, codigo_barras } = body;
-    if (!company_id || !codigo_barras) return new Response(JSON.stringify({ error: 'company_id and codigo_barras are required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const { data: config } = await supabase.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).in('purpose', ['cash_out', 'both']).limit(1).maybeSingle();
-    if (!config) return new Response(JSON.stringify({ error: 'Configuração Pix não encontrada.' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!company_id || !codigo_barras) {
+      return new Response(JSON.stringify({ error: 'company_id and codigo_barras are required' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Get config
+    const { data: config } = await supabase
+      .from('pix_configs').select('*')
+      .eq('company_id', company_id).eq('is_active', true)
+      .in('purpose', ['cash_out', 'both']).limit(1).maybeSingle();
+
+    if (!config) {
+      return new Response(JSON.stringify({ error: 'Configuração Pix não encontrada.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     const cleanBarcode = codigo_barras.replace(/[\s.\-]/g, '');
     const digitableCode = convertToLinhaDigitavel(cleanBarcode);
 
     if (config.provider === 'onz') {
-      // ========== ONZ via pixmobile proxy ==========
-      const BASE_DATE = new Date(1997, 9, 7);
+      // ========== ONZ: Use APPROVAL_REQUIRED to get adjusted amount ==========
+      // ONZ does NOT have a dedicated consult endpoint.
+      // We use POST /billets/payments with paymentFlow: APPROVAL_REQUIRED
+      // to get the adjusted amount (with interest/fines) without executing payment.
+
+      const BASE_DATE = new Date(1997, 9, 7); // October 7, 1997
 
       function parseBarcodeInfo(code: string): { amount: number; dueDate: string | null; isConvenio: boolean } {
         const clean = code.replace(/[\s.\-]/g, '');
+        const len = clean.length;
+
         if (clean[0] === '8') {
           const valueId = clean[2];
           let amountCents = 0;
-          if (['6', '7', '8', '9'].includes(valueId)) amountCents = parseInt(clean.substring(4, 15), 10);
+          if (['6', '7', '8', '9'].includes(valueId)) {
+            amountCents = parseInt(clean.substring(4, 15), 10);
+          }
           return { amount: amountCents / 100, dueDate: null, isConvenio: true };
         }
 
         let barcode44 = clean;
-        if (clean.length === 47) {
-          barcode44 = clean.substring(0, 4) + clean[32] + clean.substring(33, 37) + clean.substring(37, 47) + clean.substring(4, 9) + clean.substring(10, 20) + clean.substring(21, 31);
+        if (len === 47) {
+          barcode44 =
+            clean.substring(0, 4) +
+            clean[32] +
+            clean.substring(33, 37) +
+            clean.substring(37, 47) +
+            clean.substring(4, 9) +
+            clean.substring(10, 20) +
+            clean.substring(21, 31);
         }
 
         if (barcode44.length === 44) {
@@ -103,6 +147,7 @@ Deno.serve(async (req) => {
           }
           return { amount: amountCents / 100, dueDate, isConvenio: false };
         }
+
         return { amount: 0, dueDate: null, isConvenio: false };
       }
 
@@ -112,13 +157,16 @@ Deno.serve(async (req) => {
 
       console.log(`[billet-consult] ONZ local parse: amount=${parsed.amount}, dueDate=${parsed.dueDate}, isOverdue=${isOverdue}`);
 
+      // Try to get adjusted amount from ONZ via APPROVAL_REQUIRED
       let onzAmount: number | undefined;
       let onzRecipientName: string | undefined;
       let onzRecipientDocument: string | undefined;
       let onzDueDate: string | undefined;
+      let onzFineValue: number | undefined;
       let onzInterestValue: number | undefined;
 
       try {
+        // Get auth token for ONZ
         const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
           method: 'POST',
           headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
@@ -135,7 +183,7 @@ Deno.serve(async (req) => {
 
           console.log(`[billet-consult] ONZ APPROVAL_REQUIRED request for: ${digitableCode}`);
 
-          const result = await callPixMobileProxy(
+          const result = await callOnzViaProxy(
             `${config.base_url}/api/v2/billets/payments`,
             'POST',
             {
@@ -143,19 +191,24 @@ Deno.serve(async (req) => {
               'Content-Type': 'application/json',
               'x-idempotency-key': crypto.randomUUID(),
             },
-            onzBody,
+            JSON.stringify(onzBody),
           );
 
           console.log(`[billet-consult] ONZ APPROVAL_REQUIRED response status=${result.status}:`, JSON.stringify(result.data));
 
           if (result.status < 400 && result.data) {
             const d = result.data;
+            // ONZ returns amount with interest/fines calculated
             onzAmount = toNumber(d.payment?.amount) || toNumber(d.amount);
             onzRecipientName = d.creditor?.name || d.payment?.creditor?.name;
             onzRecipientDocument = d.creditor?.document || d.payment?.creditor?.document;
             onzDueDate = d.dueDate || d.payment?.dueDate;
+            
+            // Calculate interest/fine as difference between adjusted and original
             if (onzAmount && parsed.amount > 0 && onzAmount > parsed.amount) {
-              onzInterestValue = Math.round((onzAmount - parsed.amount) * 100) / 100;
+              const totalCharges = onzAmount - parsed.amount;
+              // ONZ doesn't separate fine vs interest, so we put it all as interest
+              onzInterestValue = Math.round(totalCharges * 100) / 100;
             }
           }
         }
@@ -163,6 +216,7 @@ Deno.serve(async (req) => {
         console.warn(`[billet-consult] ONZ APPROVAL_REQUIRED failed, using local parse only:`, e.message);
       }
 
+      const finalAmount = onzAmount || (parsed.amount > 0 ? parsed.amount : undefined);
       const originalValue = parsed.amount > 0 ? parsed.amount : undefined;
 
       return new Response(JSON.stringify({
@@ -170,7 +224,7 @@ Deno.serve(async (req) => {
         value: originalValue,
         total_updated_value: onzAmount && originalValue && onzAmount !== originalValue ? onzAmount : undefined,
         due_date: onzDueDate || parsed.dueDate,
-        fine_value: undefined,
+        fine_value: onzFineValue,
         interest_value: onzInterestValue,
         discount_value: undefined,
         recipient_name: onzRecipientName,
@@ -184,16 +238,22 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     } else {
-      // ========== TRANSFEERA (unchanged) ==========
+      // ========== TRANSFEERA ==========
       const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
         method: 'POST',
-        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
         body: JSON.stringify({ company_id, purpose: 'cash_out' }),
       });
-      if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      if (!authResponse.ok) {
+        return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
       const { access_token } = await authResponse.json();
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
+
+      console.log(`[billet-consult] Consulting billet: ${cleanBarcode}`);
 
       const consultResponse = await fetch(`${apiBase}/billet/consult?code=${encodeURIComponent(cleanBarcode)}`, {
         method: 'GET',
@@ -202,23 +262,34 @@ Deno.serve(async (req) => {
 
       if (!consultResponse.ok) {
         const errText = await consultResponse.text();
-        return new Response(JSON.stringify({ error: 'Falha ao consultar boleto', details: errText }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        console.error('[billet-consult] Consult failed:', errText);
+        return new Response(JSON.stringify({ error: 'Falha ao consultar boleto', details: errText }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       const billetInfo = await consultResponse.json();
       const paymentInfo = billetInfo?.payment_info ?? {};
       const barcodeDetails = billetInfo?.barcode_details ?? {};
 
+      const originalValue = toNumber(paymentInfo.original_value ?? barcodeDetails.value ?? billetInfo?.value);
+      const updatedValue = toNumber(paymentInfo.total_updated_value ?? billetInfo?.total_updated_value ?? originalValue);
+      const fineValue = toNumber(paymentInfo.fine_value ?? billetInfo?.fine_value);
+      const interestValue = toNumber(paymentInfo.interest_value ?? billetInfo?.interest_value);
+      const discountValue = toNumber(paymentInfo.total_discount_value ?? paymentInfo.discount_value ?? billetInfo?.discount_value);
+      const dueDate = paymentInfo.due_date ?? barcodeDetails.due_date ?? billetInfo?.due_date;
+      const recipientName = paymentInfo.recipient_name ?? billetInfo?.recipient_name;
+      const recipientDocument = paymentInfo.recipient_document ?? billetInfo?.recipient_document;
+
       return new Response(JSON.stringify({
         success: true,
-        value: toNumber(paymentInfo.original_value ?? barcodeDetails.value ?? billetInfo?.value),
-        total_updated_value: toNumber(paymentInfo.total_updated_value ?? billetInfo?.total_updated_value),
-        due_date: paymentInfo.due_date ?? barcodeDetails.due_date ?? billetInfo?.due_date,
-        fine_value: toNumber(paymentInfo.fine_value ?? billetInfo?.fine_value),
-        interest_value: toNumber(paymentInfo.interest_value ?? billetInfo?.interest_value),
-        discount_value: toNumber(paymentInfo.total_discount_value ?? paymentInfo.discount_value ?? billetInfo?.discount_value),
-        recipient_name: paymentInfo.recipient_name ?? billetInfo?.recipient_name,
-        recipient_document: paymentInfo.recipient_document ?? billetInfo?.recipient_document,
+        value: originalValue,
+        total_updated_value: updatedValue,
+        due_date: dueDate,
+        fine_value: fineValue,
+        interest_value: interestValue,
+        discount_value: discountValue,
+        recipient_name: recipientName,
+        recipient_document: recipientDocument,
         type: barcodeDetails.type ?? billetInfo?.type,
         status: billetInfo?.status,
         digitable_line: barcodeDetails.digitable_line ?? billetInfo?.digitable_line,
@@ -230,6 +301,7 @@ Deno.serve(async (req) => {
 
   } catch (error) {
     console.error('[billet-consult] Error:', error);
-    return new Response(JSON.stringify({ error: 'Internal server error', details: error.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: 'Internal server error', details: error.message }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
