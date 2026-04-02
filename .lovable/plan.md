@@ -1,58 +1,24 @@
 
-Problema confirmado: não é mais rota do proxy nem demora da ONZ. O proxy já está devolvendo `LIQUIDATED`, mas o backend de status do boleto está lendo o campo no nível errado da resposta.
 
-O que a análise mostrou
-- Nos logs de `pix-check-status`, o retorno vem como:
-  ```text
-  status=200
-  data = { data: { ..., status: "LIQUIDATED", ... } }
-  ```
-- Em `supabase/functions/pix-check-status/index.ts`, no bloco de boleto, o código usa `const billetData = result.data` e depois lê `billetData.status`.
-- Como o `status` está dentro de `result.data.data`, o `rawBilletStatus` fica vazio e o `internal_status` cai em `pending`.
-- Por isso a tela fica presa em “Aguardando confirmação”, mesmo com o boleto já liquidado.
-- O mesmo erro existe em `supabase/functions/billet-check-status/index.ts`.
-- Além disso, o fluxo legado em `src/pages/NewPayment.tsx` ainda usa `startBilletPolling(result.external_id || result.transaction_id)`, o que pode enviar `onz:...` como `billet_id` bruto e causar inconsistência.
+## Correção: `apikey` ausente + QRC ativo no proxy
 
-Plano de correção
-1. Corrigir o parsing do boleto em `supabase/functions/pix-check-status/index.ts`
-- Fazer o mesmo “unwrap” que já existe no fluxo Pix:
-  - `rawBilletData = result.data`
-  - `billetData = rawBilletData?.data ?? rawBilletData`
-- Mapear `billetData.status` para `completed/pending/failed/refunded`
-- Atualizar `transactions.status`, `paid_at` e `pix_provider_response` usando o payload normalizado
-- Manter a regra atual de não rebaixar status final
+A rota `/pix/pagar-qrc` já está sendo chamada corretamente (linha 376). O problema restante é que **duas chamadas internas estão sem o header `apikey`**, o que causa falhas 502 intermitentes:
 
-2. Alinhar `supabase/functions/billet-check-status/index.ts`
-- Aplicar o mesmo unwrap da resposta do proxy
-- Garantir que qualquer uso legado dessa função também reconheça `LIQUIDATED` corretamente
+1. **`delegateQrToPixPayDict`** (linha 42) — chamada para `pix-pay-dict` sem `apikey`
+2. **`pix-qrc-info`** (linha 330) — chamada para decodificar QR sem `apikey`
 
-3. Remover a divergência do fluxo antigo de boleto
-- Em `src/pages/NewPayment.tsx` e/ou `src/hooks/useBilletPayment.ts`, parar de iniciar polling com `external_id` bruto
-- Preferir `transaction_id` e o mesmo resolvedor usado no fluxo principal (`pix-check-status`)
-- Isso evita um cenário em que um fluxo confirma e o outro continua pendente
+Quando o fallback para dict é acionado (QRC falha ou QR estático), essas chamadas podem falhar silenciosamente.
 
-4. Adicionar logs objetivos de reconciliação
-- Logar:
-  - se a resposta veio envelopada
-  - `provider_status`
-  - `internal_status`
-  - `transaction_id`
-- Isso deixa claro, no próximo teste, se a transação foi reconhecida como concluída já na primeira consulta
+### Alterações em `supabase/functions/pix-pay-qrc/index.ts`
 
-Arquivos a ajustar
-- `supabase/functions/pix-check-status/index.ts`
-- `supabase/functions/billet-check-status/index.ts`
-- `src/hooks/useBilletPayment.ts`
-- `src/pages/NewPayment.tsx`
+1. **Linha 42**: Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` nos headers de `delegateQrToPixPayDict`
+2. **Linha 330**: Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` nos headers da chamada para `pix-qrc-info`
 
-Resultado esperado
-- Quando o proxy retornar `LIQUIDATED`, o backend responderá `internal_status: completed`
-- A tela de boleto sairá de “Aguardando confirmação” e mostrará sucesso
-- O status no banco ficará consistente
-- Os dois fluxos de boleto ficarão alinhados, sem um usar lógica antiga e outro lógica nova
+### Resultado
+- QR Codes dinâmicos vão direto pelo proxy `/pix/pagar-qrc` (já funciona)
+- Fallback para dict e decodificação de QR param de falhar com 502
+- Todos os usuários conseguem pagar consistentemente
 
-Detalhes técnicos
-- Não precisa mexer no proxy novo
-- Não precisa criar webhook novo para este caso
-- Não precisa mudar banco nem políticas
-- A falha é de shape/parsing da resposta: o código do boleto não está tratando o envelope `{ data: ... }` que o proxy devolve
+### Arquivo alterado
+- `supabase/functions/pix-pay-qrc/index.ts`
+
