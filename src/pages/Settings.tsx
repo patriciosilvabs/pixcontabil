@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, User, Shield, Link2, ChevronRight, Save } from "lucide-react";
+import { Loader2, User, Shield, Link2, ChevronRight, Save, Settings2 } from "lucide-react";
 
 export default function Settings() {
-  const { user, profile, isAdmin, refreshProfile } = useAuth();
+  const { user, profile, isAdmin, currentCompany, refreshProfile } = useAuth();
   const { toast } = useToast();
   const [isSaving, setIsSaving] = useState(false);
   const [fullName, setFullName] = useState(profile?.full_name || "");
@@ -20,6 +21,32 @@ export default function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [blockOnPendingReceipt, setBlockOnPendingReceipt] = useState(currentCompany?.block_on_pending_receipt ?? true);
+  const [isSavingRule, setIsSavingRule] = useState(false);
+
+  useEffect(() => {
+    setBlockOnPendingReceipt(currentCompany?.block_on_pending_receipt ?? true);
+  }, [currentCompany]);
+
+  const handleToggleBlockRule = async (checked: boolean) => {
+    if (!currentCompany) return;
+    setBlockOnPendingReceipt(checked);
+    setIsSavingRule(true);
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .update({ block_on_pending_receipt: checked } as any)
+        .eq("id", currentCompany.id);
+      if (error) throw error;
+      await refreshProfile();
+      toast({ title: checked ? "Bloqueio ativado" : "Bloqueio desativado" });
+    } catch (error: any) {
+      setBlockOnPendingReceipt(!checked);
+      toast({ variant: "destructive", title: "Erro", description: error.message });
+    } finally {
+      setIsSavingRule(false);
+    }
+  };
 
   const handleSaveProfile = async () => {
     if (!user) return;
@@ -138,6 +165,36 @@ export default function Settings() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Operation Rules (admin only) */}
+          {isAdmin && currentCompany && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Settings2 className="h-5 w-5 text-primary" />
+                  Regras de Operação
+                </CardTitle>
+                <CardDescription>Configurações operacionais da empresa</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <Label className="text-sm font-medium">
+                      Bloquear novos pagamentos com comprovantes pendentes
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Se ativado, o operador deve anexar o comprovante antes de realizar outro pagamento.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={blockOnPendingReceipt}
+                    onCheckedChange={handleToggleBlockRule}
+                    disabled={isSavingRule}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Settings Links */}
           {settingsLinks.length > 0 && (
