@@ -5,6 +5,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const PROXY_TIMEOUT_MS = 8000;
+
 function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
@@ -22,22 +24,35 @@ async function callNewProxy(path: string, method: string, body?: unknown) {
 
   if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
 
-  const resp = await fetch(`${proxyUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-
-  const rawText = await resp.text();
-  let data: any = null;
-
   try {
-    data = rawText ? JSON.parse(rawText) : null;
-  } catch {
-    data = { raw: rawText };
-  }
+    const resp = await fetch(`${proxyUrl}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
+    });
 
-  return { status: resp.status, data };
+    const rawText = await resp.text();
+    let data: any = null;
+
+    try {
+      data = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      data = { raw: rawText };
+    }
+
+    return { status: resp.status, data };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[pix-balance] Proxy request failed for ${method} ${path}:`, error);
+    return {
+      status: 503,
+      data: {
+        message: 'Proxy unavailable',
+        detail: message,
+      },
+    };
+  }
 }
 
 function unavailableBalanceResponse(provider: string | null, message: string, providerError?: unknown) {
@@ -60,9 +75,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Unauthorized' }, 401);
     }
 
-    createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
       global: { headers: { Authorization: authHeader } },
     });
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return jsonResponse({ error: 'Invalid token' }, 401);
+    }
 
     const { company_id } = await req.json();
     if (!company_id) {
@@ -114,9 +138,15 @@ Deno.serve(async (req) => {
       if (result.status >= 400) {
         const errorMsg = result.data?.detail || result.data?.message || result.data?.title || 'Falha ao consultar saldo';
         const isAuthError = result.data?.type === 'onz-0018' || result.status === 401;
+        const isMissingRoute = result.status === 404 && String(result.data?.message || '').includes('Route GET:/saldo not found');
+        const isProxyUnavailable = result.status === 503 || String(result.data?.message || '').includes('Proxy unavailable');
         const message = isAuthError
           ? 'Saldo indisponível. O proxy precisa renovar o token OAuth da ONZ.'
-          : errorMsg;
+          : isMissingRoute
+            ? 'Saldo indisponível. A rota /saldo não está ativa no proxy.'
+            : isProxyUnavailable
+              ? 'Saldo indisponível. Não foi possível conectar ao proxy.'
+              : errorMsg;
 
         console.error(`[pix-balance] Proxy error (auth=${isAuthError}):`, JSON.stringify(result.data));
         return unavailableBalanceResponse('onz', message, result.data);
