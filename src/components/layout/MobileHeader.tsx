@@ -15,6 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 interface MobileHeaderProps {
   balanceVisible: boolean;
