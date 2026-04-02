@@ -71,7 +71,11 @@ export default function ReceiptCapture() {
     if (!transactionId) return;
 
     let isMounted = true;
+    let failureCount = 0;
+    const MAX_FAILURES = 5;
     setIsLoadingStatus(true);
+    setStatusCheckFailed(false);
+    setConsecutiveFailures(0);
 
     const loadTransactionStatus = async (syncWithProvider = false) => {
       const { data } = await supabase
@@ -106,17 +110,33 @@ export default function ReceiptCapture() {
         currentStatus !== "cancelled";
 
       if (shouldSyncProvider) {
-        const providerStatus = await checkStatus(transactionId, true);
-        const syncedStatus = providerStatus?.internal_status || currentStatus;
+        try {
+          const providerStatus = await checkStatus(transactionId, true);
+          const syncedStatus = providerStatus?.internal_status || currentStatus;
 
-        if (!isMounted) return syncedStatus;
+          if (!isMounted) return syncedStatus;
 
-        if (syncedStatus && syncedStatus !== currentStatus) {
-          setTransactionStatus(syncedStatus);
+          if (syncedStatus && syncedStatus !== currentStatus) {
+            setTransactionStatus(syncedStatus);
+          }
+          // Reset failure count on success
+          failureCount = 0;
+          if (isMounted) setConsecutiveFailures(0);
+
+          setIsLoadingStatus(false);
+          return syncedStatus;
+        } catch (err) {
+          console.error('[ReceiptCapture] Provider sync error:', err);
+          failureCount++;
+          if (isMounted) {
+            setConsecutiveFailures(failureCount);
+            if (failureCount >= MAX_FAILURES) {
+              setStatusCheckFailed(true);
+              setIsLoadingStatus(false);
+            }
+          }
+          return currentStatus;
         }
-
-        setIsLoadingStatus(false);
-        return syncedStatus;
       }
 
       setIsLoadingStatus(false);
@@ -129,6 +149,10 @@ export default function ReceiptCapture() {
 
     // Poll every 3s if not yet completed
     const interval = setInterval(async () => {
+      if (failureCount >= MAX_FAILURES) {
+        clearInterval(interval);
+        return;
+      }
       pollCount += 1;
       const status = await loadTransactionStatus(pollCount % 2 === 0);
 
