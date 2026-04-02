@@ -14,7 +14,10 @@ const allTabs = [
 export const BottomTabBar = React.memo(function BottomTabBar() {
   const { hasPageAccess } = useAuth();
   const location = useLocation();
+  const isKeyboardVisible = useKeyboardVisible();
   const tabs = allTabs.filter(t => !t.pageKey || hasPageAccess(t.pageKey));
+
+  if (isKeyboardVisible) return null;
   const isActive = (href: string) => {
     if (href === "/") return location.pathname === "/";
     return location.pathname.startsWith(href);
