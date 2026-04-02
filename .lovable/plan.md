@@ -1,35 +1,40 @@
 
 
-## Problema
+## Diagnóstico: Por que o boleto retorna 404
 
-O BoletoPaymentDrawer usa a função `billet-check-status` para fazer polling de confirmação. Essa função recebe 404 do proxy e retorna 502, sem nenhuma lógica de recuperação. O polling fica eternamente em "processando".
+Analisei a documentação ONZ API e o código. O endpoint correto para consultar status de boleto é:
 
-Enquanto isso, a função `pix-check-status` já possui toda a lógica robusta para boletos:
-- Roteamento correto (`/status/billet/:id` vs `/status/pix/:id`)
-- Recuperação de 404 (marca como `failed` se transação > 10min)
-- Unwrapping de respostas aninhadas do proxy
-- Atualização automática da transação no banco
+```text
+GET /billets/{id}    (documentação ONZ, página 24-26)
+```
 
-Existem duas funções fazendo a mesma coisa de forma divergente.
+O `pix-check-status` chama `callNewProxy('/status/billet/{id}', 'GET')` -- ou seja, depende de uma rota no novo proxy que deveria mapear para `GET /billets/{id}` na ONZ. O 404 vem da ONZ (`"Desculpe, não conseguimos encontrar o que você está procurando."`), o que indica que o novo proxy provavelmente está encaminhando para um endpoint incorreto (possivelmente `/billets/payments/{id}` que não existe como GET na ONZ).
+
+Enquanto isso, a `billet-consult` já usa o **proxy antigo** (`ONZ_PROXY_URL`) com sucesso, passando a URL completa da ONZ diretamente.
 
 ## Correção
 
-**Consolidar o polling de boleto para usar `pix-check-status` em vez de `billet-check-status`.**
+Modificar `pix-check-status` para usar o **proxy antigo** (`callOnzViaProxy`) para consultas de status de boleto, em vez do novo proxy. Isso garante que a URL correta da ONZ (`GET {base_url}/api/v2/billets/{id}`) seja chamada diretamente.
 
-### 1. Alterar `BoletoPaymentDrawer.tsx`
-- Trocar a chamada de `checkBilletStatus(txId, true)` por uma invocação direta de `pix-check-status` com `transaction_id`
-- Usar `supabase.functions.invoke('pix-check-status', { body: { transaction_id: txId } })` diretamente no polling
-- Remover dependência de `checkBilletStatus` do hook `useBilletPayment` neste componente
+### Alterações em `supabase/functions/pix-check-status/index.ts`
 
-### 2. Tratar resposta no formato de `pix-check-status`
-- O retorno já tem `internal_status`, `is_completed`, `status` -- mesmo formato esperado pelo polling atual
-- Ajustar o catch para lidar com 502 sem travar (continuar polling até MAX_POLL_ATTEMPTS)
+1. **Adicionar função `callOnzViaProxy`** (mesma usada em `billet-consult`) que chama o proxy antigo com URL exata da ONZ
 
-### Arquivos alterados
-- `src/components/payment/BoletoPaymentDrawer.tsx`: trocar polling para `pix-check-status`
+2. **Para boletos ONZ, trocar o fluxo:**
+   - Obter token via `pix-auth`
+   - Buscar `base_url` do `pix_configs` (já disponível em `config`)
+   - Chamar `callOnzViaProxy('{base_url}/api/v2/billets/{id}', 'GET', headers)` diretamente
+   - Manter todo o mapeamento de status e lógica de 404/failed existente
 
-### Resultado
-- Boletos passam a usar a mesma lógica de status que Pix (já testada e funcional)
-- Se o proxy retornar 404 para transação antiga, ela será marcada como `failed` automaticamente
-- O polling para de ficar preso em "processando" indefinidamente
+3. **Manter o fluxo Pix pelo novo proxy** (funciona normalmente para Pix)
+
+### Fluxo resultante
+
+```text
+Boleto ONZ: pix-check-status → pix-auth (token) → proxy antigo → GET /api/v2/billets/{id}
+Pix ONZ:    pix-check-status → novo proxy → GET /status/pix/{e2eId}
+```
+
+### Arquivo alterado
+- `supabase/functions/pix-check-status/index.ts`
 
