@@ -220,7 +220,7 @@ Deno.serve(async (req) => {
             if (internalStatus === 'completed' && currentTx?.company_id) {
               fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
                 body: JSON.stringify({ transaction_id, company_id: currentTx.company_id }),
               }).catch(e => console.error('[pix-check-status] Auto-receipt failed:', e));
             }
@@ -307,7 +307,7 @@ Deno.serve(async (req) => {
           if (internalStatus === 'completed' && currentTx?.company_id) {
             fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
               body: JSON.stringify({ transaction_id, company_id: currentTx.company_id }),
             }).catch(e => console.error('[pix-check-status] Auto-receipt failed:', e));
           }
@@ -396,7 +396,7 @@ Deno.serve(async (req) => {
         if (internalStatus === 'completed' && currentTx?.company_id) {
           fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
             body: JSON.stringify({ transaction_id, company_id: currentTx.company_id }),
           }).catch(e => console.error('[pix-check-status] Auto-receipt failed:', e));
         }

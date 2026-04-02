@@ -153,10 +153,11 @@ async function handlePaymentConfirmed(supabase: any, event: any) {
       `${Deno.env.get("SUPABASE_URL")}/functions/v1/generate-pix-receipt`,
       {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
-        },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")}`,
+            "apikey": Deno.env.get("SUPABASE_ANON_KEY")!,
+          },
         body: JSON.stringify({ transaction_id: tx.id, company_id: tx.company_id }),
       }
     );
