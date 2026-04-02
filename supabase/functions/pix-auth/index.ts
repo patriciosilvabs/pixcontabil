@@ -5,27 +5,18 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
-
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-
-  const resp = await fetch(`${proxyUrl}/proxy`, {
+async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
+  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
+  const resp = await fetch('https://pixmobile.com.br/proxy', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+    body: JSON.stringify({ url, method, headers, body }),
   });
-
   const text = await resp.text();
   let data: any;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    console.error(`[callOnzViaProxy] Non-JSON response (status ${resp.status}):`, text.substring(0, 500));
-    throw new Error(`Proxy returned non-JSON response (HTTP ${resp.status}). Check if ONZ_PROXY_URL is correct and the proxy is running.`);
+  try { data = JSON.parse(text); } catch {
+    console.error(`[callPixMobileProxy] Non-JSON response (status ${resp.status}):`, text.substring(0, 500));
+    throw new Error(`Proxy returned non-JSON response (HTTP ${resp.status}).`);
   }
   return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
 }
@@ -44,8 +35,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validate user token via direct API call (more reliable in edge runtime)
-    const token = authHeader.replace('Bearer ', '');
+    // Validate user token via direct API call
     const userResponse = await fetch(`${Deno.env.get('SUPABASE_URL')!}/auth/v1/user`, {
       headers: {
         'Authorization': authHeader,
@@ -63,13 +53,11 @@ Deno.serve(async (req) => {
     const userData = await userResponse.json();
     console.log('[pix-auth] User validated:', userData.id);
 
-    // Use service role client for DB operations (bypasses RLS)
     const supabaseAdmin = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // Create user-context client for RLS-protected queries
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
@@ -87,7 +75,6 @@ Deno.serve(async (req) => {
 
     console.log(`[pix-auth] Getting token for company: ${company_id}, purpose: ${purpose || 'any'}`);
 
-    // Get Pix config with purpose-aware lookup (admin client to bypass RLS)
     let config: any = null;
     if (purpose) {
       const { data: specificConfig } = await supabaseAdmin
@@ -147,14 +134,13 @@ Deno.serve(async (req) => {
     let expiresInSeconds: number;
 
     if (config.provider === 'onz') {
-      // ========== ONZ AUTH via proxy ==========
-      // CRITICAL: ONZ expects x-www-form-urlencoded with snake_case fields
+      // ========== ONZ AUTH via pixmobile proxy ==========
       const authUrl = `${config.base_url}/api/v2/oauth/token`;
       const authBody = `client_id=${encodeURIComponent(config.client_id)}&client_secret=${encodeURIComponent(config.client_secret_encrypted)}&grant_type=client_credentials`;
 
       console.log(`[pix-auth] ONZ: requesting token from ${authUrl}`);
 
-      const result = await callOnzViaProxy(authUrl, 'POST', {
+      const result = await callPixMobileProxy(authUrl, 'POST', {
         'Content-Type': 'application/x-www-form-urlencoded',
       }, authBody);
 
@@ -188,7 +174,7 @@ Deno.serve(async (req) => {
       }
       console.log('[pix-auth] ONZ token received successfully');
     } else {
-      // ========== TRANSFEERA AUTH ==========
+      // ========== TRANSFEERA AUTH (unchanged) ==========
       const isSandbox = config.is_sandbox;
       const authUrl = isSandbox
         ? 'https://login-api-sandbox.transfeera.com/authorization'
@@ -234,8 +220,6 @@ Deno.serve(async (req) => {
 
     // Cache token (with 60s margin)
     const expiresAt = new Date(Date.now() + (expiresInSeconds - 60) * 1000);
-
-    // Reuse supabaseAdmin from above for caching
 
     if (config.id) {
       await supabaseAdmin.from('pix_tokens').delete().eq('pix_config_id', config.id);

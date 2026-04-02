@@ -5,32 +5,24 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callNewProxy(path: string, method: string, body?: any) {
-  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
-  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
-  const headers: Record<string, string> = {
-    'x-proxy-key': proxyKey,
-    'Content-Type': 'application/json',
-  };
-  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
-  const resp = await fetch(`${proxyUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
+  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
+  const resp = await fetch('https://pixmobile.com.br/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+    body: JSON.stringify({ url, method, headers, body }),
   });
   const data = await resp.json();
-  return { status: resp.status, data };
+  return { status: resp.status, data: data.data || data };
 }
 
 function parseIdsFromExternalId(externalId: string | null | undefined): { batchId: string | null; transferId: string | null; isOnz: boolean; onzId: string | null; e2eId: string | null } {
   const raw = String(externalId || '').trim();
   if (!raw) return { batchId: null, transferId: null, isOnz: false, onzId: null, e2eId: null };
-
   if (raw.startsWith('onz:')) {
     const parts = raw.substring(4).split(':');
     return { batchId: null, transferId: null, isOnz: true, onzId: parts[0] || null, e2eId: parts[1] || null };
   }
-
   const [batchPart, transferPart] = raw.split(':');
   return { batchId: batchPart?.trim() || null, transferId: transferPart?.trim() || null, isOnz: false, onzId: null, e2eId: null };
 }
@@ -107,14 +99,12 @@ Deno.serve(async (req) => {
     const parsedIds = parseIdsFromExternalId(transactionExternalId);
 
     if (config.provider === 'onz') {
-      // ========== ONZ via novo proxy: GET /status/pix/:id ==========
-      // Try e2eId first, then onzId (correlationID)
+      // ========== ONZ via pixmobile proxy ==========
       const e2eId = parsedIds.e2eId || transactionE2eId;
       const onzId = parsedIds.onzId;
       const statusId = e2eId || onzId;
 
       if (!statusId) {
-        // No ID available yet — transaction is still in initial processing
         return new Response(JSON.stringify({
           success: true, status: 'PROCESSING', internal_status: 'pending',
           is_completed: false, provider: 'onz', payload: { status: 'PROCESSING' },
@@ -122,7 +112,19 @@ Deno.serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const result = await callNewProxy(`/status/pix/${statusId}`, 'GET');
+      // Get OAuth token
+      const tokenResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id }),
+      });
+      if (!tokenResponse.ok) return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { access_token } = await tokenResponse.json();
+
+      const statusUrl = `${config.base_url}/api/v2/pix/payments/${statusId}`;
+      const result = await callPixMobileProxy(statusUrl, 'GET', {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      });
       console.log(`[pix-check-status] Proxy response for id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {

@@ -5,25 +5,19 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callNewProxy(path: string, method: string, body?: any) {
-  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
-  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
-  const headers: Record<string, string> = {
-    'x-proxy-key': proxyKey,
-    'Content-Type': 'application/json',
-  };
-  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
-  const resp = await fetch(`${proxyUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
+  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
+  const resp = await fetch('https://pixmobile.com.br/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+    body: JSON.stringify({ url, method, headers, body }),
   });
   const text = await resp.text();
   let data: any;
   try { data = JSON.parse(text); } catch {
     throw new Error(`Proxy returned non-JSON response (HTTP ${resp.status})`);
   }
-  return { status: resp.status, data };
+  return { status: resp.status, data: data.data || data };
 }
 
 function normalizePhonePixKey(raw: string): string {
@@ -83,9 +77,7 @@ Deno.serve(async (req) => {
 
   try {
     const authHeader = req.headers.get('Authorization');
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Não autorizado' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    if (!authHeader?.startsWith('Bearer ')) return new Response(JSON.stringify({ error: 'Não autorizado' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } });
     const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -95,29 +87,15 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { company_id, items } = body as { company_id: string; items: BatchItem[] };
 
-    if (!company_id || !items || !Array.isArray(items) || items.length === 0) {
-      return new Response(JSON.stringify({ error: 'company_id e items são obrigatórios' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
+    if (!company_id || !items || !Array.isArray(items) || items.length === 0) return new Response(JSON.stringify({ error: 'company_id e items são obrigatórios' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (items.length > MAX_ITEMS) return new Response(JSON.stringify({ error: `Máximo de ${MAX_ITEMS} itens por lote` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    if (items.length > MAX_ITEMS) {
-      return new Response(JSON.stringify({ error: `Máximo de ${MAX_ITEMS} itens por lote` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // Validate all items upfront
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      if (!item.type || !['pix_key', 'boleto'].includes(item.type)) {
-        return new Response(JSON.stringify({ error: `Item ${i + 1}: tipo inválido (use pix_key ou boleto)` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      if (item.type === 'pix_key' && !item.pix_key) {
-        return new Response(JSON.stringify({ error: `Item ${i + 1}: pix_key é obrigatório` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      if (item.type === 'boleto' && !item.codigo_barras) {
-        return new Response(JSON.stringify({ error: `Item ${i + 1}: codigo_barras é obrigatório` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-      if (!item.valor || item.valor <= 0 || item.valor > MAX_PAYMENT_VALUE) {
-        return new Response(JSON.stringify({ error: `Item ${i + 1}: valor inválido` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
+      if (!item.type || !['pix_key', 'boleto'].includes(item.type)) return new Response(JSON.stringify({ error: `Item ${i + 1}: tipo inválido` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (item.type === 'pix_key' && !item.pix_key) return new Response(JSON.stringify({ error: `Item ${i + 1}: pix_key é obrigatório` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (item.type === 'boleto' && !item.codigo_barras) return new Response(JSON.stringify({ error: `Item ${i + 1}: codigo_barras é obrigatório` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      if (!item.valor || item.valor <= 0 || item.valor > MAX_PAYMENT_VALUE) return new Response(JSON.stringify({ error: `Item ${i + 1}: valor inválido` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
@@ -125,50 +103,47 @@ Deno.serve(async (req) => {
     // ---- SERVER-SIDE PENDENCY CHECK ----
     {
       const { data: completedTxs } = await supabaseAdmin
-        .from('transactions')
-        .select('id, receipts(id, ocr_data)')
-        .eq('created_by', userId)
-        .eq('company_id', company_id)
-        .eq('status', 'completed')
-        .eq('receipt_required', true)
-        .gt('amount', 0.01)
-        .gte('created_at', '2026-04-01T00:00:00Z')
-        .limit(50);
+        .from('transactions').select('id, receipts(id, ocr_data)')
+        .eq('created_by', userId).eq('company_id', company_id)
+        .eq('status', 'completed').eq('receipt_required', true)
+        .gt('amount', 0.01).gte('created_at', '2026-04-01T00:00:00Z').limit(50);
 
       if (completedTxs) {
         const hasPending = completedTxs.some((tx: any) => {
           const receipts = Array.isArray(tx.receipts) ? tx.receipts : [];
           return !receipts.some((r: any) => !r?.ocr_data?.auto_generated);
         });
-        if (hasPending) {
-          return new Response(JSON.stringify({
-            error: 'Você possui comprovante(s) pendente(s). Anexe a nota fiscal antes de realizar um novo pagamento.',
-            code: 'PENDING_RECEIPT',
-          }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
+        if (hasPending) return new Response(JSON.stringify({ error: 'Você possui comprovante(s) pendente(s).', code: 'PENDING_RECEIPT' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
     }
 
     let config: any = null;
     const { data: cashOutConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'cash_out').single();
     config = cashOutConfig;
-    if (!config) {
-      const { data: bothConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single();
-      config = bothConfig;
-    }
+    if (!config) { const { data: bothConfig } = await supabaseAdmin.from('pix_configs').select('*').eq('company_id', company_id).eq('is_active', true).eq('purpose', 'both').single(); config = bothConfig; }
     if (!config) return new Response(JSON.stringify({ error: 'Configuração Pix não encontrada' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+    // Get OAuth token once for the batch
+    let access_token: string | null = null;
+    if (config.provider === 'onz') {
+      const tokenResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+      });
+      if (!tokenResponse.ok) return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const tokenData = await tokenResponse.json();
+      access_token = tokenData.access_token;
+    }
 
     const results: BatchResult[] = [];
     let successCount = 0;
     let failedCount = 0;
 
-    // Process items sequentially
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
 
       try {
         if (config.provider === 'onz') {
-          // ========== ONZ via novo proxy ==========
           let result: any;
           let paymentData: any;
           let externalId: string;
@@ -178,34 +153,54 @@ Deno.serve(async (req) => {
             const resolvedType = mapPixKeyType(item.pix_key_type, item.pix_key!);
             const normalizedKey = normalizePixKeyByType(item.pix_key!, resolvedType);
 
-            result = await callNewProxy('/pix/pagar', 'POST', {
-              chavePix: normalizedKey,
-              valor: Number(item.valor.toFixed(2)),
-              descricao: item.descricao || 'Pagamento Pix em lote',
-            });
-
-            if (result.status >= 400) {
-              throw new Error(result.data?.message || result.data?.title || 'Falha no pagamento Pix');
+            const pixPayload: Record<string, any> = {
+              dictKey: normalizedKey,
+              amount: Number(item.valor.toFixed(2)),
+              description: item.descricao || 'Pagamento Pix em lote',
+            };
+            if (resolvedType === 'CPF' || resolvedType === 'CNPJ') {
+              pixPayload.creditorDocument = normalizedKey.replace(/\D/g, '');
             }
+
+            result = await callPixMobileProxy(
+              `${config.base_url}/api/v2/pix/payments/dict`,
+              'POST',
+              {
+                'Authorization': `Bearer ${access_token}`,
+                'Content-Type': 'application/json',
+                'x-idempotency-key': crypto.randomUUID(),
+              },
+              pixPayload,
+            );
+
+            if (result.status >= 400) throw new Error(result.data?.message || result.data?.title || 'Falha no pagamento Pix');
 
             paymentData = result.data;
-            const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
-            const onzId = paymentData.correlationID || paymentData.id || '';
+            const rawData = paymentData?.data && typeof paymentData.data === 'object' && !Array.isArray(paymentData.data) ? paymentData.data : paymentData;
+            const e2eId = rawData.e2eId || rawData.endToEndId || '';
+            const onzId = rawData.correlationID || rawData.id || '';
             externalId = `onz:${onzId}:${e2eId}`;
+            paymentData = rawData;
             pixType = 'key';
           } else {
-            // Boleto
             const cleanBarcode = item.codigo_barras!.replace(/[\s.\-]/g, '');
 
-            result = await callNewProxy('/billets/pagar', 'POST', {
-              linhaDigitavel: cleanBarcode,
-              valor: Number(item.valor.toFixed(2)),
-              descricao: item.descricao || 'Pagamento de boleto em lote',
-            });
+            result = await callPixMobileProxy(
+              `${config.base_url}/api/v2/billets/payments`,
+              'POST',
+              {
+                'Authorization': `Bearer ${access_token}`,
+                'Content-Type': 'application/json',
+                'x-idempotency-key': crypto.randomUUID(),
+              },
+              {
+                digitableCode: cleanBarcode,
+                amount: Number(item.valor.toFixed(2)),
+                description: item.descricao || 'Pagamento de boleto em lote',
+              },
+            );
 
-            if (result.status >= 400) {
-              throw new Error(result.data?.message || result.data?.title || 'Falha no pagamento de boleto');
-            }
+            if (result.status >= 400) throw new Error(result.data?.message || result.data?.title || 'Falha no pagamento de boleto');
 
             paymentData = result.data;
             const onzId = paymentData.id || '';
@@ -213,7 +208,6 @@ Deno.serve(async (req) => {
             pixType = 'boleto';
           }
 
-          // Save transaction
           const txData: any = {
             company_id, created_by: userId, amount: item.valor, status: 'pending',
             pix_type: pixType as any, description: item.descricao || `Pagamento em lote #${i + 1}`,
@@ -246,15 +240,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Audit log for the batch itself
     await supabaseAdmin.from('audit_logs').insert({
       user_id: userId, company_id, entity_type: 'batch_payment', action: 'batch_payment_executed',
       new_data: { total: items.length, success_count: successCount, failed_count: failedCount },
     });
 
     return new Response(JSON.stringify({
-      results,
-      summary: { total: items.length, success_count: successCount, failed_count: failedCount },
+      results, summary: { total: items.length, success_count: successCount, failed_count: failedCount },
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error: any) {

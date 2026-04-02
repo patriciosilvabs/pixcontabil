@@ -5,21 +5,15 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callNewProxy(path: string, method: string, body?: any) {
-  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
-  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
-  const headers: Record<string, string> = {
-    'x-proxy-key': proxyKey,
-    'Content-Type': 'application/json',
-  };
-  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
-  const resp = await fetch(`${proxyUrl}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
+async function callPixMobileProxy(url: string, method: string, headers: Record<string, string>, body?: any) {
+  const proxyApiKey = Deno.env.get('PIXMOBILE_PROXY_API_KEY')!;
+  const resp = await fetch('https://pixmobile.com.br/proxy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-proxy-api-key': proxyApiKey },
+    body: JSON.stringify({ url, method, headers, body }),
   });
   const data = await resp.json();
-  return { status: resp.status, data };
+  return { status: resp.status, data: data.data || data };
 }
 
 Deno.serve(async (req) => {
@@ -33,10 +27,10 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) return new Response(JSON.stringify({ error: 'Invalid token' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const url = new URL(req.url);
-    let transfer_id = url.searchParams.get('transfer_id');
-    let company_id = url.searchParams.get('company_id');
-    let transaction_id = url.searchParams.get('transaction_id');
+    const url2 = new URL(req.url);
+    let transfer_id = url2.searchParams.get('transfer_id');
+    let company_id = url2.searchParams.get('company_id');
+    let transaction_id = url2.searchParams.get('transaction_id');
 
     if (req.method === 'POST') {
       const body = await req.json();
@@ -74,8 +68,19 @@ Deno.serve(async (req) => {
     if (!config) return new Response(JSON.stringify({ error: 'Pix configuration not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     if (config.provider === 'onz') {
-      // ========== ONZ via novo proxy: GET /recibo/pix/:id ==========
-      const result = await callNewProxy(`/recibo/pix/${transfer_id}`, 'GET');
+      // ========== ONZ via pixmobile proxy ==========
+      const tokenResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id }),
+      });
+      if (!tokenResponse.ok) return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { access_token } = await tokenResponse.json();
+
+      const receiptUrl = `${config.base_url}/api/v2/pix/payments/receipt/${transfer_id}`;
+      const result = await callPixMobileProxy(receiptUrl, 'GET', {
+        'Authorization': `Bearer ${access_token}`,
+        'Content-Type': 'application/json',
+      });
 
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível. Tente novamente em alguns minutos.' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
