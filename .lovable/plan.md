@@ -2,56 +2,35 @@
 
 ## Problema
 
-Quando o pagamento é por **QR Code dinâmico** (maquininha), o sistema está delegando para `pix-pay-dict` → proxy `/pix/pagar` → ONZ `/pix/payments/dict`. Isso executa o pagamento como se fosse um **Pix por chave**, não como um pagamento QR Code.
+O `billet-check-status` envia o **payment ID** (retornado pelo `/billets/pagar`) para a rota `/status/billet/:id` do proxy. O proxy agora chama `/billets/{id}` da ONZ, que espera um **billet ID** (ID do boleto), não um **payment ID**. Por isso retorna 404.
 
-Por isso a **maquininha não recebe a confirmação** — o pagamento por DICT não vincula ao QR Code original da maquininha. A ONZ tem um endpoint específico `/pix/payments/qrc` que faz essa vinculação.
+O ID armazenado no banco (`external_id = onz:13313188`) é o ID do **pagamento**, não do boleto.
 
 ## Solução
 
-### 1. Adicionar endpoint `/pix/pagar-qrc` no proxy dedicado (72.61.25.92)
+Duas ações necessárias:
 
-O proxy precisa de uma nova rota que chame o endpoint correto da ONZ:
+### 1. Proxy: Corrigir endpoint na rota `/status/billet/:id`
+
+A rota deve chamar **`/billets/payments/{id}`** (status do pagamento) em vez de `/billets/{id}` (consulta do boleto):
 
 ```javascript
-// Nova rota no proxy
-fastify.post('/pix/pagar-qrc', async (request, reply) => {
-  if (request.headers['x-proxy-key'] !== process.env.PROXY_ADMIN_KEY) return reply.code(401).send();
-  
-  const { emv, valor, descricao } = request.body;
-  const idempotencyKey = request.headers['x-idempotency-key'] || `qrc-${Date.now()}`;
+// ERRADO (atual):
+const res = await axios.get(`${process.env.URL_CASHOUT}/billets/${id}`, ...);
 
-  const token = await getToken(true);
-  const res = await axios.post(`${process.env.URL_CASHOUT}/pix/payments/qrc`, {
-    emv: emv,
-    payment: { currency: "BRL", amount: valor },
-    description: descricao || "Pagamento QR Code",
-    paymentFlow: "INSTANT"
-  }, {
-    headers: { 
-      Authorization: `Bearer ${token}`,
-      'x-idempotency-key': idempotencyKey 
-    },
-    httpsAgent: agentOut
-  });
-  return res.data;
-});
+// CORRETO:
+const res = await axios.get(`${process.env.URL_CASHOUT}/billets/payments/${id}`, ...);
 ```
 
-### 2. Atualizar `pix-pay-qrc` Edge Function
+### 2. Edge Function `billet-check-status`: Sem alteração necessária
 
-Alterar o bloco ONZ dynamic QR (linhas 351-378) para chamar o novo endpoint do proxy `/pix/pagar-qrc` com o EMV completo, em vez de delegar para `pix-pay-dict`:
+A edge function já extrai corretamente o payment ID do `external_id` (`onz:13313188` → `13313188`) e chama `/status/billet/13313188`. O problema é apenas no proxy que está usando o endpoint errado da ONZ.
 
-- Chamar `NEW_PROXY_URL/pix/pagar-qrc` enviando o `emv` (QR code completo), `valor` e `descricao`
-- Criar a transação no banco com `pix_type: 'qrcode'` e `pix_copia_cola: qr_code`
-- Manter o fallback para `pix-pay-dict` caso o endpoint QRC falhe
+### 3. Edge Function `billet-receipt`: Verificar consistência
 
-### Resultado esperado
+A edge function chama `/recibo/billet/:id` — o proxy já usa `/billets/payments/receipt/{id}` conforme informado. Isso está correto pois usa o mesmo payment ID.
 
-O pagamento via QR Code dinâmico agora vai:
-1. Usar o endpoint ONZ `/pix/payments/qrc` que vincula ao QR Code original
-2. A maquininha recebe a confirmação de pagamento
-3. O comprovante sai na maquininha normalmente
+## Ação do usuário
 
-### Ação do usuário
-Você precisará adicionar a rota `/pix/pagar-qrc` no seu proxy em 72.61.25.92 antes de eu atualizar a Edge Function.
+Corrigir no proxy a rota `/status/billet/:id` para chamar `/billets/payments/:id` em vez de `/billets/:id`.
 
