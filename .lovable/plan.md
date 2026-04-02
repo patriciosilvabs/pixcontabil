@@ -1,36 +1,62 @@
 
 
-## Diagnóstico e Correção: `pix-balance` alinhado ao Proxy v3.1
+## Correção: Comprovante não sai na maquininha (QR Code)
 
-### Análise
+### Causa raiz
 
-Comparei o código do proxy v3.1 (Fastify) com todas as Edge Functions que o chamam. A maioria das rotas já está alinhada. O problema principal é o **timeout de 8 segundos** na rota `/saldo`.
+O proxy v3.1 não tem a rota `POST /pix/pagar-qrc`. A Edge Function `pix-pay-qrc` tenta chamá-la, recebe 404, e faz fallback para pagamento via chave (dict). Pagamentos dict **não imprimem na maquininha** porque usam o endpoint ONZ `/pix/payments/dict` em vez de `/pix/payments/qrc`.
 
-**Por que dá timeout?**
-O proxy v3.1 chama `getToken()` antes de cada request. Se o token expirou, ele faz uma chamada OAuth à ONZ (com mTLS), que pode levar vários segundos. Somando a chamada de saldo em si (`/accounts/balances/`), o total facilmente ultrapassa 8s.
+### Plano de correção (2 partes)
 
-### Plano de correção
+**Parte 1 — Você precisa adicionar a rota no proxy v3.1**
 
-**1. Aumentar timeout do `pix-balance` para 15 segundos**
-O timeout de 8s é insuficiente quando o proxy precisa renovar o token OAuth antes de consultar o saldo. Aumentar para 15s.
+Adicione esta rota no seu `server.js` antes do `start()`:
 
-**2. Corrigir parsing do saldo para resposta direta do Fastify**
-O proxy Fastify retorna `res.data` diretamente (a resposta da ONZ). A ONZ retorna do endpoint `/accounts/balances/` um objeto com a estrutura `{data: [{balanceAmount: {available, current}}]}`. O edge function já trata isso, mas precisa garantir compatibilidade com o formato direto (sem wrapper `{status, data}` do proxy Express antigo).
+```javascript
+// 6. PAGAR PIX VIA QR CODE (EMV) - para imprimir na maquininha
+fastify.post('/pix/pagar-qrc', async (request, reply) => {
+  if (request.headers['x-proxy-key'] !== process.env.PROXY_ADMIN_KEY) return reply.code(401).send();
+  const { emv, valor, descricao } = request.body;
+  
+  try {
+    const token = await getToken();
+    const res = await axios.post(`${process.env.URL_CASHOUT}/pix/payments/qrc`, {
+      emv,
+      payment: { currency: "BRL", amount: valor },
+      description: descricao || "Pagamento via QR Code"
+    }, {
+      headers: { 
+        Authorization: `Bearer ${token}`,
+        'x-idempotency-key': request.headers['x-idempotency-key'] || `qrc-${Date.now()}`
+      },
+      httpsAgent: agentOut
+    });
+    return res.data;
+  } catch (err) {
+    return reply.code(err.response?.status || 500).send(err.response?.data || err.message);
+  }
+});
+```
 
-**3. Garantir que o frontend trate `available: false` sem crash**
-O hook `usePixBalance` já mapeia `data.available` corretamente — sem alterações necessárias no frontend.
+Depois: `pm2 restart` no proxy.
 
-### Arquivos alterados
+**Parte 2 — Atualizar Edge Function `pix-pay-qrc`**
+
+Modificar o fallback para que, quando a rota QRC do novo proxy falhar, tente o proxy antigo (genérico) com o endpoint QRC correto **antes** de cair no dict. Só faz fallback para dict como último recurso.
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `supabase/functions/pix-balance/index.ts` | Aumentar `PROXY_TIMEOUT_MS` de 8000 para 15000. Melhorar log de diagnóstico. |
+| `supabase/functions/pix-pay-qrc/index.ts` | No bloco de fallback (linhas 399-411), tentar `callOnzQrcWithTokenRetry` (proxy genérico antigo) antes de `delegateQrToPixPayDict` |
 
-### Nota
+### Cadeia de fallback resultante
 
-As outras Edge Functions (`billet-pay`, `pix-pay-dict`, `pix-check-status`, `pix-receipt`, `billet-receipt`) já estão alinhadas com as rotas do proxy v3.1:
-- `/billets/pagar` → `billet-pay` envia `linhaDigitavel`/`valor`/`descricao` ✅
-- `/pix/pagar` → `pix-pay-dict` envia `chavePix`/`valor`/`creditorDocument` ✅
-- `/status/:tipo/:id` → `pix-check-status` usa `/status/billet/:id` e `/status/pix/:id` ✅
-- `/recibo/:tipo/:id` → `pix-receipt` e `billet-receipt` usam `/recibo/pix/:id` e `/recibo/billet/:id` ✅
+```text
+1. NEW_PROXY /pix/pagar-qrc  →  ✅ imprime na maquininha
+2. OLD_PROXY /pix/payments/qrc →  ✅ imprime na maquininha (fallback)
+3. pix-pay-dict (dict)         →  ❌ NÃO imprime (último recurso)
+```
+
+### Resumo técnico
+
+A única alteração de código é na Edge Function `pix-pay-qrc/index.ts`, adicionando ~15 linhas no bloco de fallback. A correção principal depende de você adicionar a rota `/pix/pagar-qrc` no proxy v3.1.
 
