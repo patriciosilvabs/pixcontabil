@@ -175,11 +175,19 @@ Deno.serve(async (req) => {
       // ========== ONZ via novo proxy: POST /pix/pagar ==========
       console.log(`[pix-pay-dict] ONZ proxy: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      const result = await callNewProxy('/pix/pagar', 'POST', {
+      // Build payload - ONZ requires creditorDocument when priority=HIGH
+      const pixPayload: Record<string, any> = {
         chavePix: normalizedPixKey,
         valor: Number(valor.toFixed(2)),
         descricao: descricao || 'Pagamento Pix',
-      });
+      };
+
+      // If pix_key is CPF or CNPJ, use it as creditorDocument
+      if (resolvedPixKeyType === 'CPF' || resolvedPixKeyType === 'CNPJ') {
+        pixPayload.creditorDocument = normalizedPixKey.replace(/\D/g, '');
+      }
+
+      const result = await callNewProxy('/pix/pagar', 'POST', pixPayload);
 
       if (result.status >= 400) {
         const errorMsg = result.data?.detail || result.data?.message || result.data?.title || 'Failed to initiate Pix payment';
