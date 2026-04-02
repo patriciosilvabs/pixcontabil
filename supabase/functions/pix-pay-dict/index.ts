@@ -175,14 +175,28 @@ Deno.serve(async (req) => {
       // ========== ONZ via novo proxy: POST /pix/pagar ==========
       console.log(`[pix-pay-dict] ONZ proxy: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      const result = await callNewProxy('/pix/pagar', 'POST', {
+      // Build payload - ONZ requires creditorDocument when priority=HIGH
+      const pixPayload: Record<string, any> = {
         chavePix: normalizedPixKey,
         valor: Number(valor.toFixed(2)),
         descricao: descricao || 'Pagamento Pix',
-      });
+      };
+
+      // If pix_key is CPF or CNPJ, use it as creditorDocument
+      if (resolvedPixKeyType === 'CPF' || resolvedPixKeyType === 'CNPJ') {
+        pixPayload.creditorDocument = normalizedPixKey.replace(/\D/g, '');
+      }
+
+      const result = await callNewProxy('/pix/pagar', 'POST', pixPayload);
 
       if (result.status >= 400) {
-        const errorMsg = result.data?.detail || result.data?.message || result.data?.title || 'Failed to initiate Pix payment';
+        // Extract a string error message (detail can be an array of objects)
+        let errorMsg = result.data?.title || result.data?.message || 'Failed to initiate Pix payment';
+        if (Array.isArray(result.data?.detail)) {
+          errorMsg = result.data.detail.map((d: any) => d?.message || d?.field || String(d)).join('; ');
+        } else if (typeof result.data?.detail === 'string') {
+          errorMsg = result.data.detail;
+        }
         console.error('[pix-pay-dict] Proxy error:', JSON.stringify(result.data));
         return new Response(JSON.stringify({ error: errorMsg, provider_error: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }

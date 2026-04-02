@@ -197,7 +197,13 @@ export function usePixPayment() {
               } else if (body?.provider_error?.message) {
                 providerMessage = body.provider_error.message;
               }
-              errorMessage = body?.error || providerMessage || body?.hint || errorMessage;
+              // Ensure errorMessage is always a string (body.error can be an array/object)
+              const rawError = body?.error;
+              const errorStr = typeof rawError === 'string' ? rawError
+                : Array.isArray(rawError) ? rawError.map((e: any) => e?.message || String(e)).join('; ')
+                : rawError && typeof rawError === 'object' ? JSON.stringify(rawError)
+                : '';
+              errorMessage = errorStr || providerMessage || body?.hint || errorMessage;
             }
           }
         } catch { /* ignore */ }
