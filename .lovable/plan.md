@@ -1,43 +1,83 @@
 
 
-## Correção: Adicionar `apikey` nas chamadas internas entre Edge Functions
+## Diagnóstico: Por que boletos não confirmam
 
-### Problema
-Algumas chamadas `fetch` entre Edge Functions não incluem o header `apikey`, necessário pelo gateway do Supabase. Sem ele, as requisições falham com 401/502.
+### Investigação completa — dois problemas encontrados
 
-### Chamadas sem `apikey` identificadas
+#### Problema A: Polling retorna 404 perpetuamente
 
-| Arquivo | Linha | Destino |
-|---------|-------|---------|
-| `billet-consult/index.ts` | 219 | `pix-auth` (fluxo Transfeera) |
-| `pix-receipt/index.ts` | 92 | `pix-auth` (fluxo Transfeera) |
-| `pix-refund/index.ts` | 106 | `pix-auth` |
-| `pix-pay-qrc/index.ts` | 482 | `pix-pay-dict` (static QR fallback) |
-| `pix-pay-qrc/index.ts` | 527 | `pix-pay-dict` (dynamic QR fallback) |
+O `pix-check-status` chama o proxy `GET /status/billet/13351767`, que retorna 404 indefinidamente. A lógica de tolerância (retornar `PROCESSING` por 10 min, depois marcar como `failed`) está funcionando, mas o proxy **nunca** retorna o status real do boleto.
 
-### Chamadas que JÁ possuem `apikey` (não alterar)
-- `pix-check-status` — todas as 4 chamadas OK
-- `pix-webhook` — ambas OK
-- `pix-webhook-gateway` — OK
-- `internal-payment-webhook` — OK
-- `pix-balance` — OK
-- `pix-pay-dict` — OK
-- `billet-check-status` — OK
-- `pix-pay-qrc` linhas 42, 330, 502 — OK
-- `register-transfeera-webhook` — OK
+Evidência:
+- Boleto `13351767` → 404 em TODAS as 30+ tentativas de polling
+- Boleto `13348811` → mesmo comportamento, marcado como `failed` após 10 min
+- Boleto `13332008` (que confirmou em 02/04 às 21:22) → confirmou ~30 min após criação — pode ter sido via polling quando a rota ainda funcionava
 
-### Correção
-Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` no objeto `headers` de cada chamada listada acima. Nenhuma outra alteração.
+**Este é um problema no proxy da VPS**, não no código das Edge Functions. A rota `/status/billet/:id` pode estar mapeando para o endpoint errado da ONZ. Possíveis endpoints corretos na API ONZ:
+- `GET /api/v2/billets/payments/{id}` (pagamento pelo ID)
+- `GET /api/v2/billets/payments/{id}/status`
 
-### Arquivos alterados
-1. **`supabase/functions/billet-consult/index.ts`** — linha 219
-2. **`supabase/functions/pix-receipt/index.ts`** — linha 92
-3. **`supabase/functions/pix-refund/index.ts`** — linha 106
-4. **`supabase/functions/pix-pay-qrc/index.ts`** — linhas 482 e 527
+#### Problema B: Webhooks da ONZ NÃO estão chegando
+
+Verifiquei a tabela `pix_webhook_logs`:
+- **Último webhook válido da ONZ**: 19/03/2026 (IP `54.94.73.68`)
+- **Desde 01/04**: apenas entradas `UNAUTHORIZED` de IPs da AWS (health checks)
+- **Zero webhooks de boleto** em todo o histórico
+
+Isso significa que a ONZ não está enviando webhooks para pagamentos de boleto (ou parou de enviar webhooks completamente).
+
+### Plano de correção (apenas boletos)
+
+#### 1. Corrigir `pix-webhook/index.ts` — adicionar `PAID` ao statusMap ONZ
+
+O statusMap na linha 140-148 NÃO inclui `PAID`. Se um webhook de boleto chegar com `status: "PAID"`, seria mapeado como `pending` (default). Boletos na ONZ frequentemente usam `PAID` em vez de `LIQUIDATED`.
+
+```typescript
+// ANTES (linha 140-148):
+const statusMap = { 'LIQUIDATED': 'completed', ... };
+
+// DEPOIS:
+const statusMap = { 'LIQUIDATED': 'completed', 'PAID': 'completed', 'COMPLETED': 'completed', ... };
+```
+
+#### 2. Corrigir `billet-consult/index.ts` — nomes de campos errados
+
+Os logs mostram erro 400 do proxy:
+```
+"field":"payment.amount","message":"required validation failed"
+"field":"digitableCode","message":"required validation failed"
+```
+
+O `billet-consult` envia `digitableCode` + sem `payment.amount`. Mas o `billet-pay` (que funciona!) envia `linhaDigitavel` + `valor`. Os nomes dos campos estão inconsistentes.
+
+```typescript
+// ANTES (billet-consult linha 170-174):
+{ digitableCode: digitableCode, description: 'Consulta', paymentFlow: 'APPROVAL_REQUIRED' }
+
+// DEPOIS:
+{ linhaDigitavel: digitableCode, valor: parsed.amount || 0, descricao: 'Consulta', paymentFlow: 'APPROVAL_REQUIRED' }
+```
+
+#### 3. Adicionar `ON_QUEUE` ao statusMap do `pix-check-status`
+
+O status `ON_QUEUE` retornado pela ONZ no momento do pagamento não está no mapa. Adicionar:
+```typescript
+'ON_QUEUE': 'pending',
+```
 
 ### O que NÃO será alterado
-- Nenhuma lógica de negócio
-- Nenhum endpoint ou payload
+- Nenhuma função de Pix
 - Nenhum arquivo frontend
-- Funções que já possuem `apikey`
+- Nenhuma tabela ou política RLS
+- `pix-webhook-gateway` (já tem `PAID`)
+- `internal-payment-webhook` (já funciona)
+
+### Ação necessária do usuário (proxy/ONZ)
+1. **Verificar a rota no proxy**: Acessar os logs do proxy na VPS quando `/status/billet/13351767` é chamado. Ver para qual endpoint da ONZ ele está encaminhando e o que a ONZ retorna
+2. **Verificar registro de webhook na ONZ**: Os webhooks pararam de chegar desde 01/04. Pode ser necessário re-registrar o webhook URL na ONZ
+
+### Resultado esperado
+- Consulta de boletos via `billet-consult` volta a funcionar (campos corretos)
+- Se webhooks voltarem a chegar, status `PAID` será reconhecido como `completed`
+- `ON_QUEUE` explicitamente tratado no mapa de status
 
