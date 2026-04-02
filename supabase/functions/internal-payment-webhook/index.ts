@@ -118,7 +118,7 @@ async function handlePaymentConfirmed(supabase: any, event: any) {
 
   // Find transaction by pix_txid or pix_e2eid
   let query = supabase.from("transactions").select("id, status, company_id").limit(1);
-  if (txid) query = query.or(`pix_txid.eq.${txid},external_id.eq.${txid}`);
+  if (txid) query = query.or(`pix_txid.eq.${txid},external_id.eq.${txid},external_id.ilike.%${txid}%`);
   else query = query.eq("pix_e2eid", e2eid);
 
   const { data: txns } = await query;
@@ -174,7 +174,7 @@ async function handlePaymentFailed(supabase: any, event: any) {
   const { data: txns } = await supabase
     .from("transactions")
     .select("id, status")
-    .or(`pix_txid.eq.${txid},external_id.eq.${txid}`)
+    .or(`pix_txid.eq.${txid},external_id.eq.${txid},external_id.ilike.%${txid}%`)
     .limit(1);
 
   const tx = txns?.[0];
