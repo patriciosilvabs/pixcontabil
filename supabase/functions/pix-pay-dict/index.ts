@@ -5,11 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function generateIdempotencyKey(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 35; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
-  return result;
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await resp.json();
+  return { status: resp.status, data };
 }
 
 function isValidCpf(cpf: string): boolean {
@@ -68,20 +78,6 @@ function normalizePixKeyByType(key: string, keyType: string): string {
   return key.trim();
 }
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL')!;
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY')!;
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
-  });
-  const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
-}
-
 function extractBeneficiary(payload: any): { name: string; doc: string } {
   const p = payload || {};
   const name = p?.creditParty?.name || p?.creditor?.name || p?.receiver?.name
@@ -119,7 +115,6 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: `Valor inválido. O valor deve estar entre R$ 0,01 e R$ ${MAX_PAYMENT_VALUE.toLocaleString('pt-BR')}.` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Get Pix config for cash-out (use admin client to bypass RLS — pix_configs is admin-only)
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     // ---- SERVER-SIDE PENDENCY CHECK ----
@@ -170,14 +165,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-    });
-    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-    const { access_token } = await authResponse.json();
     const resolvedPixKeyType = mapPixKeyType(pix_key_type, pix_key);
     const normalizedPixKey = normalizePixKeyByType(pix_key, resolvedPixKeyType);
 
@@ -185,40 +172,22 @@ Deno.serve(async (req) => {
     let externalId: string;
 
     if (config.provider === 'onz') {
-      // ========== ONZ: POST /pix/payments/dict ==========
-      const idempKey = generateIdempotencyKey();
-      const onzHeaders: Record<string, string> = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-        'x-idempotency-key': idempKey,
-      };
-      if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
+      // ========== ONZ via novo proxy: POST /pix/pagar ==========
+      console.log(`[pix-pay-dict] ONZ proxy: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
 
-      const onzPayload = {
-        pixKey: normalizedPixKey,
-        payment: { amount: Number(valor.toFixed(2)), currency: 'BRL' },
-        description: descricao || 'Pagamento Pix',
-      };
+      const result = await callNewProxy('/pix/pagar', 'POST', {
+        chavePix: normalizedPixKey,
+        valor: Number(valor.toFixed(2)),
+        descricao: descricao || 'Pagamento Pix',
+      });
 
-      console.log(`[pix-pay-dict] ONZ: key_type=${resolvedPixKeyType}, key=${normalizedPixKey}, valor=${valor}`);
-
-      let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-
-      // Token retry
-      if (result.status === 401 || result.data?.type === 'onz-0018') {
-        console.log('[pix-pay-dict] Token rejected, retrying...');
-        const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-          method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-          body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-        });
-        const { access_token: newToken } = await retryAuth.json();
-        onzHeaders['Authorization'] = `Bearer ${newToken}`;
-        result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+      if (result.status === 401) {
+        return new Response(JSON.stringify({ error: 'Falha de autenticação com o proxy' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       if (result.status >= 400) {
-        console.error('[pix-pay-dict] ONZ error:', JSON.stringify(result.data));
-        return new Response(JSON.stringify({ error: result.data?.title || 'Failed to initiate Pix payment', provider_error: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        console.error('[pix-pay-dict] Proxy error:', JSON.stringify(result.data));
+        return new Response(JSON.stringify({ error: result.data?.message || result.data?.title || 'Failed to initiate Pix payment', provider_error: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       paymentData = result.data;
@@ -226,7 +195,14 @@ Deno.serve(async (req) => {
       const onzId = paymentData.correlationID || paymentData.id || '';
       externalId = `onz:${onzId}:${e2eId}`;
     } else {
-      // ========== TRANSFEERA: batch ==========
+      // ========== TRANSFEERA (unchanged) ==========
+      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+      });
+      if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { access_token } = await authResponse.json();
+
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
       const idempotencyKey = crypto.randomUUID();
       const batchPayload = {
@@ -257,9 +233,6 @@ Deno.serve(async (req) => {
 
     console.log('[pix-pay-dict] Payment created:', JSON.stringify(paymentData));
 
-    // Save transaction
-    // Save transaction
-    // Extract beneficiary from initial payment response (if available)
     const ben = extractBeneficiary(paymentData);
     const { data: newTransaction, error: insertError } = await supabaseAdmin.from('transactions').insert({
       company_id, created_by: userId, amount: valor, status: 'pending', pix_type: 'key' as const,

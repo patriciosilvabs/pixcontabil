@@ -5,16 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL')!;
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY')!;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify({ url, method, headers }),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 Deno.serve(async (req) => {
@@ -68,6 +73,21 @@ Deno.serve(async (req) => {
     }
     if (!config) return new Response(JSON.stringify({ error: 'Pix configuration not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+    if (config.provider === 'onz') {
+      // ========== ONZ via novo proxy: GET /recibo/pix/:id ==========
+      const result = await callNewProxy(`/recibo/pix/${transfer_id}`, 'GET');
+
+      if (result.status >= 400) {
+        return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível. Tente novamente em alguns minutos.' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const pdfBase64 = result.data?.pdf || result.data?.receipt || result.data?.pdf_base64;
+      if (!pdfBase64) return new Response(JSON.stringify({ error: 'Comprovante não encontrado na resposta' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+      return new Response(JSON.stringify({ success: true, transfer_id, provider: 'onz', pdf_base64: pdfBase64, content_type: 'application/pdf' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ========== TRANSFEERA (unchanged) ==========
     const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
       method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify({ company_id }),
@@ -75,24 +95,6 @@ Deno.serve(async (req) => {
     if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     const { access_token } = await authResponse.json();
 
-    if (config.provider === 'onz') {
-      // ONZ: GET /pix/payments/receipt/{endToEndId}
-      const onzHeaders: Record<string, string> = { 'Authorization': `Bearer ${access_token}` };
-      if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
-
-      const result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/receipt/${transfer_id}`, 'GET', onzHeaders);
-      if (result.status >= 400) {
-        return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível. Tente novamente em alguns minutos.' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
-
-      // ONZ returns { data: { pdf: "base64..." } }
-      const pdfBase64 = result.data?.data?.pdf || result.data?.pdf || result.data?.receipt;
-      if (!pdfBase64) return new Response(JSON.stringify({ error: 'Comprovante não encontrado na resposta' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-
-      return new Response(JSON.stringify({ success: true, transfer_id, provider: 'onz', pdf_base64: pdfBase64, content_type: 'application/pdf' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // TRANSFEERA: GET /transfer/{id}
     try {
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
       const transferResponse = await fetch(`${apiBase}/transfer/${transfer_id}`, {

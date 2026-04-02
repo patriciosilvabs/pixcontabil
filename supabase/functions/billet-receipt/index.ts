@@ -5,19 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL');
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY');
-  if (!proxyUrl || !proxyApiKey) throw new Error('ONZ_PROXY_URL and ONZ_PROXY_API_KEY must be configured');
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 Deno.serve(async (req) => {
@@ -87,52 +89,40 @@ Deno.serve(async (req) => {
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST',
-      headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id: companyId, purpose: 'cash_out' }),
-    });
-
-    if (!authResponse.ok) {
-      return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    const { access_token } = await authResponse.json();
-
     if (config.provider === 'onz') {
-      // ========== ONZ: GET /api/v2/billets/payments/receipt/{id} ==========
-      try {
-        const result = await callOnzViaProxy(
-          `${config.base_url}/api/v2/billets/payments/receipt/${billetExternalId}`,
-          'GET',
-          { 'Authorization': `Bearer ${access_token}` },
-        );
+      // ========== ONZ via novo proxy: GET /recibo/billet/:id ==========
+      const result = await callNewProxy(`/recibo/billet/${billetExternalId}`, 'GET');
 
-        if (result.status >= 400 || !result.data) {
-          return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível', status: result.data?.status }),
-            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
+      if (result.status >= 400 || !result.data) {
+        return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível', status: result.data?.status }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
-        const pdfBase64 = result.data.pdf || result.data.data?.pdf;
-        if (!pdfBase64) {
-          return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível' }),
-            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
+      const pdfBase64 = result.data.pdf || result.data.receipt || result.data.pdf_base64;
+      if (!pdfBase64) {
+        return new Response(JSON.stringify({ error: 'Comprovante ainda não disponível' }),
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
 
-        return new Response(JSON.stringify({
-          success: true, billet_id: billetExternalId, provider: 'onz',
-          pdf_base64: pdfBase64, content_type: 'application/pdf',
-        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({
+        success: true, billet_id: billetExternalId, provider: 'onz',
+        pdf_base64: pdfBase64, content_type: 'application/pdf',
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-      } catch (e) {
-        return new Response(JSON.stringify({ error: 'Falha na conexão com ONZ', details: e.message }),
+    } else {
+      // ========== TRANSFEERA (unchanged) ==========
+      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST',
+        headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id: companyId, purpose: 'cash_out' }),
+      });
+
+      if (!authResponse.ok) {
+        return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }),
           { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-    } else {
-      // ========== TRANSFEERA ==========
+      const { access_token } = await authResponse.json();
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
 
       try {

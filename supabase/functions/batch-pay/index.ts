@@ -5,26 +5,25 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function generateIdempotencyKey(): string {
-  return crypto.randomUUID();
-}
-
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL')!;
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY')!;
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const text = await resp.text();
   let data: any;
   try { data = JSON.parse(text); } catch {
     throw new Error(`Proxy returned non-JSON response (HTTP ${resp.status})`);
   }
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 function normalizePhonePixKey(raw: string): string {
@@ -121,7 +120,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Get config (admin client to bypass RLS)
     const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     // ---- SERVER-SIDE PENDENCY CHECK ----
@@ -160,14 +158,6 @@ Deno.serve(async (req) => {
     }
     if (!config) return new Response(JSON.stringify({ error: 'Configuração Pix não encontrada' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-    });
-    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Falha ao autenticar com o provedor' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    let { access_token } = await authResponse.json();
-
     const results: BatchResult[] = [];
     let successCount = 0;
     let failedCount = 0;
@@ -175,17 +165,10 @@ Deno.serve(async (req) => {
     // Process items sequentially
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const idempKey = generateIdempotencyKey();
 
       try {
         if (config.provider === 'onz') {
-          const onzHeaders: Record<string, string> = {
-            'Authorization': `Bearer ${access_token}`,
-            'Content-Type': 'application/json',
-            'x-idempotency-key': idempKey,
-          };
-          if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
-
+          // ========== ONZ via novo proxy ==========
           let result: any;
           let paymentData: any;
           let externalId: string;
@@ -195,28 +178,14 @@ Deno.serve(async (req) => {
             const resolvedType = mapPixKeyType(item.pix_key_type, item.pix_key!);
             const normalizedKey = normalizePixKeyByType(item.pix_key!, resolvedType);
 
-            const onzPayload = {
-              pixKey: normalizedKey,
-              payment: { amount: Number(item.valor.toFixed(2)), currency: 'BRL' },
-              description: item.descricao || 'Pagamento Pix em lote',
-            };
-
-            result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-
-            // Token retry on 401
-            if (result.status === 401 || result.data?.type === 'onz-0018') {
-              const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-                method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-                body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-              });
-              const newTokenData = await retryAuth.json();
-              access_token = newTokenData.access_token;
-              onzHeaders['Authorization'] = `Bearer ${access_token}`;
-              result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/dict`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-            }
+            result = await callNewProxy('/pix/pagar', 'POST', {
+              chavePix: normalizedKey,
+              valor: Number(item.valor.toFixed(2)),
+              descricao: item.descricao || 'Pagamento Pix em lote',
+            });
 
             if (result.status >= 400) {
-              throw new Error(result.data?.title || result.data?.message || 'Falha no pagamento Pix');
+              throw new Error(result.data?.message || result.data?.title || 'Falha no pagamento Pix');
             }
 
             paymentData = result.data;
@@ -227,27 +196,15 @@ Deno.serve(async (req) => {
           } else {
             // Boleto
             const cleanBarcode = item.codigo_barras!.replace(/[\s.\-]/g, '');
-            const onzPayload = {
-              digitableCode: cleanBarcode,
-              description: item.descricao || 'Pagamento de boleto em lote',
-              paymentFlow: 'INSTANT',
-            };
 
-            result = await callOnzViaProxy(`${config.base_url}/api/v2/billets/payments`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-
-            if (result.status === 401 || result.data?.type === 'onz-0018') {
-              const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-                method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-              });
-              const newTokenData = await retryAuth.json();
-              access_token = newTokenData.access_token;
-              onzHeaders['Authorization'] = `Bearer ${access_token}`;
-              result = await callOnzViaProxy(`${config.base_url}/api/v2/billets/payments`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-            }
+            result = await callNewProxy('/billets/pagar', 'POST', {
+              linhaDigitavel: cleanBarcode,
+              valor: Number(item.valor.toFixed(2)),
+              descricao: item.descricao || 'Pagamento de boleto em lote',
+            });
 
             if (result.status >= 400) {
-              throw new Error(result.data?.title || result.data?.message || 'Falha no pagamento de boleto');
+              throw new Error(result.data?.message || result.data?.title || 'Falha no pagamento de boleto');
             }
 
             paymentData = result.data;
@@ -280,7 +237,6 @@ Deno.serve(async (req) => {
           results.push({ index: i, success: true, transaction_id: newTx.id });
           successCount++;
         } else {
-          // Transfeera not supported for batch in this function
           throw new Error('Pagamento em lote só é suportado com o provedor ONZ');
         }
       } catch (err: any) {
