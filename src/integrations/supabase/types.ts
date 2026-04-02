@@ -171,6 +171,7 @@ export type Database = {
       companies: {
         Row: {
           address: string | null
+          block_on_pending_receipt: boolean
           cnpj: string | null
           created_at: string
           email: string | null
@@ -183,6 +184,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          block_on_pending_receipt?: boolean
           cnpj?: string | null
           created_at?: string
           email?: string | null
@@ -195,6 +197,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          block_on_pending_receipt?: boolean
           cnpj?: string | null
           created_at?: string
           email?: string | null

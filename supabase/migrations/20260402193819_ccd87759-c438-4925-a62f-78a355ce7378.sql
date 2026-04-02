@@ -1,0 +1,1 @@
+ALTER TABLE public.companies ADD COLUMN block_on_pending_receipt boolean NOT NULL DEFAULT true;

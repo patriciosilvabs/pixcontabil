@@ -32,6 +32,7 @@ export interface Company {
   phone?: string;
   email?: string;
   is_active: boolean;
+  block_on_pending_receipt: boolean;
   created_at: string;
   updated_at: string;
 }
