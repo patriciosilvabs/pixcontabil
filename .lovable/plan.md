@@ -1,42 +1,33 @@
 
 
-## Correção: Adicionar status faltantes no `pix-check-status`
+## Status das Correções e Diagnóstico do Erro /saldo
 
-### Situação atual
+### Correções 1, 2 e 3 — Já Aplicadas
 
-Correções 1 e 2 do plano anterior **já foram aplicadas** em mensagens anteriores:
-- `pix-webhook/index.ts` já possui `PAID`, `COMPLETED` e `ON_QUEUE` no statusMap (linhas 140-151)
-- `billet-consult/index.ts` já envia `linhaDigitavel`, `valor`, `descricao` (linhas 170-175)
+Todas as três correções do plano de boletos **já estão no código atual**:
 
-### Única alteração necessária
+| Correção | Arquivo | Status |
+|----------|---------|--------|
+| `PAID`/`COMPLETED`/`ON_QUEUE` no webhook | `pix-webhook/index.ts` L140-151 | ✅ Aplicado |
+| Campos `linhaDigitavel`/`valor`/`descricao` | `billet-consult/index.ts` | ✅ Aplicado |
+| `COMPLETED`/`ON_QUEUE` no polling | `pix-check-status/index.ts` L205-210 e L293-298 | ✅ Aplicado |
 
-**`supabase/functions/pix-check-status/index.ts`** — linha 293-298
+**Não há alterações de código pendentes.**
 
-O segundo `billetStatusMap` (usado no fluxo Transfeera/genérico, diferente do primeiro na linha 205 que já está completo) está faltando `COMPLETED` e `ON_QUEUE`:
+### Erro `GET /saldo` → 404
 
-```typescript
-// ANTES (linha 293-298):
-const billetStatusMap: Record<string, string> = {
-  'LIQUIDATED': 'completed', 'PAID': 'completed',
-  'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending',
-  'CANCELED': 'failed', 'FAILED': 'failed',
-  'REFUNDED': 'refunded',
-};
+O erro atual é do **proxy v3.1**, não do Edge Function. O `pix-balance` chama `GET /saldo` (rota que você confirmou ser a correta), mas o proxy retorna:
 
-// DEPOIS:
-const billetStatusMap: Record<string, string> = {
-  'LIQUIDATED': 'completed', 'PAID': 'completed', 'COMPLETED': 'completed',
-  'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending', 'ON_QUEUE': 'pending',
-  'CANCELED': 'failed', 'FAILED': 'failed',
-  'REFUNDED': 'refunded',
-};
+```json
+{"message":"Route GET:/saldo not found","error":"Not Found","statusCode":404}
 ```
 
-### Após a alteração
-- Testar polling do boleto `13351767` via `pix-check-status` para confirmar que o proxy v3.0 retorna status corretamente
+**Ação necessária**: Verificar no proxy v3.1 se a rota `GET /saldo` está registrada. Possíveis causas:
+- A rota não foi incluída na v3.1
+- A rota está registrada com outro método (POST em vez de GET)
+- O Fastify precisa de restart após o deploy
 
-### O que NÃO será alterado
-- Nenhum outro arquivo
-- Nenhuma lógica de negócio
-- Nenhum endpoint ou payload
+### Teste do Boleto 13351767
+
+Para testar o polling, posso invocar a Edge Function `pix-check-status` diretamente com o ID do boleto. Isso confirmará se o proxy v3.1 com busca tripla está retornando o status corretamente. **Deseja que eu execute esse teste?**
 
