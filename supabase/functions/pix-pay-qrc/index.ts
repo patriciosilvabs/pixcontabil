@@ -5,25 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-function generateIdempotencyKey(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < 35; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
-  return result;
-}
-
-async function callOnzViaProxy(url: string, method: string, headers: Record<string, string>, bodyRaw?: string) {
-  const proxyUrl = Deno.env.get('ONZ_PROXY_URL')!;
-  const proxyApiKey = Deno.env.get('ONZ_PROXY_API_KEY')!;
-  const proxyBody: any = { url, method, headers };
-  if (bodyRaw !== undefined) proxyBody.body_raw = bodyRaw;
-  const resp = await fetch(`${proxyUrl}/proxy`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Proxy-API-Key': proxyApiKey },
-    body: JSON.stringify(proxyBody),
+async function callNewProxy(path: string, method: string, body?: any) {
+  const proxyUrl = Deno.env.get('NEW_PROXY_URL')!;
+  const proxyKey = Deno.env.get('NEW_PROXY_KEY')!;
+  const headers: Record<string, string> = {
+    'x-proxy-key': proxyKey,
+    'Content-Type': 'application/json',
+  };
+  if (method === 'POST') headers['x-idempotency-key'] = crypto.randomUUID();
+  const resp = await fetch(`${proxyUrl}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
   });
   const data = await resp.json();
-  return { proxyStatus: resp.status, status: data.status || resp.status, data: data.data || data };
+  return { status: resp.status, data };
 }
 
 Deno.serve(async (req) => {
@@ -121,24 +117,7 @@ Deno.serve(async (req) => {
       if (!destKey && !qr_code) return new Response(JSON.stringify({ error: 'Could not extract Pix key from QR Code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
       if (config.provider === 'onz') {
-        // ONZ: send full EMV via /pix/payments/qrc even for static QR codes
-        // This preserves transaction context (txid, creditor info) that DICT loses
-        console.log('[pix-pay-qrc] Static QR + ONZ - sending full EMV via QRC endpoint');
-
-        const authResponse2 = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-          method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-          body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-        });
-        if (!authResponse2.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        const { access_token: staticToken } = await authResponse2.json();
-
-        const idempKey = generateIdempotencyKey();
-        const onzHeaders: Record<string, string> = {
-          'Authorization': `Bearer ${staticToken}`,
-          'Content-Type': 'application/json',
-          'x-idempotency-key': idempKey,
-        };
-        if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
+        console.log('[pix-pay-qrc] Static QR + ONZ - sending full EMV via new proxy QRC endpoint');
 
         const onzPayload = {
           qrCode: qr_code,
@@ -146,19 +125,7 @@ Deno.serve(async (req) => {
           description: descricao || 'Pagamento via QR Code',
         };
 
-        let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-
-        // Token retry
-        if (result.status === 401 || result.data?.type === 'onz-0018') {
-          console.log('[pix-pay-qrc] Static QR token rejected, retrying...');
-          const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-            method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-            body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-          });
-          const { access_token: newToken } = await retryAuth.json();
-          onzHeaders['Authorization'] = `Bearer ${newToken}`;
-          result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-        }
+        const result = await callNewProxy('/pix/payments/qrc', 'POST', onzPayload);
 
         // If QRC fails, fallback to DICT
         if (result.status >= 400) {
@@ -178,16 +145,17 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        // Success - save transaction
-        const paymentData = result.data;
+        // Unwrap proxy response
+        const rawData = result.data;
+        const paymentData = rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data) ? rawData.data : rawData;
         const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
         const onzId = paymentData.correlationID || paymentData.id || '';
         const externalId = `onz:${onzId}:${e2eId}`;
 
         console.log('[pix-pay-qrc] Static QR via QRC succeeded:', JSON.stringify(paymentData));
 
-        const supabaseAdmin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-        const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
+        const supabaseAdmin2 = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+        const { data: transaction, error: txError } = await supabaseAdmin2.from('transactions').insert({
           company_id, created_by: userId, amount: paymentAmount,
           description: descricao || 'Pagamento via QR Code', pix_type: 'qrcode',
           pix_copia_cola: qr_code, pix_key: destKey,
@@ -223,52 +191,23 @@ Deno.serve(async (req) => {
     // DYNAMIC QR CODE
     console.log('[pix-pay-qrc] Dynamic QR - processing');
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-    });
-    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { access_token } = await authResponse.json();
-
     let paymentData: any;
     let externalId: string;
 
     if (config.provider === 'onz') {
-      // ========== ONZ: POST /pix/payments/qrc ==========
-      const idempKey = generateIdempotencyKey();
-      const onzHeaders: Record<string, string> = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-        'x-idempotency-key': idempKey,
-      };
-      if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
-
+      // ========== ONZ: POST /pix/payments/qrc via new proxy ==========
       const onzPayload = {
         qrCode: qr_code,
         payment: { amount: Number(paymentAmount.toFixed(2)), currency: 'BRL' },
         description: descricao || 'Pagamento via QR Code',
       };
 
-      // Use body_raw to avoid double serialization of EMV
-      let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+      const result = await callNewProxy('/pix/payments/qrc', 'POST', onzPayload);
 
-      // Token retry
-      if (result.status === 401 || result.data?.type === 'onz-0018') {
-        console.log('[pix-pay-qrc] Token rejected, retrying...');
-        const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-          method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-          body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-        });
-        const { access_token: newToken } = await retryAuth.json();
-        onzHeaders['Authorization'] = `Bearer ${newToken}`;
-        result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-      }
-
-      // If QRC fails with onz-0010 and we have a key, fallback to dict
+      // If QRC fails and we have a key, fallback to dict
       if (result.status >= 400) {
-        if ((result.data?.type === 'onz-0010' || result.data?.code === 'onz-0010') && destKey) {
-          console.log('[pix-pay-qrc] ONZ QRC rejected, falling back to pix-pay-dict');
+        if (destKey) {
+          console.log('[pix-pay-qrc] ONZ QRC rejected, falling back to pix-pay-dict. Error:', JSON.stringify(result.data));
           const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
             method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
             body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
@@ -285,12 +224,22 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      paymentData = result.data;
+      // Unwrap proxy response
+      const rawData = result.data;
+      paymentData = rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data) ? rawData.data : rawData;
       const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
       const onzId = paymentData.correlationID || paymentData.id || '';
       externalId = `onz:${onzId}:${e2eId}`;
     } else {
       // ========== TRANSFEERA: batch with EMV ==========
+      // Get auth token for Transfeera
+      const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
+        body: JSON.stringify({ company_id, purpose: 'cash_out' }),
+      });
+      if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      const { access_token } = await authResponse.json();
+
       const apiBase = config.is_sandbox ? 'https://api-sandbox.transfeera.com' : 'https://api.transfeera.com';
       const idempotencyKey = crypto.randomUUID();
       const batchPayload = {
