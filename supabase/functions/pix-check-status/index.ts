@@ -178,10 +178,91 @@ Deno.serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      // Boleto uses /status/billet/:id, PIX uses /status/pix/:id
-      const statusPath = isBoleto ? `/status/billet/${statusId}` : `/status/pix/${statusId}`;
+      if (isBoleto) {
+        // Boleto: use old proxy with direct ONZ API URL (GET /api/v2/billets/{id})
+        const onzToken = await getOnzToken(company_id!, authHeader);
+        const billetUrl = `${config.base_url}/api/v2/billets/${statusId}`;
+        console.log(`[pix-check-status] Boleto status check via old proxy: ${billetUrl}`);
+        const result = await callOnzViaProxy(billetUrl, 'GET', {
+          'Authorization': `Bearer ${onzToken}`,
+          'Content-Type': 'application/json',
+        });
+        console.log(`[pix-check-status] Old proxy response for billet ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+
+        if (result.status >= 400) {
+          if (result.status === 404 && transaction_id) {
+            const { data: stuckTx } = await supabaseAdmin.from('transactions')
+              .select('status, created_at')
+              .eq('id', transaction_id)
+              .single();
+
+            if (stuckTx && stuckTx.status === 'pending') {
+              const txAge = Date.now() - new Date(stuckTx.created_at).getTime();
+              const TEN_MINUTES = 10 * 60 * 1000;
+
+              if (txAge > TEN_MINUTES) {
+                await supabaseAdmin.from('transactions').update({
+                  status: 'failed',
+                  pix_provider_response: { provider_404: true, checked_at: new Date().toISOString(), raw: result.data },
+                }).eq('id', transaction_id);
+
+                console.log(`[pix-check-status] Marked old billet transaction ${transaction_id} as failed (provider 404, age ${Math.round(txAge/60000)}min)`);
+
+                return new Response(JSON.stringify({
+                  success: true, status: 'NOT_FOUND', internal_status: 'failed',
+                  is_completed: false, provider: 'onz',
+                  payload: { status: 'NOT_FOUND', reason: 'Transação não localizada no provedor após período de processamento.' },
+                }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+              }
+            }
+          }
+
+          return new Response(JSON.stringify({ error: 'Falha ao consultar status do boleto', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+
+        const billetData = result.data;
+        const rawBilletStatus = String(billetData?.status || billetData?.operationStatus || '').toUpperCase();
+        const billetStatusMap: Record<string, string> = {
+          'LIQUIDATED': 'completed', 'PAID': 'completed',
+          'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending',
+          'CANCELED': 'failed', 'FAILED': 'failed',
+          'REFUNDED': 'refunded',
+        };
+        let internalStatus = billetStatusMap[rawBilletStatus] || 'pending';
+
+        if (transaction_id) {
+          const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document, company_id').eq('id', transaction_id).single();
+          const finalStatuses = ['completed', 'failed', 'cancelled', 'refunded'];
+          if (currentTx && finalStatuses.includes(currentTx.status) && !finalStatuses.includes(internalStatus)) {
+            internalStatus = currentTx.status;
+          } else {
+            const updateData: any = { status: internalStatus, pix_provider_response: billetData };
+            if (internalStatus === 'completed') updateData.paid_at = new Date().toISOString();
+            const ben = extractBeneficiary(billetData);
+            if (ben.name && !currentTx?.beneficiary_name) updateData.beneficiary_name = ben.name;
+            if (ben.doc && !currentTx?.beneficiary_document) updateData.beneficiary_document = ben.doc;
+            await supabaseAdmin.from('transactions').update(updateData).eq('id', transaction_id);
+
+            if (internalStatus === 'completed' && currentTx?.company_id) {
+              fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-pix-receipt`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}` },
+                body: JSON.stringify({ transaction_id, company_id: currentTx.company_id }),
+              }).catch(e => console.error('[pix-check-status] Auto-receipt failed:', e));
+            }
+          }
+        }
+
+        return new Response(JSON.stringify({
+          success: true, status: billetData?.status || rawBilletStatus, internal_status: internalStatus,
+          is_completed: internalStatus === 'completed', provider: 'onz', payload: billetData,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      // PIX ONZ: use new proxy (unchanged)
+      const statusPath = `/status/pix/${statusId}`;
       const result = await callNewProxy(statusPath, 'GET');
-      console.log(`[pix-check-status] Proxy response for ${isBoleto ? 'billet' : 'pix'} id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+      console.log(`[pix-check-status] Proxy response for pix id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {
         // If provider returns 404, check if this is an old transaction that should be marked as failed
