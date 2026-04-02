@@ -48,14 +48,16 @@ Deno.serve(async (req) => {
     if (config.provider === 'onz') {
       // ========== ONZ via novo proxy: GET /saldo ==========
       const result = await callNewProxy('/saldo', 'GET');
-
-      if (result.status === 401) {
-        return new Response(JSON.stringify({ error: 'Falha de autenticação com o proxy' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-      }
+      console.log(`[pix-balance] Proxy response: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {
-        console.error('[pix-balance] Proxy error:', JSON.stringify(result.data));
-        return new Response(JSON.stringify({ error: result.data?.message || 'Falha ao consultar saldo', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        const errorMsg = result.data?.detail || result.data?.message || result.data?.title || 'Falha ao consultar saldo';
+        const isAuthError = result.data?.type === 'onz-0018' || result.status === 401;
+        console.error(`[pix-balance] Proxy error (auth=${isAuthError}):`, JSON.stringify(result.data));
+        return new Response(JSON.stringify({ 
+          error: isAuthError ? 'Token ONZ expirado. O proxy precisa renovar o token OAuth.' : errorMsg,
+          provider_error: result.data 
+        }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
       console.log('[pix-balance] Proxy response:', JSON.stringify(result.data));
