@@ -62,9 +62,15 @@ Deno.serve(async (req) => {
 
       console.log('[pix-balance] Proxy response:', JSON.stringify(result.data));
 
-      // Extract balance from proxy response
-      const balanceAmount = result.data?.balanceAmount ?? result.data?.balance ?? result.data?.available ?? 0;
-      const balance = Number(balanceAmount) || 0;
+      // Extract balance - proxy returns { data: [{ balanceAmount: { available: N } }] }
+      const entries = result.data?.data;
+      let balance = 0;
+      if (Array.isArray(entries) && entries.length > 0) {
+        balance = Number(entries[0]?.balanceAmount?.available) || 0;
+      } else {
+        // Fallback for flat response
+        balance = Number(result.data?.balanceAmount?.available ?? result.data?.balance ?? result.data?.available ?? 0);
+      }
 
       return new Response(JSON.stringify({ success: true, balance, available: true, provider: 'onz' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     } else {
