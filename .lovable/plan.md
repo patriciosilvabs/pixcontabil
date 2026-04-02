@@ -1,21 +1,36 @@
 
 
-## Diagnóstico e Correção: Erro 502 no `pix-balance`
+## Diagnóstico e Correção: `pix-balance` alinhado ao Proxy v3.1
 
-### Problema raiz
+### Análise
 
-O código no repositório **já trata** o erro 404 do proxy graciosamente (retorna HTTP 200 com `available: false`). Porém, a resposta real do Edge Function (`{"error":"Route GET:/saldo not found","provider_error":...}`) **não corresponde** ao formato do código atual — indica que a versão deployada está desatualizada.
+Comparei o código do proxy v3.1 (Fastify) com todas as Edge Functions que o chamam. A maioria das rotas já está alinhada. O problema principal é o **timeout de 8 segundos** na rota `/saldo`.
 
-### Plano
+**Por que dá timeout?**
+O proxy v3.1 chama `getToken()` antes de cada request. Se o token expirou, ele faz uma chamada OAuth à ONZ (com mTLS), que pode levar vários segundos. Somando a chamada de saldo em si (`/accounts/balances/`), o total facilmente ultrapassa 8s.
 
-**1. Redeployar `pix-balance`**
-- Fazer deploy da versão atual que já contém o `unavailableBalanceResponse` e tratamento de 404/503
-- Isso resolverá o erro 502 e a tela em branco, mostrando "Saldo indisponível" em vez de crashar
+### Plano de correção
 
-**2. Testar após deploy**
-- Invocar `pix-balance` para confirmar que retorna `{ success: true, available: false, message: "..." }` em vez de 502
+**1. Aumentar timeout do `pix-balance` para 15 segundos**
+O timeout de 8s é insuficiente quando o proxy precisa renovar o token OAuth antes de consultar o saldo. Aumentar para 15s.
 
-### Nota sobre o proxy
+**2. Corrigir parsing do saldo para resposta direta do Fastify**
+O proxy Fastify retorna `res.data` diretamente (a resposta da ONZ). A ONZ retorna do endpoint `/accounts/balances/` um objeto com a estrutura `{data: [{balanceAmount: {available, current}}]}`. O edge function já trata isso, mas precisa garantir compatibilidade com o formato direto (sem wrapper `{status, data}` do proxy Express antigo).
 
-O erro `Route GET:/saldo not found` é do **seu proxy v3.1** — a rota `/saldo` não está registrada nele. O trecho que você compartilhou diz `// ... (mantenha rotas de saldo iguais)`, mas aparentemente essa rota não está ativa. Isso precisa ser corrigido no lado do proxy para que o saldo funcione de fato. O deploy do Edge Function apenas garante que a ausência da rota não quebre o dashboard.
+**3. Garantir que o frontend trate `available: false` sem crash**
+O hook `usePixBalance` já mapeia `data.available` corretamente — sem alterações necessárias no frontend.
+
+### Arquivos alterados
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/pix-balance/index.ts` | Aumentar `PROXY_TIMEOUT_MS` de 8000 para 15000. Melhorar log de diagnóstico. |
+
+### Nota
+
+As outras Edge Functions (`billet-pay`, `pix-pay-dict`, `pix-check-status`, `pix-receipt`, `billet-receipt`) já estão alinhadas com as rotas do proxy v3.1:
+- `/billets/pagar` → `billet-pay` envia `linhaDigitavel`/`valor`/`descricao` ✅
+- `/pix/pagar` → `pix-pay-dict` envia `chavePix`/`valor`/`creditorDocument` ✅
+- `/status/:tipo/:id` → `pix-check-status` usa `/status/billet/:id` e `/status/pix/:id` ✅
+- `/recibo/:tipo/:id` → `pix-receipt` e `billet-receipt` usam `/recibo/pix/:id` e `/recibo/billet/:id` ✅
 
