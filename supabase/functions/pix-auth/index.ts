@@ -148,7 +148,7 @@ Deno.serve(async (req) => {
 
       const result = await callPixMobileProxy(authUrl, 'POST', {
         'Content-Type': 'application/x-www-form-urlencoded',
-      }, authBody);
+      }, undefined, authBody);
 
       console.log(`[pix-auth] ONZ proxy response - proxyStatus: ${result.proxyStatus}, status: ${result.status}, data:`, JSON.stringify(result.data));
 
