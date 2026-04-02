@@ -107,12 +107,15 @@ Deno.serve(async (req) => {
       }
     }
 
+    let transactionPixType: string | null = null;
+
     if (transaction_id && (!company_id || !transfer_id || !batch_id)) {
-      const { data: txData } = await supabase.from('transactions').select('company_id, external_id, pix_e2eid').eq('id', transaction_id).single();
+      const { data: txData } = await supabase.from('transactions').select('company_id, external_id, pix_e2eid, pix_type').eq('id', transaction_id).single();
       if (txData) {
         company_id = company_id || txData.company_id;
         transactionExternalId = txData.external_id || null;
         transactionE2eId = txData.pix_e2eid || null;
+        transactionPixType = txData.pix_type || null;
         const parsedIds = parseIdsFromExternalId(txData.external_id);
         batch_id = batch_id || parsedIds.batchId;
         transfer_id = transfer_id || parsedIds.transferId;
@@ -132,14 +135,13 @@ Deno.serve(async (req) => {
     const parsedIds = parseIdsFromExternalId(transactionExternalId);
 
     if (config.provider === 'onz') {
-      // ========== ONZ via novo proxy: GET /status/pix/:id ==========
-      // Try e2eId first, then onzId (correlationID)
+      // ========== ONZ via novo proxy ==========
+      const isBoleto = transactionPixType === 'boleto';
       const e2eId = parsedIds.e2eId || transactionE2eId;
       const onzId = parsedIds.onzId;
-      const statusId = e2eId || onzId;
+      const statusId = isBoleto ? onzId : (e2eId || onzId);
 
       if (!statusId) {
-        // No ID available yet — transaction is still in initial processing
         return new Response(JSON.stringify({
           success: true, status: 'PROCESSING', internal_status: 'pending',
           is_completed: false, provider: 'onz', payload: { status: 'PROCESSING' },
@@ -147,8 +149,10 @@ Deno.serve(async (req) => {
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      const result = await callNewProxy(`/status/pix/${statusId}`, 'GET');
-      console.log(`[pix-check-status] Proxy response for id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
+      // Boleto uses /status/billet/:id, PIX uses /status/pix/:id
+      const statusPath = isBoleto ? `/status/billet/${statusId}` : `/status/pix/${statusId}`;
+      const result = await callNewProxy(statusPath, 'GET');
+      console.log(`[pix-check-status] Proxy response for ${isBoleto ? 'billet' : 'pix'} id ${statusId}: status=${result.status}, data=${JSON.stringify(result.data).substring(0, 500)}`);
 
       if (result.status >= 400) {
         return new Response(JSON.stringify({ error: 'Falha ao consultar status', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -159,12 +163,19 @@ Deno.serve(async (req) => {
         ? rawStatusData.data
         : rawStatusData;
       const rawStatus = String(statusData.status || '').toUpperCase();
-      const statusMap: Record<string, string> = {
+      const pixStatusMap: Record<string, string> = {
         'LIQUIDATED': 'completed', 'REALIZADO': 'completed', 'CONFIRMED': 'completed',
         'PROCESSING': 'pending', 'EM_PROCESSAMENTO': 'pending', 'ACTIVE': 'pending',
         'CANCELED': 'failed', 'NAO_REALIZADO': 'failed',
         'REFUNDED': 'refunded', 'PARTIALLY_REFUNDED': 'refunded',
       };
+      const billetStatusMap: Record<string, string> = {
+        'LIQUIDATED': 'completed', 'PAID': 'completed',
+        'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending',
+        'CANCELED': 'failed', 'FAILED': 'failed',
+        'REFUNDED': 'refunded',
+      };
+      const statusMap = isBoleto ? billetStatusMap : pixStatusMap;
       let internalStatus = statusMap[rawStatus] || 'pending';
 
       if (transaction_id) {
