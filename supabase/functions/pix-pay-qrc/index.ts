@@ -191,52 +191,23 @@ Deno.serve(async (req) => {
     // DYNAMIC QR CODE
     console.log('[pix-pay-qrc] Dynamic QR - processing');
 
-    // Get auth token
-    const authResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-      method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-      body: JSON.stringify({ company_id, purpose: 'cash_out' }),
-    });
-    if (!authResponse.ok) return new Response(JSON.stringify({ error: 'Failed to authenticate with provider' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    const { access_token } = await authResponse.json();
-
     let paymentData: any;
     let externalId: string;
 
     if (config.provider === 'onz') {
-      // ========== ONZ: POST /pix/payments/qrc ==========
-      const idempKey = generateIdempotencyKey();
-      const onzHeaders: Record<string, string> = {
-        'Authorization': `Bearer ${access_token}`,
-        'Content-Type': 'application/json',
-        'x-idempotency-key': idempKey,
-      };
-      if (config.provider_company_id) onzHeaders['X-Company-ID'] = config.provider_company_id;
-
+      // ========== ONZ: POST /pix/payments/qrc via new proxy ==========
       const onzPayload = {
         qrCode: qr_code,
         payment: { amount: Number(paymentAmount.toFixed(2)), currency: 'BRL' },
         description: descricao || 'Pagamento via QR Code',
       };
 
-      // Use body_raw to avoid double serialization of EMV
-      let result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
+      const result = await callNewProxy('/pix/payments/qrc', 'POST', onzPayload);
 
-      // Token retry
-      if (result.status === 401 || result.data?.type === 'onz-0018') {
-        console.log('[pix-pay-qrc] Token rejected, retrying...');
-        const retryAuth = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-auth`, {
-          method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
-          body: JSON.stringify({ company_id, purpose: 'cash_out', force_new: true }),
-        });
-        const { access_token: newToken } = await retryAuth.json();
-        onzHeaders['Authorization'] = `Bearer ${newToken}`;
-        result = await callOnzViaProxy(`${config.base_url}/api/v2/pix/payments/qrc`, 'POST', onzHeaders, JSON.stringify(onzPayload));
-      }
-
-      // If QRC fails with onz-0010 and we have a key, fallback to dict
+      // If QRC fails and we have a key, fallback to dict
       if (result.status >= 400) {
-        if ((result.data?.type === 'onz-0010' || result.data?.code === 'onz-0010') && destKey) {
-          console.log('[pix-pay-qrc] ONZ QRC rejected, falling back to pix-pay-dict');
+        if (destKey) {
+          console.log('[pix-pay-qrc] ONZ QRC rejected, falling back to pix-pay-dict. Error:', JSON.stringify(result.data));
           const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
             method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
             body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
@@ -253,7 +224,9 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ error: 'Falha no pagamento via QR Code', details: result.data }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
 
-      paymentData = result.data;
+      // Unwrap proxy response
+      const rawData = result.data;
+      paymentData = rawData?.data && typeof rawData.data === 'object' && !Array.isArray(rawData.data) ? rawData.data : rawData;
       const e2eId = paymentData.e2eId || paymentData.endToEndId || '';
       const onzId = paymentData.correlationID || paymentData.id || '';
       externalId = `onz:${onzId}:${e2eId}`;
