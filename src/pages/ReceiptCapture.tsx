@@ -57,6 +57,8 @@ export default function ReceiptCapture() {
   const [categoryUsageCounts, setCategoryUsageCounts] = useState<Record<string, number>>({});
   const [transactionStatus, setTransactionStatus] = useState<string | null>(null);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [statusCheckFailed, setStatusCheckFailed] = useState(false);
+  const [consecutiveFailures, setConsecutiveFailures] = useState(0);
   const [transactionPixType, setTransactionPixType] = useState<string | null>(null);
   const [transactionInfo, setTransactionInfo] = useState<{
     beneficiary_name: string | null;
