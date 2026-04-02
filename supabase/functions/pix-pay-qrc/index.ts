@@ -349,128 +349,27 @@ Deno.serve(async (req) => {
     }
 
     if (config.provider === 'onz' && qrType === 'dynamic') {
-      console.log('[pix-pay-qrc] ONZ dynamic QR - paying via /pix/payments/qrc');
+      console.log('[pix-pay-qrc] ONZ dynamic QR - delegating to pix-pay-dict via new proxy');
 
-      const creditorDocumentDigits = creditor_document
-        ? String(creditor_document).replace(/\D/g, '')
-        : '';
-      const paymentPriority = resolveOnzPriority(priority, creditorDocumentDigits);
-      const onzIdempotencyKey = generateOnzIdempotencyKey(idempotency_key);
-
-      const buildQrcPayload = (qrCodeValue: string) => {
-        const payload: Record<string, any> = {
-          qrCode: qrCodeValue,
-          priority: paymentPriority,
-          description: descricao || 'Pagamento via QR Code',
-          paymentFlow: payment_flow || 'INSTANT',
-          payment: {
-            currency: 'BRL',
-            amount: Number(paymentAmount.toFixed(2)),
-          },
-        };
-
-        if (creditorDocumentDigits) {
-          payload.creditorDocument = creditorDocumentDigits;
-        }
-
-        return payload;
-      };
-
-      let onzPayment = await callOnzQrcWithTokenRetry({
+      const delegated = await delegateQrToPixPayDict({
         authHeader,
         companyId: company_id,
-        config,
-        payload: buildQrcPayload(qr_code),
-        onzIdempotencyKey,
+        qrCode: qr_code,
+        paymentAmount,
+        descricao,
+        idempotencyKey: idempotency_key,
+        qrcInfo,
+        creditorDocument: creditor_document,
+        priority,
+        paymentFlow: payment_flow,
       });
 
-      if (onzPayment.status >= 400 && getProviderErrorType(onzPayment.data) === 'onz-0010' && qrcInfo?.payload_url) {
-        console.log('[pix-pay-qrc] ONZ rejected raw EMV, retrying with payload_url');
-        onzPayment = await callOnzQrcWithTokenRetry({
-          authHeader,
-          companyId: company_id,
-          config,
-          payload: buildQrcPayload(qrcInfo.payload_url),
-          onzIdempotencyKey,
-        });
-      }
-
-      if (onzPayment.status >= 400 && getProviderErrorType(onzPayment.data) === 'onz-0010' && qrcInfo?.pix_key) {
-        console.log('[pix-pay-qrc] ONZ still rejected QR payload, falling back to pix-pay-dict');
-        const delegated = await delegateQrToPixPayDict({
-          authHeader,
-          companyId: company_id,
-          qrCode: qr_code,
-          paymentAmount,
-          descricao,
-          idempotencyKey: idempotency_key,
-          qrcInfo,
-          creditorDocument: creditor_document,
-          priority,
-          paymentFlow: payment_flow,
-        });
-
-        return new Response(JSON.stringify({
-          ...delegated.body,
-          amount: paymentAmount,
-          qr_info: qrcInfo,
-          fallback: 'dict_after_qrc_failure',
-        }), {
-          status: delegated.status,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      if (onzPayment.status >= 400) {
-        console.error('[pix-pay-qrc] ONZ qrc payment error:', JSON.stringify(onzPayment.data));
-        return new Response(JSON.stringify({
-          error: getProviderErrorMessage(onzPayment.data, 'Falha no pagamento via QR Code'),
-          provider_error: onzPayment.data,
-        }), {
-          status: 502,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
-      const paymentData = onzPayment.data;
-      const endToEndId = paymentData?.endToEndId || paymentData?.e2eId || null;
-      const onzId = paymentData?.correlationID || paymentData?.id || onzIdempotencyKey;
-      const externalId = `onz:${onzId}:${endToEndId || ''}`;
-
-      const { data: transaction, error: txError } = await supabaseAdmin.from('transactions').insert({
-        company_id,
-        created_by: userId,
-        amount: paymentAmount,
-        description: descricao || 'Pagamento via QR Code dinâmico',
-        pix_type: 'qrcode',
-        pix_copia_cola: qr_code,
-        pix_key: qrcInfo.pix_key || null,
-        pix_txid: qrcInfo.txid || null,
-        pix_e2eid: endToEndId,
-        external_id: externalId,
-        beneficiary_name: qrcInfo.merchant_name || null,
-        status: 'pending',
-        pix_provider_response: paymentData,
-      }).select('id').single();
-
-      if (txError) {
-        console.error('[pix-pay-qrc] Transaction insert error:', txError);
-        return new Response(JSON.stringify({ error: 'Failed to save transaction' }), {
-          status: 500,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-
       return new Response(JSON.stringify({
-        success: true,
-        transaction_id: transaction.id,
-        id_envio: externalId,
-        end_to_end_id: endToEndId,
-        status: paymentData?.status || 'PROCESSING',
+        ...delegated.body,
         amount: paymentAmount,
         qr_info: qrcInfo,
-        provider_response: paymentData,
       }), {
+        status: delegated.status,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
