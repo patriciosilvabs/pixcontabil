@@ -1,24 +1,45 @@
 
 
-## Correção: `apikey` ausente + QRC ativo no proxy
+## Auditoria: `apikey` ausente em chamadas internas entre Edge Functions
 
-A rota `/pix/pagar-qrc` já está sendo chamada corretamente (linha 376). O problema restante é que **duas chamadas internas estão sem o header `apikey`**, o que causa falhas 502 intermitentes:
+### Resultado da análise
 
-1. **`delegateQrToPixPayDict`** (linha 42) — chamada para `pix-pay-dict` sem `apikey`
-2. **`pix-qrc-info`** (linha 330) — chamada para decodificar QR sem `apikey`
+Todas as chamadas para `generate-pix-receipt` em **4 funções** estão sem o header `apikey`. Usam `SERVICE_ROLE_KEY` como Bearer token, mas o gateway do Supabase exige o header `apikey` separadamente.
 
-Quando o fallback para dict é acionado (QRC falha ou QR estático), essas chamadas podem falhar silenciosamente.
+### Chamadas com problema (sem `apikey`)
 
-### Alterações em `supabase/functions/pix-pay-qrc/index.ts`
+| Função | Linha(s) | Destino |
+|--------|----------|---------|
+| `pix-check-status` | 221, 308, 397 | `generate-pix-receipt` |
+| `pix-webhook` | 192, 271 | `generate-pix-receipt` |
+| `pix-webhook-gateway` | 271 | `generate-pix-receipt` |
+| `internal-payment-webhook` | 152 | `generate-pix-receipt` |
 
-1. **Linha 42**: Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` nos headers de `delegateQrToPixPayDict`
-2. **Linha 330**: Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` nos headers da chamada para `pix-qrc-info`
+**Total: 7 chamadas sem `apikey`**
 
-### Resultado
-- QR Codes dinâmicos vão direto pelo proxy `/pix/pagar-qrc` (já funciona)
-- Fallback para dict e decodificação de QR param de falhar com 502
-- Todos os usuários conseguem pagar consistentemente
+### Chamadas já corretas (com `apikey`) — não precisam de alteração
 
-### Arquivo alterado
-- `supabase/functions/pix-pay-qrc/index.ts`
+- `pix-pay-qrc` → `pix-pay-dict`, `pix-qrc-info` (corrigido na última iteração)
+- `pix-pay-dict` → `pix-auth`
+- `pix-balance` → `pix-auth`
+- `pix-check-status` → `pix-auth`
+- `pix-dict-lookup` → `pix-auth`
+- `billet-pay` → `pix-auth`
+- `billet-check-status` → `pix-auth`
+- `billet-consult` → `pix-auth`
+- `register-transfeera-webhook` → `pix-auth`
+
+### Correção
+
+Adicionar `'apikey': Deno.env.get('SUPABASE_ANON_KEY')!` nos headers de cada uma das 7 chamadas listadas acima.
+
+### Arquivos alterados
+- `supabase/functions/pix-check-status/index.ts` (3 ocorrências)
+- `supabase/functions/pix-webhook/index.ts` (2 ocorrências)
+- `supabase/functions/pix-webhook-gateway/index.ts` (1 ocorrência)
+- `supabase/functions/internal-payment-webhook/index.ts` (1 ocorrência)
+
+### Resultado esperado
+- Geração automática de comprovantes para de falhar silenciosamente
+- Todos os fluxos de confirmação (webhook, polling, gateway) geram recibo de forma confiável
 
