@@ -57,7 +57,8 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
   const [copyPasteOpen, setCopyPasteOpen] = useState(false);
   const [cashDrawerOpen, setCashDrawerOpen] = useState(false);
   const navigate = useNavigate();
-  const { hasFeatureAccess } = useAuth();
+  const { hasFeatureAccess, currentCompany } = useAuth();
+  const blockOnPending = currentCompany?.block_on_pending_receipt !== false;
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
   const { blockingReceipts, stuckTransactions, count: pendingCount, refresh: refreshPending } = usePendingReceipts();
   const [isSyncing, setIsSyncing] = useState(false);
