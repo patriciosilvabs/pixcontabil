@@ -186,8 +186,14 @@ Deno.serve(async (req) => {
           return new Response(JSON.stringify({ error: 'Falha ao consultar status do boleto', details: JSON.stringify(result.data) }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
         }
 
-        const billetData = result.data;
-        const rawBilletStatus = String(billetData?.status || billetData?.operationStatus || '').toUpperCase();
+        const rawBilletData = result.data;
+        const billetData = rawBilletData?.data && typeof rawBilletData.data === 'object' && !Array.isArray(rawBilletData.data)
+          ? rawBilletData.data
+          : rawBilletData;
+        const isBilletEnvelope = billetData !== rawBilletData;
+        const rawBilletStatus = String(
+          billetData?.status || billetData?.operationStatus || rawBilletData?.status || rawBilletData?.operationStatus || ''
+        ).toUpperCase();
         const billetStatusMap: Record<string, string> = {
           'LIQUIDATED': 'completed', 'PAID': 'completed',
           'PROCESSING': 'pending', 'CREATED': 'pending', 'SCHEDULED': 'pending',
@@ -195,6 +201,8 @@ Deno.serve(async (req) => {
           'REFUNDED': 'refunded',
         };
         let internalStatus = billetStatusMap[rawBilletStatus] || 'pending';
+
+        console.log(`[pix-check-status] Billet reconciliation: enveloped=${isBilletEnvelope} provider_status=${rawBilletStatus || 'EMPTY'} internal_status=${internalStatus} transaction_id=${transaction_id || 'none'}`);
 
         if (transaction_id) {
           const { data: currentTx } = await supabaseAdmin.from('transactions').select('status, beneficiary_name, beneficiary_document, company_id').eq('id', transaction_id).single();
@@ -220,7 +228,7 @@ Deno.serve(async (req) => {
         }
 
         return new Response(JSON.stringify({
-          success: true, status: billetData?.status || rawBilletStatus, internal_status: internalStatus,
+          success: true, status: billetData?.status || billetData?.operationStatus || rawBilletStatus, internal_status: internalStatus,
           is_completed: internalStatus === 'completed', provider: 'onz', payload: billetData,
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
