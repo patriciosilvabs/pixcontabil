@@ -93,7 +93,7 @@ function normalizePayload(payload: any): NormalizedEvent {
 function mapOnzEventType(type: string, status: string): string {
   const s = String(status).toUpperCase();
   if (type === 'RECEIVE') return 'payment.received';
-  if (s === 'LIQUIDATED' || s === 'COMPLETED') return 'payment.confirmed';
+  if (s === 'LIQUIDATED' || s === 'COMPLETED' || s === 'PAID') return 'payment.confirmed';
   if (s === 'FAILED' || s === 'CANCELED') return 'payment.failed';
   if (s === 'REFUNDED') return 'payment.refunded';
   return 'payment.updated';
