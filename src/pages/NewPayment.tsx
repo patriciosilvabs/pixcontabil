@@ -124,6 +124,7 @@ export default function NewPayment() {
   }, [searchParams]);
   const { toast } = useToast();
   const { currentCompany, user } = useAuth();
+  const blockOnPending = currentCompany?.block_on_pending_receipt !== false;
   const { blockingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
