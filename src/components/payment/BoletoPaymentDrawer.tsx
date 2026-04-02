@@ -22,7 +22,7 @@ type StatusState = "polling" | "completed" | "failed" | "timeout";
 
 export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPaymentDrawerProps) {
   const navigate = useNavigate();
-  const { payBillet, isProcessing, consultBillet, checkBilletStatus } = useBilletPayment();
+  const { payBillet, isProcessing, consultBillet } = useBilletPayment();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [amount, setAmount] = useState("");
   const [dueDate, setDueDate] = useState<string | null>(null);
