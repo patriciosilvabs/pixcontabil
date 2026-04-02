@@ -479,7 +479,7 @@ Deno.serve(async (req) => {
       if (!destKey) return new Response(JSON.stringify({ error: 'Could not extract Pix key from QR Code' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       console.log('[pix-pay-qrc] Static QR - delegating to pix-pay-dict');
       const payResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
-        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
         body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
       });
       const payResult = await payResponse.json();
@@ -524,7 +524,7 @@ Deno.serve(async (req) => {
         if (destKey) {
           console.log('[pix-pay-qrc] Falling back to pix-pay-dict');
           const dictResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/pix-pay-dict`, {
-            method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Authorization': authHeader, 'Content-Type': 'application/json', 'apikey': Deno.env.get('SUPABASE_ANON_KEY')! },
             body: JSON.stringify({ company_id, pix_key: destKey, valor: paymentAmount, descricao: descricao || 'Pagamento via QR Code' }),
           });
           const dictResult = await dictResponse.json();
