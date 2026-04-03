@@ -837,8 +837,8 @@ export default function NewPayment() {
                 </div>
               </div>
 
-              {/* Quick Tags - only for key payments */}
-              {pixData.type === "key" && quickTags.length > 0 && (
+              {/* Quick Tags */}
+              {quickTags.length > 0 && (
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Tags Rápidas

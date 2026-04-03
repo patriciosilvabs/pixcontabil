@@ -87,6 +87,7 @@ export default function QuickTags() {
           sort_order: formSortOrder,
           description_placeholder: placeholder,
           description_required: formDescriptionRequired,
+          visible_in: formVisibleIn,
         });
         toast.success("Tag criada");
       }
