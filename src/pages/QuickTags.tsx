@@ -124,6 +124,17 @@ export default function QuickTags() {
     return "Nenhuma";
   };
 
+  const visibilityLabel = (val: string) => {
+    const found = PAYMENT_TYPE_OPTIONS.find((o) => o.value === val);
+    return found?.label || val;
+  };
+
+  const toggleVisibleIn = (value: string) => {
+    setFormVisibleIn((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
+  };
+
   return (
     <MainLayout>
       <div className="p-4 lg:p-8 max-w-4xl mx-auto space-y-6">
