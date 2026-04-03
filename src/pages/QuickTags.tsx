@@ -366,6 +366,27 @@ export default function QuickTags() {
               </div>
 
               <div className="space-y-2">
+                <Label>Exibir nos tipos de pagamento</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PAYMENT_TYPE_OPTIONS.map((opt) => (
+                    <div key={opt.value} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`visible-${opt.value}`}
+                        checked={formVisibleIn.includes(opt.value)}
+                        onCheckedChange={() => toggleVisibleIn(opt.value)}
+                      />
+                      <Label htmlFor={`visible-${opt.value}`} className="cursor-pointer text-sm">
+                        {opt.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Escolha em quais tipos de pagamento esta tag aparecerá
+                </p>
+              </div>
+
+              <div className="space-y-2">
                 <Label>Ordem de exibição</Label>
                 <Input
                   type="number"
