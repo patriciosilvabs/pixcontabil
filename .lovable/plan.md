@@ -1,66 +1,51 @@
 
 
-## Versionamento Automático Incremental
+## Correção: Tags Rápidas não filtradas por tipo de pagamento nos drawers mobile
 
-### Contexto
+### Problema identificado
 
-No ambiente Lovable, não há controle sobre pipelines CI/CD ou tags Git. A abordagem mais confiável é usar um **script pré-build** que lê um arquivo `version.json`, incrementa o minor, e injeta os valores no build via Vite `define`.
+1. **`PixKeyDialog.tsx`** (mobile Pix por Chave): chama `useQuickTags()` **sem** passar `"key"`, mostrando todas as tags independentemente da configuração `visible_in`.
+
+2. **`PixCopyPasteDrawer.tsx`** (mobile Copia e Cola): não usa quick tags.
+
+3. **`PixQrPaymentDrawer.tsx`** (mobile QR Code): não usa quick tags.
+
+4. **`BoletoPaymentDrawer.tsx`** (mobile Boleto): não usa quick tags.
+
+5. **`CashPaymentDrawer.tsx`** (mobile Dinheiro): não usa quick tags.
 
 ### Alterações
 
-**1. Criar `version.json`** (raiz do projeto)
-```json
-{ "version": "1.1.3" }
-```
-Fonte de verdade centralizada. Será lido e incrementado pelo script pré-build.
+**1. `src/components/pix/PixKeyDialog.tsx`**
+- Corrigir chamada: `useQuickTags("key")` em vez de `useQuickTags()`
+- Isso filtra corretamente as tags que têm `"key"` no array `visible_in`
 
-**2. Criar `scripts/bump-version.js`**
-- Lê `version.json`, incrementa o minor (1.1.3 → 1.1.4)
-- Salva de volta no `version.json`
-- Imprime a nova versão no console
+**2. `src/components/pix/PixCopyPasteDrawer.tsx`**
+- Adicionar `useQuickTags("copy_paste")`
+- Adicionar estados para tag selecionada, nº do pedido e descrição configurável
+- Renderizar seção de Quick Tags + campo de descrição/pedido no step de confirmação (antes de pagar)
+- Incluir tag/descrição na chamada de pagamento
 
-**3. Atualizar `package.json` scripts**
-```json
-"prebuild": "node scripts/bump-version.js",
-"build": "vite build"
-```
-O `prebuild` roda automaticamente antes de cada `build`, garantindo incremento sem ação manual.
+**3. `src/components/pix/PixQrPaymentDrawer.tsx`**
+- Adicionar `useQuickTags("qrcode")`
+- Adicionar estados e UI de Quick Tags no step de confirmação
+- Incluir tag/descrição na chamada de pagamento
 
-**4. Atualizar `vite.config.ts`**
-- Ler `version.json` no topo do config
-- Usar `define` para injetar variáveis globais no build:
-  - `__APP_VERSION__` → `"v1.1.4"`
-  - `__BUILD_DATE__` → data ISO do build
-  - `__BUILD_HASH__` → hash curto (baseado em timestamp, já que não temos Git no build)
+**4. `src/components/payment/BoletoPaymentDrawer.tsx`**
+- Adicionar `useQuickTags("boleto")`
+- Adicionar estados e UI de Quick Tags no step de confirmação (antes de pagar)
+- Incluir tag/descrição na chamada de pagamento
 
-**5. Atualizar `src/constants/app.ts`**
-```typescript
-declare const __APP_VERSION__: string;
-declare const __BUILD_DATE__: string;
+**5. `src/components/payment/CashPaymentDrawer.tsx`**
+- Adicionar `useQuickTags("cash")`
+- Adicionar estados e UI de Quick Tags no formulário
+- Incluir tag/descrição na inserção da transação
 
-export const APP_VERSION = typeof __APP_VERSION__ !== 'undefined' 
-  ? __APP_VERSION__ : "v1.1.3";
-export const BUILD_DATE = typeof __BUILD_DATE__ !== 'undefined'
-  ? __BUILD_DATE__ : new Date().toISOString();
-```
-Em dev (sem build), usa fallback. Em produção, usa valores injetados.
+### Padrão de UI reutilizado
 
-**6. Onde a versão aparece** (já existente, sem mudanças necessárias)
-- Header mobile (sub-bar verde)
-- Sidebar desktop (rodapé)
-- Console log ao iniciar a aplicação (adicionar em `src/main.tsx`)
-
-**7. Log no console** — Adicionar em `src/main.tsx`:
-```typescript
-console.log(`[PixContábil] ${APP_VERSION} | Build: ${BUILD_DATE}`);
-```
-
-### Limitação importante
-
-No ambiente Lovable, o build é gerenciado pela plataforma. O script `prebuild` roda automaticamente em deploys via `npm run build`. Durante desenvolvimento no editor Lovable (que usa `vite dev`), a versão não incrementa — só incrementa no build de produção/publish, que é o comportamento correto.
-
-### Sequência de exemplo
-```
-v1.1.3 → v1.1.4 → v1.1.5 → v1.1.6 ...
-```
+Em cada drawer, a seção de Quick Tags seguirá o mesmo padrão visual já implementado no `PixKeyDialog` e `NewPayment`:
+- Chips arredondados com seleção toggle
+- Campo de descrição com placeholder configurável por tag
+- Campo de Nº do Pedido condicional (quando `request_order_number = true`)
+- Validação obrigatória de tag quando há tags disponíveis para o tipo
 
