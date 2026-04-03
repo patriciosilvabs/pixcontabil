@@ -12,6 +12,8 @@ import { usePixPayment } from "@/hooks/usePixPayment";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuickTags, QuickTag } from "@/hooks/useQuickTags";
+import { QuickTagsSection } from "@/components/payment/QuickTagsSection";
 
 interface PixQrPaymentDrawerProps {
   open: boolean;
