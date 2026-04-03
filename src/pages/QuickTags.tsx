@@ -233,6 +233,7 @@ export default function QuickTags() {
                       <TableHead className="w-10">#</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>Classificação</TableHead>
+                      <TableHead>Visibilidade</TableHead>
                       <TableHead>Nº Pedido</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
