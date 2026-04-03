@@ -32,6 +32,7 @@ export default function QuickTags() {
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [formPlaceholder, setFormPlaceholder] = useState("");
   const [formDescriptionRequired, setFormDescriptionRequired] = useState(true);
+  const [formVisibleIn, setFormVisibleIn] = useState<string[]>(["key", "qrcode", "copy_paste", "boleto", "cash"]);
   const [saving, setSaving] = useState(false);
 
   const openCreate = () => {
