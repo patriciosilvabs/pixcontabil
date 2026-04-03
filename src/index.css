@@ -180,6 +180,11 @@
     user-select: none;
     -webkit-tap-highlight-color: transparent;
     -webkit-overflow-scrolling: touch;
+    /* Prevent body scroll — only <main> inside the app shell scrolls */
+    overflow: hidden;
+    height: 100dvh;
+    position: fixed;
+    width: 100%;
   }
 
   /* Allow text selection in inputs and textareas */

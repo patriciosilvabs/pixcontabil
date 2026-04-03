@@ -70,14 +70,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     return location.pathname.startsWith(href);
   };
 
+  const isKeyboardVisible = useKeyboardVisible();
+
   return (
-    <div className="h-dvh flex flex-col lg:block lg:h-auto lg:min-h-screen bg-background">
-      {/* Mobile header */}
-      <MobileHeader
-        balanceVisible={balanceVisible}
-        onToggleBalance={toggleBalance}
-        pendingReceiptsCount={pendingReceiptsCount}
-      />
+    <div className="h-dvh flex flex-col overflow-hidden lg:block lg:h-auto lg:min-h-screen bg-background">
+      {/* Mobile header — in flex flow, not fixed */}
+      {!isKeyboardVisible && (
+        <MobileHeader
+          balanceVisible={balanceVisible}
+          onToggleBalance={toggleBalance}
+          pendingReceiptsCount={pendingReceiptsCount}
+        />
+      )}
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col bg-sidebar border-r border-sidebar-border">

@@ -24,8 +24,8 @@ export const BottomTabBar = React.memo(function BottomTabBar() {
   };
 
   return (
-    <nav className="lg:hidden fixed bottom-4 left-4 right-4 z-50">
-      <div className="bg-card border border-border rounded-2xl shadow-lg flex items-center justify-around h-16 px-4 relative mb-[env(safe-area-inset-bottom,0px)]">
+    <nav className="lg:hidden shrink-0 px-4 pb-[env(safe-area-inset-bottom,4px)] pt-1">
+      <div className="bg-card border border-border rounded-2xl shadow-lg flex items-center justify-around h-16 px-4 relative">
         {tabs.map((tab) => {
           const active = isActive(tab.href);
           const isHome = tab.position === "center";
