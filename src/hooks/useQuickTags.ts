@@ -26,7 +26,7 @@ export const PAYMENT_TYPE_OPTIONS = [
   { value: "cash", label: "Dinheiro" },
 ] as const;
 
-export function useQuickTags() {
+export function useQuickTags(paymentType?: string) {
   const { currentCompany } = useAuth();
   const [tags, setTags] = useState<QuickTag[]>([]);
   const [isLoading, setIsLoading] = useState(false);
