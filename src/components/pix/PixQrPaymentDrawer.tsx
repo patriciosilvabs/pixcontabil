@@ -144,9 +144,12 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
 
     if (result?.transaction_id) {
       try {
+        const fullDescription = orderNumber.trim()
+          ? `${description.trim()} #${orderNumber.trim()}`
+          : description.trim();
         await supabase
           .from("transactions")
-          .update({ description: description.trim(), beneficiary_name: companyName.trim() } as any)
+          .update({ description: fullDescription, beneficiary_name: companyName.trim() } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixQrPaymentDrawer] Failed to update transaction metadata:", e);
