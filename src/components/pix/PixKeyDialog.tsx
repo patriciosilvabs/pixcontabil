@@ -418,57 +418,58 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
           </div>
 
           {/* Favorites section */}
-          <div className="mb-8">
-            <p className="text-sm font-semibold text-foreground mb-4">
-              Você sempre costuma pagar
-            </p>
-            <div className="flex gap-5 overflow-x-auto pb-2">
-              {MOCK_FAVORITES.map((fav) => (
-                <button
-                  key={fav.id}
-                  type="button"
-                  onClick={() => {
-                    // In the future, fill the key from favorite data
-                    toast.info(`Favorito: ${fav.name}`);
-                  }}
-                  className="flex flex-col items-center gap-2 min-w-[64px]"
-                >
-                  <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                    <span className="text-sm font-bold text-muted-foreground">{fav.initials}</span>
+          {favoritesLoading && (
+            <div className="mb-8">
+              <p className="text-sm font-semibold text-foreground mb-4">Você sempre costuma pagar</p>
+              <div className="flex gap-5">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex flex-col items-center gap-2 min-w-[64px]">
+                    <Skeleton className="h-14 w-14 rounded-full" />
+                    <Skeleton className="h-3 w-12" />
                   </div>
-                  <span className="text-xs text-foreground font-medium text-center leading-tight max-w-[72px] truncate">
-                    {fav.name}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground -mt-1 truncate max-w-[72px]">
-                    {fav.institution}
-                  </span>
-                </button>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* All contacts section - placeholder */}
-          <div>
-            <p className="text-sm font-semibold text-foreground mb-3">
-              Todos os seus contatos
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Em breve você poderá buscar seus contatos aqui.
-            </p>
-          </div>
+          )}
+          {!favoritesLoading && favorites.length > 0 && (
+            <div className="mb-8">
+              <p className="text-sm font-semibold text-foreground mb-4">
+                Você sempre costuma pagar
+              </p>
+              <div className="flex gap-5 overflow-x-auto pb-2">
+                {favorites.map((fav, idx) => (
+                  <button
+                    key={`${fav.beneficiary_name}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      setPixKey(fav.pix_key);
+                      setKeyError("");
+                    }}
+                    className="flex flex-col items-center gap-2 min-w-[64px]"
+                  >
+                    <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
+                      <span className="text-sm font-bold text-muted-foreground">{fav.initials}</span>
+                    </div>
+                    <span className="text-xs text-foreground font-medium text-center leading-tight max-w-[72px] truncate">
+                      {fav.beneficiary_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Bottom action - only show when there's a valid key typed */}
-        {pixKey.trim().length > 0 && (
-          <div className="shrink-0 px-5 pb-6 pt-3 border-t border-border">
-            <Button
-              onClick={handleStep1Submit}
-              className="w-full h-12 text-base font-bold uppercase tracking-wider"
-            >
-              Continuar
-            </Button>
-          </div>
-        )}
+        {/* Bottom action - always visible */}
+        <div className="shrink-0 px-5 pb-6 pt-3 border-t border-border">
+          <Button
+            onClick={handleStep1Submit}
+            disabled={pixKey.trim().length === 0}
+            className="w-full h-12 text-base font-bold uppercase tracking-wider"
+          >
+            Continuar
+          </Button>
+        </div>
       </div>
     );
   }
