@@ -1,21 +1,23 @@
 
 
-## Correção: Remover padding inferior excessivo (resíduo do layout `fixed`)
-
-### Problema
-
-Quando migramos para o Flexbox App Shell, a `BottomTabBar` deixou de ser `fixed` e passou a ser um filho direto do flex container. Porém, vários componentes ainda têm `pb-24` — um padding que existia para compensar a barra fixa. Agora esse padding cria espaço morto desnecessário, forçando o usuário a rolar para ver conteúdo que deveria caber na tela.
+## Ajustes no Step 1 da Tela Pix por Chave
 
 ### Alterações
 
-| Arquivo | De | Para |
-|---------|-----|------|
-| `src/components/dashboard/MobileDashboard.tsx` (L141) | `pb-24` | `pb-4` |
-| `src/pages/MobileMenu.tsx` (L46) | `pb-24` | `pb-4` |
-| `src/pages/BatchPayment.tsx` (L155, L239) | `pb-24` | `pb-4` |
-| `src/components/pix/PixKeyDialog.tsx` (L396) | `pb-24` | `pb-6` |
+**`src/components/pix/PixKeyDialog.tsx`**
 
-### Por que funciona
+1. **Remover seção "Todos os seus contatos"** — Deletar o bloco de placeholder (linhas 383-391) com título e descrição
 
-O container raiz (`h-dvh flex flex-col overflow-hidden`) já gerencia o espaço. Header e TabBar são `shrink-0` no fluxo flex, e `<main>` é `flex-1 overflow-y-auto`. O conteúdo dentro do `<main>` não precisa mais "fugir" de uma barra fixa — o flex já reserva o espaço correto. Reduzir o padding inferior faz o conteúdo caber melhor na viewport, eliminando scroll desnecessário.
+2. **Botão "Continuar" sempre visível** — Remover a condição `pixKey.trim().length > 0` para que o botão apareça sempre (desabilitado quando não há chave válida)
+
+3. **Favoritos reais em vez de mock** — Substituir `MOCK_FAVORITES` por uma query real na tabela `transactions` que busca os beneficiários mais frequentes do usuário:
+   - Query: agrupar transações com status `completed` por `beneficiary_name` + `beneficiary_document`, ordenar por contagem DESC, limitar a 5
+   - Usar `useAuth()` para obter `currentCompany.id` e filtrar por `company_id`
+   - Gerar iniciais a partir do `beneficiary_name`
+   - Ao clicar num favorito, preencher o campo `pixKey` com a `pix_key` da transação mais recente daquele beneficiário
+   - Mostrar skeleton ou nada enquanto carrega; esconder a seção se não houver resultados
+
+### Dados dos favoritos
+
+Não é necessário criar tabela nova. A tabela `transactions` já possui `beneficiary_name`, `beneficiary_document`, `pix_key` e `pix_key_type` — suficiente para montar a lista de beneficiários frequentes.
 
