@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { useQuickTagsAdmin, QuickTag } from "@/hooks/useQuickTags";
+import { useQuickTagsAdmin, QuickTag, PAYMENT_TYPE_OPTIONS } from "@/hooks/useQuickTags";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
