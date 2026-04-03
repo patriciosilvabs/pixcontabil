@@ -10,6 +10,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { invalidateDashboardCache } from "@/hooks/useDashboardData";
+import { useQuickTags, QuickTag } from "@/hooks/useQuickTags";
+import { QuickTagsSection } from "@/components/payment/QuickTagsSection";
+import { toast } from "sonner";
 
 interface CashPaymentDrawerProps {
   open: boolean;
