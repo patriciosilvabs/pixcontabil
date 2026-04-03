@@ -322,14 +322,18 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result?.transaction_id) {
       setRealTransactionId(result.transaction_id);
-      if (!receiptRequired) {
+      const selectedTag = quickTags.find(t => t.id === selectedTagId);
+      const updatePayload: any = {};
+      if (!receiptRequired) updatePayload.receipt_required = false;
+      if (selectedTag?.name) updatePayload.quick_tag_name = selectedTag.name;
+      if (Object.keys(updatePayload).length > 0) {
         try {
           await supabase
             .from("transactions")
-            .update({ receipt_required: false } as any)
+            .update(updatePayload)
             .eq("id", result.transaction_id);
         } catch (e) {
-          console.error("[PixKeyDialog] Failed to update receipt_required:", e);
+          console.error("[PixKeyDialog] Failed to update transaction metadata:", e);
         }
       }
       setStep(6);
