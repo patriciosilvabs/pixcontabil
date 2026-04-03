@@ -24,9 +24,15 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
   const [beneficiary, setBeneficiary] = useState("");
   const [description, setDescription] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Observações do pagamento...");
+  const [descriptionRequired, setDescriptionRequired] = useState(false);
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { toast: toastHook } = useToast();
   const { currentCompany, user } = useAuth();
+  const { tags: quickTags } = useQuickTags("cash");
 
   const handleSubmit = async () => {
     const parsedAmount = parseFloat(amount.replace(",", "."));
