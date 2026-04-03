@@ -1,66 +1,55 @@
 
 
-## Auto-Detector de Chave Pix — Step 1 Redesign
+## Correção Global: App Shell Flexível (sem `fixed` no mobile)
 
-### O que muda
+### Problema atual
 
-Substituir o **Select dropdown** de tipo de chave no Step 1 do `PixKeyDialog` por um **input único com detecção automática** e badges visuais que indicam o tipo detectado em tempo real.
+O `MobileHeader` e `BottomTabBar` usam `fixed`, tirando-os do fluxo flexbox. O `<main>` compensa com `pt-[104px]` e `pb-20` estáticos. Quando o teclado abre, o `h-dvh` encolhe o container pai, mas os elementos `fixed` não participam do flex — causando gaps, sobreposições e botões escondidos.
 
-### Arquivos
+### Solução: Flex App Shell puro
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/lib/pix-utils.ts` | **Novo** — função `detectPixKeyType()` com regex para CPF, CNPJ, Email, Telefone e EVP |
-| `src/components/pix/PixKeyDialog.tsx` | Redesign do Step 1: remover Select, adicionar grid de badges e validação automática |
-
-### Detalhes técnicos
-
-**1. `src/lib/pix-utils.ts`** — Função de detecção
-
-```typescript
-function detectPixKeyType(input: string): PixKeyType | null
-```
-
-Heurística (aplicada nesta ordem):
-- **E-mail**: `^\S+@\S+\.\S+$`
-- **EVP/Aleatória**: UUID de 36 chars `^[0-9a-f]{8}-...-[0-9a-f]{12}$`
-- **Telefone**: `^(\+?55)?\s?\(?\d{2}\)?\s?9?\d{4}-?\d{4}$`
-- **CPF**: 11 dígitos (com ou sem máscara), validação de checksum via `isValidCPF` existente
-- **CNPJ**: 14 dígitos (com ou sem máscara), validação via `isValidCNPJ` existente
-- Retorna `null` se nenhum padrão corresponder
-
-**2. Step 1 do `PixKeyDialog`** — Nova UI
+Remover `fixed` dos componentes mobile e torná-los filhos diretos do flexbox. Apenas `<main>` rola.
 
 ```text
-┌──────────────────────────────┐
-│  ← PIX COM CHAVE            │
-│  ████████████████████████    │  progress bar
-│                              │
-│  CHAVE PIX                   │
-│  ┌────────────────────────┐  │
-│  │ Digite a chave...      │  │  input único
-│  └────────────────────────┘  │
-│                              │
-│  [CPF] [CNPJ] [E-mail]      │  badges grid
-│  [Telefone] [Aleatória]     │  (detectado = roxo, resto = muted)
-│                              │
-│  ☐ Salvar como Favorecido   │
-│                              │
-│  ┌────────────────────────┐  │
-│  │     CONTINUAR          │  │  disabled até validação
-│  └────────────────────────┘  │
-└──────────────────────────────┘
+┌──────────────────────────┐
+│ MobileHeader (shrink-0)  │  ← no fluxo flex, não fixed
+├──────────────────────────┤
+│                          │
+│ <main> (flex-1,          │  ← único elemento que rola
+│   overflow-y-auto)       │
+│                          │
+├──────────────────────────┤
+│ BottomTabBar (shrink-0)  │  ← no fluxo flex, some com teclado
+└──────────────────────────┘
 ```
 
-- O `pixKeyType` é definido automaticamente pelo `detectPixKeyType()` chamado em `onChange`
-- Badge do tipo detectado recebe `bg-primary text-primary-foreground`; demais ficam `bg-muted text-muted-foreground`
-- Botão "Continuar" habilitado apenas quando `detectPixKeyType()` retorna um tipo válido
-- Se o usuário clicar num badge manualmente, força aquele tipo (override) e desabilita auto-detecção
-- Feedback de erro: texto vermelho abaixo do input se a chave não corresponder a nenhum formato após blur
+### Alterações por arquivo
 
-### Impacto
+**1. `src/components/layout/MainLayout.tsx`**
+- Remover `pt-[104px]` e `pb-20` do `<main>` (mobile) — não são mais necessários sem `fixed`
+- `<main>` fica: `flex-1 overflow-y-auto` (mobile) + `lg:pl-64 lg:pt-0 lg:pb-0 lg:min-h-screen lg:overflow-visible` (desktop)
+- Container raiz mantém `h-dvh flex flex-col overflow-hidden` (mobile)
 
-- Remove a etapa manual de selecionar tipo de chave — UX mais fluida
-- O `pixKeyType` continua sendo passado para os steps seguintes sem alteração
-- Nenhuma mudança nos Steps 2-6 ou nas Edge Functions
+**2. `src/components/layout/MobileHeader.tsx`**
+- Remover `fixed top-0 left-0 right-0 z-50` — substituir por `shrink-0`
+- Manter `lg:hidden`
+- Remover `-translate-y-full` do teclado (o header permanece visível ou é condicionalmente renderizado pelo `MainLayout`)
+- Simplificar: o componente vira um bloco estático no fluxo
+
+**3. `src/components/layout/BottomTabBar.tsx`**
+- Remover `fixed bottom-4 left-4 right-4 z-50` do `<nav>` — substituir por `shrink-0`
+- Manter `lg:hidden` e a lógica de `isKeyboardVisible` para retornar `null`
+- Ajustar padding/margin para compensar a remoção do `fixed`
+
+**4. `src/index.css`**
+- Adicionar `overflow: hidden` no `body` para prevenir scroll no container raiz (iOS bounce)
+- Manter `overscroll-behavior: none` no `html`
+
+### Desktop
+Zero alterações visuais. O desktop continua com sidebar `fixed` e `<main>` com `lg:pl-64`.
+
+### Benefícios
+- Teclado abre → `h-dvh` encolhe → `<main>` encolhe → botões sobem automaticamente
+- Sem padding estático que cria gaps quando o header some
+- Header visível sempre (ou controlado por `useKeyboardVisible` no `MainLayout` se desejado)
 
