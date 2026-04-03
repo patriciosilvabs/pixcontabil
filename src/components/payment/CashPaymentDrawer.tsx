@@ -91,15 +91,20 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
       if (error) throw error;
 
       invalidateDashboardCache();
-      toast({ title: "Pagamento registrado!", description: "Agora anexe o comprovante." });
+      toastHook({ title: "Pagamento registrado!", description: "Agora anexe o comprovante." });
       onOpenChange(false);
       setAmount("");
       setBeneficiary("");
       setDescription("");
+      setOrderNumber("");
+      setShowOrderInput(false);
+      setSelectedTagId(null);
+      setDescriptionPlaceholder("Observações do pagamento...");
+      setDescriptionRequired(false);
       navigate(`/pix/receipt/${data.id}`);
     } catch (error: any) {
       console.error("[CashPaymentDrawer] Error:", error);
-      toast({ variant: "destructive", title: "Erro", description: error.message || "Falha ao registrar pagamento." });
+      toastHook({ variant: "destructive", title: "Erro", description: error.message || "Falha ao registrar pagamento." });
     } finally {
       setIsLoading(false);
     }
