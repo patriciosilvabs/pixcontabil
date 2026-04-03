@@ -31,6 +31,12 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   const [pixKey, setPixKey] = useState("");
   const [transactionId, setTransactionId] = useState("");
   const [description, setDescription] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
+  const { tags: quickTags } = useQuickTags("copy_paste");
 
   const reset = () => {
     setStep(1);
