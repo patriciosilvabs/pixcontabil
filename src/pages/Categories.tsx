@@ -185,7 +185,7 @@ export default function Categories() {
 
   return (
     <MainLayout>
-      <div className="p-4 lg:p-8 max-w-5xl mx-auto">
+      <div className="p-4 lg:p-8 max-w-5xl mx-auto pb-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
