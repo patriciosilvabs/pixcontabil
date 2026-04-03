@@ -71,7 +71,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-dvh flex flex-col lg:block lg:h-auto lg:min-h-screen bg-background">
       {/* Mobile header */}
       <MobileHeader
         balanceVisible={balanceVisible}
@@ -193,7 +193,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       {/* Main content */}
-      <main className="lg:pl-64 pt-[104px] lg:pt-0 pb-16 lg:pb-0 min-h-screen">
+      <main className="flex-1 overflow-y-auto lg:pl-64 pt-[104px] lg:pt-0 pb-20 lg:pb-0 lg:min-h-screen lg:overflow-visible">
         <div className="page-transition">{children}</div>
       </main>
 
