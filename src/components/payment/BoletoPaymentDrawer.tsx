@@ -485,31 +485,19 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="boleto-company" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Nome da Empresa *
-                </Label>
-                <Input
-                  id="boleto-company"
-                  type="text"
-                  placeholder="Ex: Empresa XYZ Ltda"
-                  value={companyName}
-                  onChange={(e) => setCompanyName(e.target.value)}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="boleto-desc" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição (opcional)
-                </Label>
-                <Input
-                  id="boleto-desc"
-                  type="text"
-                  placeholder="Ex: Conta de luz"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
+              {/* Quick Tags + Description */}
+              <QuickTagsSection
+                tags={quickTags}
+                selectedTagId={selectedTagId}
+                onSelectTag={handleTagSelect}
+                description={description}
+                onDescriptionChange={setDescription}
+                descriptionPlaceholder={descriptionPlaceholder}
+                descriptionRequired={descriptionRequired}
+                orderNumber={orderNumber}
+                onOrderNumberChange={setOrderNumber}
+                showOrderInput={showOrderInput}
+              />
 
               <Button
                 onClick={handleConfirm}

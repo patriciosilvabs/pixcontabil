@@ -145,16 +145,19 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="cash-description">Descrição (opcional)</Label>
-            <Textarea
-              id="cash-description"
-              placeholder="Observações do pagamento..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="min-h-[80px]"
-            />
-          </div>
+          {/* Quick Tags + Description */}
+          <QuickTagsSection
+            tags={quickTags}
+            selectedTagId={selectedTagId}
+            onSelectTag={handleTagSelect}
+            description={description}
+            onDescriptionChange={setDescription}
+            descriptionPlaceholder={descriptionPlaceholder}
+            descriptionRequired={descriptionRequired}
+            orderNumber={orderNumber}
+            onOrderNumberChange={setOrderNumber}
+            showOrderInput={showOrderInput}
+          />
 
           <Button
             onClick={handleSubmit}

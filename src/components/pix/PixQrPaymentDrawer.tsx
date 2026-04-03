@@ -300,19 +300,19 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
                 />
               </div>
 
-              {/* Description */}
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição *
-                </Label>
-                <Textarea
-                  placeholder="Ex: Pagamento fornecedor"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="min-h-[60px] text-sm"
-                  data-vaul-no-drag
-                />
-              </div>
+              {/* Quick Tags + Description */}
+              <QuickTagsSection
+                tags={quickTags}
+                selectedTagId={selectedTagId}
+                onSelectTag={handleTagSelect}
+                description={description}
+                onDescriptionChange={setDescription}
+                descriptionPlaceholder={descriptionPlaceholder}
+                descriptionRequired={descriptionRequired}
+                orderNumber={orderNumber}
+                onOrderNumberChange={setOrderNumber}
+                showOrderInput={showOrderInput}
+              />
 
               <Button
                 onClick={handleConfirm}
