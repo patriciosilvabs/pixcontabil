@@ -176,14 +176,9 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    /* Prevent text selection on interactive elements (native feel) */
     -webkit-user-select: none;
     user-select: none;
-    /* Remove tap highlight on mobile */
     -webkit-tap-highlight-color: transparent;
-    /* Prevent rubber-band scrolling */
-    overscroll-behavior-y: none;
-    /* Smooth momentum scrolling */
     -webkit-overflow-scrolling: touch;
   }
 
