@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard } from "lucide-react";
+import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard, X, QrCode, Search } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
 import { supabase } from "@/integrations/supabase/client";
@@ -14,8 +14,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { useQuickTags } from "@/hooks/useQuickTags";
-import { Badge } from "@/components/ui/badge";
-import { detectPixKeyType, PIX_KEY_TYPE_LABELS, type PixKeyType } from "@/lib/pix-utils";
+import { detectPixKeyType, type PixKeyType } from "@/lib/pix-utils";
 
 interface PixKeyDialogProps {
   open: boolean;
@@ -23,14 +22,6 @@ interface PixKeyDialogProps {
 }
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
-
-const keyTypePlaceholders: Record<PixKeyType, string> = {
-  cpf: "000.000.000-00",
-  cnpj: "00.000.000/0000-00",
-  email: "exemplo@email.com",
-  phone: "+5511999999999",
-  random: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-};
 
 function maskDocument(doc: string | null): string {
   if (!doc) return "";
@@ -44,6 +35,13 @@ function maskDocument(doc: string | null): string {
   return doc;
 }
 
+// Mock favorites for UI (will be replaced with DB query later)
+const MOCK_FAVORITES = [
+  { id: "1", name: "Maria Silva", initials: "MS", institution: "Nubank" },
+  { id: "2", name: "João Santos", initials: "JS", institution: "Bradesco" },
+  { id: "3", name: "Ana Costa", initials: "AC", institution: "Itaú" },
+];
+
 export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
@@ -51,7 +49,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<Step>(1);
   const [pixKeyType, setPixKeyType] = useState<PixKeyType | null>(null);
-  const [manualKeyType, setManualKeyType] = useState<PixKeyType | null>(null);
   const [pixKey, setPixKey] = useState("");
   const [keyError, setKeyError] = useState("");
   const [amount, setAmount] = useState("");
@@ -79,7 +76,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const handleClose = () => {
     stopProbePolling();
     setPixKeyType(null);
-    setManualKeyType(null);
     setPixKey("");
     setKeyError("");
     setDescription("");
@@ -96,6 +92,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     setBeneficiaryName(null);
     setBeneficiaryDocument(null);
     setRealTransactionId("");
+    setStep(1);
     onOpenChange(false);
   };
 
@@ -124,29 +121,31 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     if (step === 1 || step === 6) {
       handleClose();
     } else if (step === 3) {
-      // Can't go back during probe
       return;
     } else if (step === 4) {
-      // Cancel after seeing beneficiary — go back to step 2
       setStep(2);
     } else if (step === 5) {
-      // Can't go back during real payment
       return;
     } else {
       setStep((s) => (s - 1) as Step);
     }
   };
 
-  const handleStep1 = () => {
+  const handleStep1Submit = () => {
     const trimmed = pixKey.trim();
     if (!trimmed) {
       toast.error("Informe a chave Pix");
       return;
     }
+    const detected = detectPixKeyType(trimmed);
+    if (!detected) {
+      setKeyError("Formato de chave não reconhecido");
+      return;
+    }
+    setPixKeyType(detected);
     setStep(2);
   };
 
-  // Step 2 → directly triggers probe
   const handleStep2 = () => {
     const value = parseLocalizedNumber(amount);
     const validation = isValidPaymentAmount(value);
@@ -165,7 +164,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     startProbe();
   };
 
-  // Step 3: Send R$0.01 probe and poll for completion
   const startProbe = async () => {
     setStep(3);
     setProbeError("");
@@ -241,7 +239,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     probePollingRef.current = setInterval(doPoll, 2000);
   };
 
-  // Step 5: Send real payment
   const handleConfirmRealPayment = async () => {
     setStep(5);
     const value = parseLocalizedNumber(amount);
@@ -258,7 +255,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     if (result?.transaction_id) {
       setRealTransactionId(result.transaction_id);
-      // If receipt not required, mark the transaction accordingly
       if (!receiptRequired) {
         try {
           await supabase
@@ -290,14 +286,131 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     "Processando Pagamento",
     "Status do Pagamento",
   ];
-  const totalSteps = 6;
   const StepIcon = stepIcons[step - 1];
   const stepTitle = stepTitles[step - 1];
 
+  if (!open) return null;
+
+  // ── Step 1: Fullscreen transfer screen ──
+  if (step === 1) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background flex flex-col h-dvh overflow-hidden">
+        {/* Top bar with close button */}
+        <div className="shrink-0 flex items-center justify-between px-5 pt-4 pb-2">
+          <button
+            onClick={handleClose}
+            className="h-10 w-10 flex items-center justify-center rounded-full hover:bg-muted transition-colors"
+          >
+            <X className="h-6 w-6 text-foreground" />
+          </button>
+        </div>
+
+        {/* Content area - scrollable */}
+        <div className="flex-1 overflow-y-auto px-5 pb-8">
+          {/* Title */}
+          <div className="mt-4 mb-6">
+            <h1 className="text-2xl font-bold text-foreground leading-tight">
+              Para quem você quer{"\n"}transferir?
+            </h1>
+            <p className="text-sm text-green-500 mt-2">
+              Insira o dado de quem vai receber
+            </p>
+          </div>
+
+          {/* Search input with underline style */}
+          <div className="relative mb-8">
+            <div className="flex items-center border-b border-muted-foreground/30 pb-2 gap-3">
+              <Search className="h-5 w-5 text-muted-foreground shrink-0" />
+              <input
+                type="text"
+                placeholder="Nome, CPF/CNPJ ou chave Pix"
+                value={pixKey}
+                onChange={(e) => {
+                  setPixKey(e.target.value);
+                  setKeyError("");
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleStep1Submit();
+                }}
+                className="flex-1 bg-transparent border-none outline-none text-base text-foreground placeholder:text-muted-foreground"
+              />
+              <button
+                type="button"
+                className="h-8 w-8 flex items-center justify-center rounded-full bg-muted shrink-0"
+                onClick={() => {
+                  // QR code action placeholder
+                  toast.info("Scanner QR em breve");
+                }}
+              >
+                <QrCode className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+            {keyError && (
+              <p className="text-xs text-destructive mt-1">{keyError}</p>
+            )}
+          </div>
+
+          {/* Favorites section */}
+          <div className="mb-8">
+            <p className="text-sm font-semibold text-foreground mb-4">
+              Você sempre costuma pagar
+            </p>
+            <div className="flex gap-5 overflow-x-auto pb-2">
+              {MOCK_FAVORITES.map((fav) => (
+                <button
+                  key={fav.id}
+                  type="button"
+                  onClick={() => {
+                    // In the future, fill the key from favorite data
+                    toast.info(`Favorito: ${fav.name}`);
+                  }}
+                  className="flex flex-col items-center gap-2 min-w-[64px]"
+                >
+                  <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
+                    <span className="text-sm font-bold text-muted-foreground">{fav.initials}</span>
+                  </div>
+                  <span className="text-xs text-foreground font-medium text-center leading-tight max-w-[72px] truncate">
+                    {fav.name}
+                  </span>
+                  <span className="text-[10px] text-muted-foreground -mt-1 truncate max-w-[72px]">
+                    {fav.institution}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* All contacts section - placeholder */}
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-3">
+              Todos os seus contatos
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Em breve você poderá buscar seus contatos aqui.
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom action - only show when there's a valid key typed */}
+        {pixKey.trim().length > 0 && (
+          <div className="shrink-0 px-5 pb-6 pt-3 border-t border-border">
+            <Button
+              onClick={handleStep1Submit}
+              className="w-full h-12 text-base font-bold uppercase tracking-wider"
+            >
+              Continuar
+            </Button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Steps 2-6: Drawer ──
   const showHeader = step !== 6;
 
   return (
-    <Drawer open={open} onOpenChange={step >= 3 && step <= 5 ? undefined : handleClose}>
+    <Drawer open={true} onOpenChange={step >= 3 && step <= 5 ? undefined : handleClose}>
       <DrawerContent>
         <div className="px-5 pb-8">
           {showHeader && (
@@ -320,7 +433,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
               </DrawerDescription>
 
               <div className="flex gap-1.5 mb-5">
-                {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
+                {Array.from({ length: 6 }, (_, i) => i + 1).map((s) => (
                   <div
                     key={s}
                     className={`h-1 flex-1 rounded-full transition-colors ${
@@ -330,98 +443,6 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                 ))}
               </div>
             </>
-          )}
-
-          {/* Step 1: Auto-detect Pix Key */}
-          {step === 1 && (
-            <div className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="pix-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Chave Pix
-                </Label>
-                <Input
-                  id="pix-key"
-                  placeholder="Digite CPF, CNPJ, e-mail, telefone ou chave aleatória"
-                  value={pixKey}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setPixKey(val);
-                    setKeyError("");
-                    if (!manualKeyType) {
-                      setPixKeyType(detectPixKeyType(val));
-                    }
-                  }}
-                  onBlur={() => {
-                    if (pixKey.trim() && !pixKeyType) {
-                      setKeyError("Formato de chave não reconhecido");
-                    }
-                  }}
-                  className="h-12 text-base"
-                  data-vaul-no-drag
-                  onFocus={(e) => {
-                    const el = e.target;
-                    setTimeout(() => {
-                      el.scrollIntoView({ block: "center", behavior: "smooth" });
-                    }, 400);
-                  }}
-                />
-                {keyError && (
-                  <p className="text-xs text-destructive">{keyError}</p>
-                )}
-              </div>
-
-              {/* Badge grid */}
-              <div className="grid grid-cols-5 gap-2">
-                {(Object.keys(PIX_KEY_TYPE_LABELS) as PixKeyType[]).map((type) => {
-                  const isDetected = pixKeyType === type;
-                  const isManual = manualKeyType === type;
-                  return (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => {
-                        if (manualKeyType === type) {
-                          // Deselect manual override, re-run auto
-                          setManualKeyType(null);
-                          setPixKeyType(detectPixKeyType(pixKey));
-                        } else {
-                          setManualKeyType(type);
-                          setPixKeyType(type);
-                          setKeyError("");
-                        }
-                      }}
-                      className={`py-1.5 px-1 rounded-full text-xs font-semibold transition-colors text-center ${
-                        isDetected
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground"
-                      } ${isManual ? "ring-2 ring-primary ring-offset-1" : ""}`}
-                      data-vaul-no-drag
-                    >
-                      {PIX_KEY_TYPE_LABELS[type]}
-                    </button>
-                  );
-                })}
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Checkbox
-                  id="save-favorite"
-                  checked={saveFavorite}
-                  onCheckedChange={(checked) => setSaveFavorite(checked === true)}
-                />
-                <Label htmlFor="save-favorite" className="text-sm font-medium cursor-pointer">
-                  Salvar como Favorecido
-                </Label>
-              </div>
-
-              <Button
-                onClick={handleStep1}
-                disabled={!pixKey.trim() || !pixKeyType}
-                className="w-full h-12 text-base font-bold uppercase tracking-wider"
-              >
-                Continuar
-              </Button>
-            </div>
           )}
 
           {/* Step 2: Amount + Description */}
@@ -465,7 +486,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                       <button
                         key={tag.id}
                         type="button"
-                      onClick={() => {
+                        onClick={() => {
                           if (selectedTagId === tag.id) {
                             setSelectedTagId(null);
                             setSuggestedClassification(null);
@@ -474,7 +495,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
                             setDescriptionPlaceholder("Ex: Pagamento fornecedor");
                             setDescriptionRequired(true);
                           } else {
-                          setSelectedTagId(tag.id);
+                            setSelectedTagId(tag.id);
                             setSuggestedClassification(tag.suggested_classification || null);
                             setShowOrderInput(tag.request_order_number);
                             setReceiptRequired(false);
