@@ -45,18 +45,20 @@ function maskDocument(doc: string | null): string {
   return doc;
 }
 
-// Mock favorites for UI (will be replaced with DB query later)
-const MOCK_FAVORITES = [
-  { id: "1", name: "Maria Silva", initials: "MS", institution: "Nubank" },
-  { id: "2", name: "João Santos", initials: "JS", institution: "Bradesco" },
-  { id: "3", name: "Ana Costa", initials: "AC", institution: "Itaú" },
-];
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return (parts[0]?.[0] || "?").toUpperCase();
+}
 
 export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
-  const { hasPageAccess } = useAuth();
+  const { hasPageAccess, currentCompany } = useAuth();
   const { tags: quickTags } = useQuickTags();
+
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
   const [step, setStep] = useState<Step>(1);
   const [pixKeyType, setPixKeyType] = useState<PixKeyType | null>(null);
   const [pixKey, setPixKey] = useState("");
