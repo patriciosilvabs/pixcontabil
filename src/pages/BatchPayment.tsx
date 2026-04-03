@@ -152,7 +152,7 @@ export default function BatchPayment() {
   if (results && summary) {
     return (
       <MainLayout>
-        <div className="p-4 pb-24 space-y-4 max-w-4xl mx-auto">
+        <div className="p-4 pb-4 space-y-4 max-w-4xl mx-auto">
           <div className="flex items-center gap-3">
             <Link to="/">
               <Button variant="ghost" size="icon"><ArrowLeft className="h-5 w-5" /></Button>
