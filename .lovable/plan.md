@@ -1,62 +1,54 @@
 
 
-## Correção: Comprovante não sai na maquininha (QR Code)
+## Correção Definitiva: Layout Mobile Keyboard-Aware
 
-### Causa raiz
+### Problema
+No mobile, quando o teclado virtual abre:
+- O header é empurrado para fora da tela
+- Botões de ação ficam escondidos atrás do teclado
+- `min-h-screen` não se adapta ao viewport reduzido
 
-O proxy v3.1 não tem a rota `POST /pix/pagar-qrc`. A Edge Function `pix-pay-qrc` tenta chamá-la, recebe 404, e faz fallback para pagamento via chave (dict). Pagamentos dict **não imprimem na maquininha** porque usam o endpoint ONZ `/pix/payments/dict` em vez de `/pix/payments/qrc`.
+### Solução
 
-### Plano de correção (2 partes)
-
-**Parte 1 — Você precisa adicionar a rota no proxy v3.1**
-
-Adicione esta rota no seu `server.js` antes do `start()`:
-
-```javascript
-// 6. PAGAR PIX VIA QR CODE (EMV) - para imprimir na maquininha
-fastify.post('/pix/pagar-qrc', async (request, reply) => {
-  if (request.headers['x-proxy-key'] !== process.env.PROXY_ADMIN_KEY) return reply.code(401).send();
-  const { emv, valor, descricao } = request.body;
-  
-  try {
-    const token = await getToken();
-    const res = await axios.post(`${process.env.URL_CASHOUT}/pix/payments/qrc`, {
-      emv,
-      payment: { currency: "BRL", amount: valor },
-      description: descricao || "Pagamento via QR Code"
-    }, {
-      headers: { 
-        Authorization: `Bearer ${token}`,
-        'x-idempotency-key': request.headers['x-idempotency-key'] || `qrc-${Date.now()}`
-      },
-      httpsAgent: agentOut
-    });
-    return res.data;
-  } catch (err) {
-    return reply.code(err.response?.status || 500).send(err.response?.data || err.message);
-  }
-});
-```
-
-Depois: `pm2 restart` no proxy.
-
-**Parte 2 — Atualizar Edge Function `pix-pay-qrc`**
-
-Modificar o fallback para que, quando a rota QRC do novo proxy falhar, tente o proxy antigo (genérico) com o endpoint QRC correto **antes** de cair no dict. Só faz fallback para dict como último recurso.
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/pix-pay-qrc/index.ts` | No bloco de fallback (linhas 399-411), tentar `callOnzQrcWithTokenRetry` (proxy genérico antigo) antes de `delegateQrToPixPayDict` |
-
-### Cadeia de fallback resultante
+Converter o layout mobile de posicionamento fixo com padding estático para um **flex container com altura dinâmica (`100dvh`)**, onde apenas o `<main>` encolhe e ganha scroll quando o teclado aparece.
 
 ```text
-1. NEW_PROXY /pix/pagar-qrc  →  ✅ imprime na maquininha
-2. OLD_PROXY /pix/payments/qrc →  ✅ imprime na maquininha (fallback)
-3. pix-pay-dict (dict)         →  ❌ NÃO imprime (último recurso)
+┌─────────────────────┐
+│  MobileHeader       │  ← fixed, permanece visível
+├─────────────────────┤
+│                     │
+│  <main>             │  ← flex-1, overflow-y-auto
+│  (encolhe quando    │     (scroll apenas aqui)
+│   teclado sobe)     │
+│                     │
+├─────────────────────┤
+│  BottomTabBar       │  ← some com teclado (já implementado)
+└─────────────────────┘
 ```
 
-### Resumo técnico
+### Alterações por arquivo
 
-A única alteração de código é na Edge Function `pix-pay-qrc/index.ts`, adicionando ~15 linhas no bloco de fallback. A correção principal depende de você adicionar a rota `/pix/pagar-qrc` no proxy v3.1.
+**1. `index.html`** — Meta tag viewport
+- Já possui `interactive-widget=resizes-content` ✅ (sem alteração)
+
+**2. `src/index.css`** — Regras base
+- Remover `overscroll-behavior-y: none` do `body` (impede scroll natural)
+- Manter `overscroll-behavior: none` no `html` (previne pull-to-refresh)
+- Adicionar utilitário `.h-dvh` para `height: 100dvh`
+
+**3. `src/components/layout/MainLayout.tsx`** — Layout principal
+- Trocar `min-h-screen` por `h-dvh flex flex-col` no container raiz (mobile)
+- Trocar `pt-[104px] pb-16 min-h-screen` do `<main>` por `flex-1 overflow-y-auto pt-[104px] pb-20`
+- Desktop (`lg:`) mantém comportamento atual inalterado
+
+**4. `src/components/layout/BottomTabBar.tsx`** — Sem alteração
+- Já usa `useKeyboardVisible` para esconder, funciona corretamente
+
+**5. `src/components/layout/MobileHeader.tsx`** — Sem alteração
+- Já usa `useKeyboardVisible` para esconder com `-translate-y-full`
+
+### Impacto
+- **Mobile**: Header permanece visível, conteúdo rola dentro do `<main>`, botões de ação acessíveis com scroll natural
+- **Desktop**: Zero alterações visuais (sidebar + layout existente preservado)
+- **Drawers/Formulários**: Funcionam melhor pois o container pai agora aceita redimensionamento dinâmico
 
