@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
@@ -15,6 +15,16 @@ import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { useQuickTags } from "@/hooks/useQuickTags";
 import { detectPixKeyType, type PixKeyType } from "@/lib/pix-utils";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface Favorite {
+  beneficiary_name: string;
+  beneficiary_document: string | null;
+  pix_key: string;
+  pix_key_type: string | null;
+  initials: string;
+  count: number;
+}
 
 interface PixKeyDialogProps {
   open: boolean;
@@ -35,18 +45,20 @@ function maskDocument(doc: string | null): string {
   return doc;
 }
 
-// Mock favorites for UI (will be replaced with DB query later)
-const MOCK_FAVORITES = [
-  { id: "1", name: "Maria Silva", initials: "MS", institution: "Nubank" },
-  { id: "2", name: "João Santos", initials: "JS", institution: "Bradesco" },
-  { id: "3", name: "Ana Costa", initials: "AC", institution: "Itaú" },
-];
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return (parts[0]?.[0] || "?").toUpperCase();
+}
 
 export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
-  const { hasPageAccess } = useAuth();
+  const { hasPageAccess, currentCompany } = useAuth();
   const { tags: quickTags } = useQuickTags();
+
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [favoritesLoading, setFavoritesLoading] = useState(false);
   const [step, setStep] = useState<Step>(1);
   const [pixKeyType, setPixKeyType] = useState<PixKeyType | null>(null);
   const [pixKey, setPixKey] = useState("");
@@ -69,6 +81,61 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const [beneficiaryDocument, setBeneficiaryDocument] = useState<string | null>(null);
   const probePollingRef = useRef<NodeJS.Timeout | null>(null);
   const probeMountedRef = useRef(true);
+
+  // Fetch real favorites from transactions
+  useEffect(() => {
+    if (!open || !currentCompany?.id) return;
+    let cancelled = false;
+    setFavoritesLoading(true);
+
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("transactions")
+          .select("beneficiary_name, beneficiary_document, pix_key, pix_key_type")
+          .eq("company_id", currentCompany.id)
+          .eq("status", "completed")
+          .not("beneficiary_name", "is", null)
+          .not("pix_key", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        if (cancelled || !data) return;
+
+        // Group by beneficiary_name+document, keep most recent pix_key
+        const map = new Map<string, Favorite & { count: number }>();
+        for (const tx of data) {
+          if (!tx.beneficiary_name || !tx.pix_key) continue;
+          const key = `${tx.beneficiary_name}|${tx.beneficiary_document || ""}`;
+          const existing = map.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            map.set(key, {
+              beneficiary_name: tx.beneficiary_name,
+              beneficiary_document: tx.beneficiary_document,
+              pix_key: tx.pix_key,
+              pix_key_type: tx.pix_key_type,
+              initials: getInitials(tx.beneficiary_name),
+              count: 1,
+            });
+          }
+        }
+
+        const sorted = Array.from(map.values())
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+
+        if (!cancelled) setFavorites(sorted);
+      } catch (err) {
+        console.error("[PixKeyDialog] Failed to fetch favorites:", err);
+      } finally {
+        if (!cancelled) setFavoritesLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [open, currentCompany?.id]);
 
   // Real payment state
   const [realTransactionId, setRealTransactionId] = useState("");
@@ -351,57 +418,58 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
           </div>
 
           {/* Favorites section */}
-          <div className="mb-8">
-            <p className="text-sm font-semibold text-foreground mb-4">
-              Você sempre costuma pagar
-            </p>
-            <div className="flex gap-5 overflow-x-auto pb-2">
-              {MOCK_FAVORITES.map((fav) => (
-                <button
-                  key={fav.id}
-                  type="button"
-                  onClick={() => {
-                    // In the future, fill the key from favorite data
-                    toast.info(`Favorito: ${fav.name}`);
-                  }}
-                  className="flex flex-col items-center gap-2 min-w-[64px]"
-                >
-                  <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
-                    <span className="text-sm font-bold text-muted-foreground">{fav.initials}</span>
+          {favoritesLoading && (
+            <div className="mb-8">
+              <p className="text-sm font-semibold text-foreground mb-4">Você sempre costuma pagar</p>
+              <div className="flex gap-5">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="flex flex-col items-center gap-2 min-w-[64px]">
+                    <Skeleton className="h-14 w-14 rounded-full" />
+                    <Skeleton className="h-3 w-12" />
                   </div>
-                  <span className="text-xs text-foreground font-medium text-center leading-tight max-w-[72px] truncate">
-                    {fav.name}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground -mt-1 truncate max-w-[72px]">
-                    {fav.institution}
-                  </span>
-                </button>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* All contacts section - placeholder */}
-          <div>
-            <p className="text-sm font-semibold text-foreground mb-3">
-              Todos os seus contatos
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Em breve você poderá buscar seus contatos aqui.
-            </p>
-          </div>
+          )}
+          {!favoritesLoading && favorites.length > 0 && (
+            <div className="mb-8">
+              <p className="text-sm font-semibold text-foreground mb-4">
+                Você sempre costuma pagar
+              </p>
+              <div className="flex gap-5 overflow-x-auto pb-2">
+                {favorites.map((fav, idx) => (
+                  <button
+                    key={`${fav.beneficiary_name}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      setPixKey(fav.pix_key);
+                      setKeyError("");
+                    }}
+                    className="flex flex-col items-center gap-2 min-w-[64px]"
+                  >
+                    <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center">
+                      <span className="text-sm font-bold text-muted-foreground">{fav.initials}</span>
+                    </div>
+                    <span className="text-xs text-foreground font-medium text-center leading-tight max-w-[72px] truncate">
+                      {fav.beneficiary_name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Bottom action - only show when there's a valid key typed */}
-        {pixKey.trim().length > 0 && (
-          <div className="shrink-0 px-5 pb-6 pt-3 border-t border-border">
-            <Button
-              onClick={handleStep1Submit}
-              className="w-full h-12 text-base font-bold uppercase tracking-wider"
-            >
-              Continuar
-            </Button>
-          </div>
-        )}
+        {/* Bottom action - always visible */}
+        <div className="shrink-0 px-5 pb-6 pt-3 border-t border-border">
+          <Button
+            onClick={handleStep1Submit}
+            disabled={pixKey.trim().length === 0}
+            className="w-full h-12 text-base font-bold uppercase tracking-wider"
+          >
+            Continuar
+          </Button>
+        </div>
       </div>
     );
   }
