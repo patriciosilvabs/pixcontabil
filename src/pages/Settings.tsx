@@ -223,6 +223,32 @@ export default function Settings() {
               </CardContent>
             </Card>
           )}
+          {/* Version Info */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-5 w-5 text-primary" />
+                Versão do Sistema
+              </CardTitle>
+              <CardDescription>Informações sobre a versão atual</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Versão</span>
+                  <span className="font-mono font-medium">{APP_VERSION}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Build</span>
+                  <span className="font-mono text-xs">{BUILD_DATE.slice(0, 19).replace("T", " ")}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Hash</span>
+                  <span className="font-mono text-xs">{BUILD_HASH}</span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </MainLayout>
