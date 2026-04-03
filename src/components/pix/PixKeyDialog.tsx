@@ -50,8 +50,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const { hasPageAccess } = useAuth();
   const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<Step>(1);
-  const [pixKeyType, setPixKeyType] = useState<PixKeyType>("cpf");
+  const [pixKeyType, setPixKeyType] = useState<PixKeyType | null>(null);
+  const [manualKeyType, setManualKeyType] = useState<PixKeyType | null>(null);
   const [pixKey, setPixKey] = useState("");
+  const [keyError, setKeyError] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
   const [description, setDescription] = useState("");
