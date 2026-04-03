@@ -845,6 +845,7 @@ export type Database = {
           pix_qrcode: string | null
           pix_txid: string | null
           pix_type: Database["public"]["Enums"]["pix_type"]
+          quick_tag_name: string | null
           receipt_required: boolean
           status: Database["public"]["Enums"]["transaction_status"]
           updated_at: string
@@ -876,6 +877,7 @@ export type Database = {
           pix_qrcode?: string | null
           pix_txid?: string | null
           pix_type: Database["public"]["Enums"]["pix_type"]
+          quick_tag_name?: string | null
           receipt_required?: boolean
           status?: Database["public"]["Enums"]["transaction_status"]
           updated_at?: string
@@ -907,6 +909,7 @@ export type Database = {
           pix_qrcode?: string | null
           pix_txid?: string | null
           pix_type?: Database["public"]["Enums"]["pix_type"]
+          quick_tag_name?: string | null
           receipt_required?: boolean
           status?: Database["public"]["Enums"]["transaction_status"]
           updated_at?: string
