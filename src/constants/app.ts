@@ -1,9 +1,11 @@
+import versionInfo from "../../version.json";
+
 declare const __APP_VERSION__: string;
 declare const __BUILD_DATE__: string;
 declare const __BUILD_HASH__: string;
 
 export const APP_VERSION =
-  typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "v1.3";
+  typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : `v${versionInfo.version}`;
 
 export const BUILD_DATE =
   typeof __BUILD_DATE__ !== "undefined" ? __BUILD_DATE__ : new Date().toISOString();

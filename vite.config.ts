@@ -4,46 +4,86 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 import fs from "fs";
 
-function bumpVersionPlugin(): Plugin {
+const versionFilePath = path.resolve(__dirname, "version.json");
+const distAssetsPath = path.resolve(__dirname, "dist", "assets");
+
+function readVersion() {
+  const raw = fs.readFileSync(versionFilePath, "utf8");
+  const data = JSON.parse(raw) as { version?: string };
+
+  if (!data.version) {
+    throw new Error("[version] version.json sem o campo version");
+  }
+
+  return data.version;
+}
+
+function getNextVersion(version: string) {
+  const parts = version.split(".").map(Number);
+
+  if (parts.length !== 2 || parts.some(Number.isNaN)) {
+    throw new Error(`[version] formato inválido: ${version}`);
+  }
+
+  parts[1] += 1;
+  return parts.join(".");
+}
+
+function validateVersionPlugin(version: string): Plugin {
   return {
-    name: "bump-version",
-    buildStart() {
-      const versionFile = path.resolve(__dirname, "version.json");
-      const raw = fs.readFileSync(versionFile, "utf8");
-      const data = JSON.parse(raw);
-      const parts = data.version.split(".").map(Number);
-      const oldVersion = data.version;
-      parts[1] += 1;
-      data.version = parts.join(".");
-      fs.writeFileSync(versionFile, JSON.stringify(data, null, 2) + "\n");
-      console.log(`[bump-version] v${oldVersion} → v${data.version}`);
+    name: "validate-version",
+    closeBundle() {
+      if (!fs.existsSync(distAssetsPath)) {
+        throw new Error("[validate-version] ERRO CRÍTICO: diretório dist/assets não encontrado!");
+      }
+
+      const versionString = `v${version}`;
+      const jsFiles = fs.readdirSync(distAssetsPath).filter((file) => file.endsWith(".js"));
+      const found = jsFiles.some((file) =>
+        fs.readFileSync(path.join(distAssetsPath, file), "utf8").includes(versionString),
+      );
+
+      if (!found) {
+        throw new Error(`[validate-version] ERRO CRÍTICO: \"${versionString}\" não encontrada no bundle dist/assets!`);
+      }
+
+      console.log(`[validate-version] ✅ Build válido — ${versionString} confirmada no bundle`);
     },
   };
 }
 
-const versionData = JSON.parse(fs.readFileSync(path.resolve(__dirname, "version.json"), "utf8"));
+export default defineConfig(({ mode, command }) => {
+  const shouldBumpVersion = command === "build" && mode === "production";
+  const currentVersion = readVersion();
+  const resolvedVersion = shouldBumpVersion ? getNextVersion(currentVersion) : currentVersion;
 
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: "::",
-    port: 8080,
-    hmr: {
-      overlay: false,
+  if (shouldBumpVersion) {
+    fs.writeFileSync(versionFilePath, JSON.stringify({ version: resolvedVersion }, null, 2) + "\n");
+    console.log(`[bump-version] v${currentVersion} → v${resolvedVersion}`);
+  }
+
+  return {
+    server: {
+      host: "::",
+      port: 8080,
+      hmr: {
+        overlay: false,
+      },
     },
-  },
-  define: {
-    __APP_VERSION__: JSON.stringify(`v${versionData.version}`),
-    __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
-    __BUILD_HASH__: JSON.stringify(Date.now().toString(36)),
-  },
-  plugins: [
-    react(),
-    mode === "development" && componentTagger(),
-    mode === "production" && bumpVersionPlugin(),
-  ].filter(Boolean),
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
+    define: {
+      __APP_VERSION__: JSON.stringify(`v${resolvedVersion}`),
+      __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
+      __BUILD_HASH__: JSON.stringify(Date.now().toString(36)),
     },
-  },
-}));
+    plugins: [
+      react(),
+      mode === "development" && componentTagger(),
+      shouldBumpVersion && validateVersionPlugin(resolvedVersion),
+    ].filter(Boolean),
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+  };
+});
