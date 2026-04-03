@@ -82,8 +82,60 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const probePollingRef = useRef<NodeJS.Timeout | null>(null);
   const probeMountedRef = useRef(true);
 
-  // Real payment state
-  const [realTransactionId, setRealTransactionId] = useState("");
+  // Fetch real favorites from transactions
+  useEffect(() => {
+    if (!open || !currentCompany?.id) return;
+    let cancelled = false;
+    setFavoritesLoading(true);
+
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("transactions")
+          .select("beneficiary_name, beneficiary_document, pix_key, pix_key_type")
+          .eq("company_id", currentCompany.id)
+          .eq("status", "completed")
+          .not("beneficiary_name", "is", null)
+          .not("pix_key", "is", null)
+          .order("created_at", { ascending: false })
+          .limit(200);
+
+        if (cancelled || !data) return;
+
+        // Group by beneficiary_name+document, keep most recent pix_key
+        const map = new Map<string, Favorite & { count: number }>();
+        for (const tx of data) {
+          if (!tx.beneficiary_name || !tx.pix_key) continue;
+          const key = `${tx.beneficiary_name}|${tx.beneficiary_document || ""}`;
+          const existing = map.get(key);
+          if (existing) {
+            existing.count++;
+          } else {
+            map.set(key, {
+              beneficiary_name: tx.beneficiary_name,
+              beneficiary_document: tx.beneficiary_document,
+              pix_key: tx.pix_key,
+              pix_key_type: tx.pix_key_type,
+              initials: getInitials(tx.beneficiary_name),
+              count: 1,
+            });
+          }
+        }
+
+        const sorted = Array.from(map.values())
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 5);
+
+        if (!cancelled) setFavorites(sorted);
+      } catch (err) {
+        console.error("[PixKeyDialog] Failed to fetch favorites:", err);
+      } finally {
+        if (!cancelled) setFavoritesLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [open, currentCompany?.id]);
 
   const handleClose = () => {
     stopProbePolling();
