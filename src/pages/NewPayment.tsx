@@ -472,7 +472,13 @@ export default function NewPayment() {
             <CardContent className="space-y-6">
               <Tabs
                 value={pixData.type}
-                onValueChange={(v) => setPixData({ ...pixData, type: v as PaymentType })}
+                onValueChange={(v) => {
+                  setPixData({ ...pixData, type: v as PaymentType });
+                  setSelectedTagId(null);
+                  setShowOrderInput(false);
+                  setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                  setDescriptionRequired(true);
+                }}
               >
                 <TabsList className="grid grid-cols-5 w-full">
                   <TabsTrigger value="key" className="gap-2">
