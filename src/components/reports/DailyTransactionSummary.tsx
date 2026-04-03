@@ -266,8 +266,11 @@ export function DailyTransactionSummary({ transactions, profileMap = {}, isAdmin
                           {/* Info */}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">
-                              {t.description || t.beneficiary_name || "Sem descrição"}
+                              {t.beneficiary_name || t.description || "Sem descrição"}
                             </p>
+                            {t.description && t.description !== t.beneficiary_name && (
+                              <p className="text-xs text-muted-foreground truncate">{t.description}</p>
+                            )}
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
                               {t.categories?.name && <span>{t.categories.name}</span>}
                               {t.categories?.classification && (
