@@ -55,7 +55,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess, currentCompany } = useAuth();
-  const { tags: quickTags } = useQuickTags();
+  const { tags: quickTags } = useQuickTags("key");
 
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [favoritesLoading, setFavoritesLoading] = useState(false);
