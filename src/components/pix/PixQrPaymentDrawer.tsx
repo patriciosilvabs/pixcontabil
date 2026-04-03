@@ -108,12 +108,30 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setStep(3);
   };
 
+  const handleTagSelect = (tag: QuickTag | null) => {
+    if (!tag) {
+      setSelectedTagId(null);
+      setShowOrderInput(false);
+      setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+      setDescriptionRequired(true);
+    } else {
+      setSelectedTagId(tag.id);
+      setShowOrderInput(tag.request_order_number);
+      setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+      setDescriptionRequired(tag.description_required);
+    }
+  };
+
   const handleConfirm = async () => {
     if (!companyName.trim()) {
       toast.error("Informe o nome da empresa que está recebendo o pagamento");
       return;
     }
-    if (!description.trim()) {
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
+      return;
+    }
+    if (descriptionRequired && !description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
