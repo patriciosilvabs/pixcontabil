@@ -1,51 +1,49 @@
 
 
-## Correção: Tags Rápidas não filtradas por tipo de pagamento nos drawers mobile
+## Versionamento Automático v1.0, v1.1, v1.2...
 
-### Problema identificado
+### Estado atual
 
-1. **`PixKeyDialog.tsx`** (mobile Pix por Chave): chama `useQuickTags()` **sem** passar `"key"`, mostrando todas as tags independentemente da configuração `visible_in`.
+O projeto **já possui** um sistema de versionamento automático funcional:
+- `version.json` → fonte de verdade (`"1.1.3"`)
+- `scripts/bump-version.cjs` → incrementa automaticamente no `prebuild`
+- `vite.config.ts` → injeta `__APP_VERSION__` no build
+- `src/constants/app.ts` → exporta `APP_VERSION`
+- Exibido no header mobile, sidebar desktop e console log
 
-2. **`PixCopyPasteDrawer.tsx`** (mobile Copia e Cola): não usa quick tags.
+### O que precisa mudar
 
-3. **`PixQrPaymentDrawer.tsx`** (mobile QR Code): não usa quick tags.
-
-4. **`BoletoPaymentDrawer.tsx`** (mobile Boleto): não usa quick tags.
-
-5. **`CashPaymentDrawer.tsx`** (mobile Dinheiro): não usa quick tags.
+O formato atual é `v1.1.3` (3 segmentos). O usuário quer **2 segmentos**: `v1.0 → v1.1 → v1.2...`
 
 ### Alterações
 
-**1. `src/components/pix/PixKeyDialog.tsx`**
-- Corrigir chamada: `useQuickTags("key")` em vez de `useQuickTags()`
-- Isso filtra corretamente as tags que têm `"key"` no array `visible_in`
+**1. `version.json`** — mudar para formato de 2 segmentos:
+```json
+{ "version": "1.3" }
+```
 
-**2. `src/components/pix/PixCopyPasteDrawer.tsx`**
-- Adicionar `useQuickTags("copy_paste")`
-- Adicionar estados para tag selecionada, nº do pedido e descrição configurável
-- Renderizar seção de Quick Tags + campo de descrição/pedido no step de confirmação (antes de pagar)
-- Incluir tag/descrição na chamada de pagamento
+**2. `scripts/bump-version.cjs`** — já funciona com qualquer quantidade de segmentos (incrementa o último). Adicionar validação que **falha o build** se o arquivo não existir ou formato for inválido:
+```javascript
+if (parts.length !== 2) {
+  console.error('Formato inválido. Esperado: X.Y');
+  process.exit(1);
+}
+```
 
-**3. `src/components/pix/PixQrPaymentDrawer.tsx`**
-- Adicionar `useQuickTags("qrcode")`
-- Adicionar estados e UI de Quick Tags no step de confirmação
-- Incluir tag/descrição na chamada de pagamento
+**3. `src/constants/app.ts`** — atualizar fallback para `"v1.3"`
 
-**4. `src/components/payment/BoletoPaymentDrawer.tsx`**
-- Adicionar `useQuickTags("boleto")`
-- Adicionar estados e UI de Quick Tags no step de confirmação (antes de pagar)
-- Incluir tag/descrição na chamada de pagamento
+**4. Endpoint `/version`** — criar edge function `version` que retorna:
+```json
+{ "version": "v1.3", "build_date": "...", "build_hash": "..." }
+```
+Acessível via `/functions/v1/version`.
 
-**5. `src/components/payment/CashPaymentDrawer.tsx`**
-- Adicionar `useQuickTags("cash")`
-- Adicionar estados e UI de Quick Tags no formulário
-- Incluir tag/descrição na inserção da transação
+**5. Página Settings** — adicionar seção com versão, data do build e hash no final da página de Configurações para consulta fácil pelo admin.
 
-### Padrão de UI reutilizado
-
-Em cada drawer, a seção de Quick Tags seguirá o mesmo padrão visual já implementado no `PixKeyDialog` e `NewPayment`:
-- Chips arredondados com seleção toggle
-- Campo de descrição com placeholder configurável por tag
-- Campo de Nº do Pedido condicional (quando `request_order_number = true`)
-- Validação obrigatória de tag quando há tags disponíveis para o tipo
+### Onde a versão aparece em produção
+- Header mobile (barra verde)
+- Sidebar desktop (rodapé)
+- Console do navegador
+- Página de Configurações
+- Endpoint `/functions/v1/version`
 
