@@ -197,13 +197,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto lg:pl-64 pt-[104px] lg:pt-0 pb-20 lg:pb-0 lg:min-h-screen lg:overflow-visible">
+      {/* Main content — flex-1 scrollable area */}
+      <main className="flex-1 overflow-y-auto lg:pl-64 lg:pt-0 lg:pb-0 lg:min-h-screen lg:overflow-visible">
         <div className="page-transition">{children}</div>
       </main>
 
-      {/* Bottom tab bar (mobile only) */}
-      <BottomTabBar />
+      {/* Bottom tab bar — in flex flow, hidden when keyboard visible */}
+      {!isKeyboardVisible && <BottomTabBar />}
     </div>
   );
 }
