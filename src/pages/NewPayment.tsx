@@ -318,16 +318,14 @@ export default function NewPayment() {
         });
         return;
       }
-      // Validate quick tags for key payments
-      if (pixData.type === "key") {
-        if (quickTags.length > 0 && !selectedTagId) {
-          toast({ variant: "destructive", title: "Erro", description: "Selecione uma tag" });
-          return;
-        }
-        if (descriptionRequired && !pixData.description?.trim()) {
-          toast({ variant: "destructive", title: "Erro", description: "Informe a descrição do pagamento" });
-          return;
-        }
+      // Validate quick tags when available for this payment type
+      if (quickTags.length > 0 && !selectedTagId) {
+        toast({ variant: "destructive", title: "Erro", description: "Selecione uma tag" });
+        return;
+      }
+      if (selectedTagId && descriptionRequired && !pixData.description?.trim()) {
+        toast({ variant: "destructive", title: "Erro", description: "Informe a descrição do pagamento" });
+        return;
       }
     }
 
