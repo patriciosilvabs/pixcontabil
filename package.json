@@ -11,7 +11,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prebuild": "node scripts/bump-version.js"
+    "prebuild": "node scripts/bump-version.cjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
