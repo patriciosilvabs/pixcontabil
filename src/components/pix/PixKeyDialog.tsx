@@ -393,7 +393,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
         {/* Bottom action - only show when there's a valid key typed */}
         {pixKey.trim().length > 0 && (
-          <div className="shrink-0 px-5 pb-6 pt-3 border-t border-border">
+          <div className="shrink-0 px-5 pb-24 pt-3 border-t border-border">
             <Button
               onClick={handleStep1Submit}
               className="w-full h-12 text-base font-bold uppercase tracking-wider"
