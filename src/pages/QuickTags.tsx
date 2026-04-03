@@ -251,6 +251,19 @@ export default function QuickTags() {
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
                         </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {tag.visible_in && tag.visible_in.length === 5 ? (
+                              <Badge variant="secondary" className="text-xs">Todos</Badge>
+                            ) : (
+                              tag.visible_in?.map((v) => (
+                                <Badge key={v} variant="outline" className="text-xs">
+                                  {visibilityLabel(v)}
+                                </Badge>
+                              ))
+                            )}
+                          </div>
+                        </TableCell>
                         <TableCell>{tag.request_order_number ? "Sim" : "Não"}</TableCell>
                         <TableCell>
                           <Switch
