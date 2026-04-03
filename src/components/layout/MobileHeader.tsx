@@ -15,7 +15,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 interface MobileHeaderProps {
   balanceVisible: boolean;
@@ -26,10 +25,9 @@ interface MobileHeaderProps {
 export const MobileHeader = React.memo(function MobileHeader({ balanceVisible, onToggleBalance, pendingReceiptsCount = 0 }: MobileHeaderProps) {
   const { profile, currentCompany, companies, setCurrentCompany, signOut } = useAuth();
   const navigate = useNavigate();
-  const isKeyboardVisible = useKeyboardVisible();
 
   return (
-    <header className={cn("lg:hidden fixed top-0 left-0 right-0 z-50 transition-transform duration-200", isKeyboardVisible && "-translate-y-full")}>
+    <header className="lg:hidden shrink-0">
       {/* Main header */}
       <div className="bg-gradient-bank-header text-white">
         {/* Top row */}

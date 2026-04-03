@@ -35,6 +35,7 @@ import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import { usePendingReceipts } from "@/hooks/usePendingReceipts";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -70,14 +71,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     return location.pathname.startsWith(href);
   };
 
+  const isKeyboardVisible = useKeyboardVisible();
+
   return (
-    <div className="h-dvh flex flex-col lg:block lg:h-auto lg:min-h-screen bg-background">
-      {/* Mobile header */}
-      <MobileHeader
-        balanceVisible={balanceVisible}
-        onToggleBalance={toggleBalance}
-        pendingReceiptsCount={pendingReceiptsCount}
-      />
+    <div className="h-dvh flex flex-col overflow-hidden lg:block lg:h-auto lg:min-h-screen bg-background">
+      {/* Mobile header — in flex flow, not fixed */}
+      {!isKeyboardVisible && (
+        <MobileHeader
+          balanceVisible={balanceVisible}
+          onToggleBalance={toggleBalance}
+          pendingReceiptsCount={pendingReceiptsCount}
+        />
+      )}
 
       {/* Desktop sidebar */}
       <aside className="hidden lg:fixed lg:inset-y-0 lg:left-0 lg:flex lg:w-64 lg:flex-col bg-sidebar border-r border-sidebar-border">
@@ -192,13 +197,13 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
       </aside>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-y-auto lg:pl-64 pt-[104px] lg:pt-0 pb-20 lg:pb-0 lg:min-h-screen lg:overflow-visible">
+      {/* Main content — flex-1 scrollable area */}
+      <main className="flex-1 overflow-y-auto lg:pl-64 lg:pt-0 lg:pb-0 lg:min-h-screen lg:overflow-visible">
         <div className="page-transition">{children}</div>
       </main>
 
-      {/* Bottom tab bar (mobile only) */}
-      <BottomTabBar />
+      {/* Bottom tab bar — in flex flow, hidden when keyboard visible */}
+      {!isKeyboardVisible && <BottomTabBar />}
     </div>
   );
 }
