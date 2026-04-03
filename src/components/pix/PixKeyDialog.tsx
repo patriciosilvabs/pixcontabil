@@ -78,9 +78,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
   const handleClose = () => {
     stopProbePolling();
-    setPixKeyType("cpf");
+    setPixKeyType(null);
+    setManualKeyType(null);
     setPixKey("");
-    setAmount("");
+    setKeyError("");
     setDescription("");
     setSaveFavorite(false);
     setOrderNumber("");
