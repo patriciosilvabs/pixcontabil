@@ -96,7 +96,7 @@ export function useQuickTagsAdmin() {
     fetchAll();
   }, [fetchAll]);
 
-  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean }) => {
+  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean; visible_in?: string[] }) => {
     if (!currentCompany?.id) return;
     const { error } = await supabase
       .from("quick_tags" as any)
@@ -109,6 +109,7 @@ export function useQuickTagsAdmin() {
         sort_order: tag.sort_order ?? tags.length,
         description_placeholder: tag.description_placeholder || null,
         description_required: tag.description_required ?? true,
+        visible_in: tag.visible_in ?? ["key", "qrcode", "copy_paste", "boleto", "cash"],
       } as any);
     if (error) throw error;
     await fetchAll();
