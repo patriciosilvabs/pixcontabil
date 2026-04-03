@@ -74,7 +74,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const isKeyboardVisible = useKeyboardVisible();
 
   return (
-    <div className="h-dvh flex flex-col overflow-hidden lg:block lg:h-auto lg:min-h-screen bg-background">
+    <div className="h-dvh flex flex-col overflow-hidden lg:block lg:h-auto lg:min-h-screen lg:overflow-visible bg-background">
       {/* Mobile header — in flex flow, not fixed */}
       {!isKeyboardVisible && (
         <MobileHeader
