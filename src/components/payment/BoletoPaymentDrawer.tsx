@@ -38,7 +38,6 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Conta de luz");
   const [descriptionRequired, setDescriptionRequired] = useState(false);
   const { tags: quickTags } = useQuickTags("boleto");
-  const [transactionId, setTransactionId] = useState("");
 
   // Status polling state
   const [statusState, setStatusState] = useState<StatusState>("polling");
