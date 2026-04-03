@@ -9,8 +9,8 @@ import { BalanceVisibilityProvider } from "@/contexts/BalanceVisibilityContext";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { Loader2 } from "lucide-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import ScrollToTop from "@/components/ScrollToTop";
 
-// Lazy-loaded pages for code splitting — reduces initial bundle
 const Auth = lazy(() => import("./pages/Auth"));
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const NewPayment = lazy(() => import("./pages/NewPayment"));
@@ -34,7 +34,7 @@ const queryClient = new QueryClient({
     queries: {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      staleTime: 5 * 60 * 1000, // 5 min
+      staleTime: 5 * 60 * 1000,
       retry: 1,
     },
   },
@@ -54,33 +54,32 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
+        <ScrollToTop />
         <AuthProvider>
           <BalanceVisibilityProvider>
-          <Suspense fallback={<PageFallback />}>
-          <ErrorBoundary>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-
-            <Route path="/" element={<AuthGuard><Dashboard /></AuthGuard>} />
-            <Route path="/pix/new" element={<AuthGuard requiredPage="new_payment"><NewPayment /></AuthGuard>} />
-            <Route path="/pix/receipt/:transactionId" element={<AuthGuard><ReceiptCapture /></AuthGuard>} />
-            <Route path="/transactions" element={<AuthGuard requiredPage="transactions"><Transactions /></AuthGuard>} />
-            <Route path="/categories" element={<AuthGuard requireAdmin requiredPage="categories"><Categories /></AuthGuard>} />
-            <Route path="/reports" element={<AuthGuard requireAdmin requiredPage="reports"><Reports /></AuthGuard>} />
-            <Route path="/users" element={<AuthGuard requireAdmin requiredPage="users"><Users /></AuthGuard>} />
-            <Route path="/companies" element={<AuthGuard requireAdmin requiredPage="companies"><Companies /></AuthGuard>} />
-            <Route path="/settings" element={<AuthGuard requiredPage="settings"><Settings /></AuthGuard>} />
-            <Route path="/settings/pix-integration" element={<AuthGuard requireAdmin><PixIntegration /></AuthGuard>} />
-            <Route path="/batch-payment" element={<AuthGuard requiredPage="new_payment"><BatchPayment /></AuthGuard>} />
-            <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
-            <Route path="/quick-tags" element={<AuthGuard requireAdmin><QuickTags /></AuthGuard>} />
-            <Route path="/webhook-events" element={<AuthGuard requireAdmin><WebhookEvents /></AuthGuard>} />
-            <Route path="/security" element={<AuthGuard requireAdmin><Security /></AuthGuard>} />
-
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-          </ErrorBoundary>
-          </Suspense>
+            <Suspense fallback={<PageFallback />}>
+              <ErrorBoundary>
+                <Routes>
+                  <Route path="/auth" element={<Auth />} />
+                  <Route path="/" element={<AuthGuard><Dashboard /></AuthGuard>} />
+                  <Route path="/pix/new" element={<AuthGuard requiredPage="new_payment"><NewPayment /></AuthGuard>} />
+                  <Route path="/pix/receipt/:transactionId" element={<AuthGuard><ReceiptCapture /></AuthGuard>} />
+                  <Route path="/transactions" element={<AuthGuard requiredPage="transactions"><Transactions /></AuthGuard>} />
+                  <Route path="/categories" element={<AuthGuard requireAdmin requiredPage="categories"><Categories /></AuthGuard>} />
+                  <Route path="/reports" element={<AuthGuard requireAdmin requiredPage="reports"><Reports /></AuthGuard>} />
+                  <Route path="/users" element={<AuthGuard requireAdmin requiredPage="users"><Users /></AuthGuard>} />
+                  <Route path="/companies" element={<AuthGuard requireAdmin requiredPage="companies"><Companies /></AuthGuard>} />
+                  <Route path="/settings" element={<AuthGuard requiredPage="settings"><Settings /></AuthGuard>} />
+                  <Route path="/settings/pix-integration" element={<AuthGuard requireAdmin><PixIntegration /></AuthGuard>} />
+                  <Route path="/batch-payment" element={<AuthGuard requiredPage="new_payment"><BatchPayment /></AuthGuard>} />
+                  <Route path="/menu" element={<AuthGuard><MobileMenu /></AuthGuard>} />
+                  <Route path="/quick-tags" element={<AuthGuard requireAdmin><QuickTags /></AuthGuard>} />
+                  <Route path="/webhook-events" element={<AuthGuard requireAdmin><WebhookEvents /></AuthGuard>} />
+                  <Route path="/security" element={<AuthGuard requireAdmin><Security /></AuthGuard>} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </ErrorBoundary>
+            </Suspense>
           </BalanceVisibilityProvider>
         </AuthProvider>
       </BrowserRouter>
