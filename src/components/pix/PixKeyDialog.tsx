@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
@@ -6,7 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Loader2, Key, DollarSign, CheckCircle2, ShieldCheck, UserCheck, CreditCard } from "lucide-react";
 import { toast } from "sonner";
 import { usePixPayment } from "@/hooks/usePixPayment";
@@ -16,6 +15,7 @@ import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { useQuickTags } from "@/hooks/useQuickTags";
 import { Badge } from "@/components/ui/badge";
+import { detectPixKeyType, PIX_KEY_TYPE_LABELS, type PixKeyType } from "@/lib/pix-utils";
 
 interface PixKeyDialogProps {
   open: boolean;
@@ -24,22 +24,12 @@ interface PixKeyDialogProps {
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
-type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
-
 const keyTypePlaceholders: Record<PixKeyType, string> = {
   cpf: "000.000.000-00",
   cnpj: "00.000.000/0000-00",
   email: "exemplo@email.com",
   phone: "+5511999999999",
   random: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-};
-
-const keyTypeLabels: Record<PixKeyType, string> = {
-  cpf: "CPF",
-  cnpj: "CNPJ",
-  email: "E-mail",
-  phone: "Telefone",
-  random: "Chave aleatória",
 };
 
 function maskDocument(doc: string | null): string {
@@ -60,8 +50,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
   const { hasPageAccess } = useAuth();
   const { tags: quickTags } = useQuickTags();
   const [step, setStep] = useState<Step>(1);
-  const [pixKeyType, setPixKeyType] = useState<PixKeyType>("cpf");
+  const [pixKeyType, setPixKeyType] = useState<PixKeyType | null>(null);
+  const [manualKeyType, setManualKeyType] = useState<PixKeyType | null>(null);
   const [pixKey, setPixKey] = useState("");
+  const [keyError, setKeyError] = useState("");
   const [amount, setAmount] = useState("");
   const [saveFavorite, setSaveFavorite] = useState(false);
   const [description, setDescription] = useState("");
@@ -86,9 +78,10 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
   const handleClose = () => {
     stopProbePolling();
-    setPixKeyType("cpf");
+    setPixKeyType(null);
+    setManualKeyType(null);
     setPixKey("");
-    setAmount("");
+    setKeyError("");
     setDescription("");
     setSaveFavorite(false);
     setOrderNumber("");
@@ -339,45 +332,75 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
             </>
           )}
 
-          {/* Step 1: Key type + Pix Key */}
+          {/* Step 1: Auto-detect Pix Key */}
           {step === 1 && (
             <div className="space-y-5">
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Tipo de Chave
-                </Label>
-                <Select value={pixKeyType} onValueChange={(v) => setPixKeyType(v as PixKeyType)}>
-                  <SelectTrigger className="h-12 text-base" data-vaul-no-drag>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {(Object.keys(keyTypeLabels) as PixKeyType[]).map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {keyTypeLabels[type]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="pix-key" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                   Chave Pix
                 </Label>
                 <Input
                   id="pix-key"
-                  placeholder={keyTypePlaceholders[pixKeyType]}
+                  placeholder="Digite CPF, CNPJ, e-mail, telefone ou chave aleatória"
                   value={pixKey}
-                  onChange={(e) => setPixKey(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPixKey(val);
+                    setKeyError("");
+                    if (!manualKeyType) {
+                      setPixKeyType(detectPixKeyType(val));
+                    }
+                  }}
+                  onBlur={() => {
+                    if (pixKey.trim() && !pixKeyType) {
+                      setKeyError("Formato de chave não reconhecido");
+                    }
+                  }}
+                  className="h-12 text-base"
+                  data-vaul-no-drag
                   onFocus={(e) => {
                     const el = e.target;
                     setTimeout(() => {
                       el.scrollIntoView({ block: "center", behavior: "smooth" });
                     }, 400);
                   }}
-                  className="h-12 text-base"
-                  data-vaul-no-drag
                 />
+                {keyError && (
+                  <p className="text-xs text-destructive">{keyError}</p>
+                )}
+              </div>
+
+              {/* Badge grid */}
+              <div className="grid grid-cols-5 gap-2">
+                {(Object.keys(PIX_KEY_TYPE_LABELS) as PixKeyType[]).map((type) => {
+                  const isDetected = pixKeyType === type;
+                  const isManual = manualKeyType === type;
+                  return (
+                    <button
+                      key={type}
+                      type="button"
+                      onClick={() => {
+                        if (manualKeyType === type) {
+                          // Deselect manual override, re-run auto
+                          setManualKeyType(null);
+                          setPixKeyType(detectPixKeyType(pixKey));
+                        } else {
+                          setManualKeyType(type);
+                          setPixKeyType(type);
+                          setKeyError("");
+                        }
+                      }}
+                      className={`py-1.5 px-1 rounded-full text-xs font-semibold transition-colors text-center ${
+                        isDetected
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground"
+                      } ${isManual ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                      data-vaul-no-drag
+                    >
+                      {PIX_KEY_TYPE_LABELS[type]}
+                    </button>
+                  );
+                })}
               </div>
 
               <div className="flex items-center gap-2">
@@ -393,7 +416,7 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
               <Button
                 onClick={handleStep1}
-                disabled={!pixKey.trim()}
+                disabled={!pixKey.trim() || !pixKeyType}
                 className="w-full h-12 text-base font-bold uppercase tracking-wider"
               >
                 Continuar
