@@ -138,7 +138,7 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
 
 
   return (
-    <div className="px-4 pt-4 pb-24 space-y-6">
+    <div className="px-4 pt-4 pb-4 space-y-6">
       {/* Balance Card */}
       {canViewBalance && (
         <Card className="overflow-hidden shadow-md">

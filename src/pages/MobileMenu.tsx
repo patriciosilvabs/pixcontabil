@@ -43,7 +43,7 @@ export default function MobileMenu() {
 
   return (
     <MainLayout>
-      <div className="p-4 pb-24 space-y-4">
+      <div className="p-4 pb-4 space-y-4">
         {/* User profile card */}
         <div className="flex items-center gap-4 p-4 rounded-xl bg-card border border-border">
           <Avatar className="h-14 w-14">
