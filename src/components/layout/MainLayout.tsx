@@ -198,7 +198,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       </aside>
 
       {/* Main content — flex-1 scrollable area */}
-      <main className="flex-1 overflow-y-auto lg:pl-64 lg:pt-0 lg:pb-0 lg:min-h-screen lg:overflow-visible">
+      <main data-scroll-container="app" className="flex-1 overflow-y-auto lg:pl-64 lg:pt-0 lg:pb-0 lg:min-h-screen lg:overflow-visible">
         <div className="page-transition">{children}</div>
       </main>
 
