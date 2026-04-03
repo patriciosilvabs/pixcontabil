@@ -71,7 +71,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   };
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-dvh flex flex-col lg:block lg:h-auto lg:min-h-screen bg-background">
       {/* Mobile header */}
       <MobileHeader
         balanceVisible={balanceVisible}
