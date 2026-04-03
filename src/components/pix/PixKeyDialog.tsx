@@ -137,6 +137,9 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
     return () => { cancelled = true; };
   }, [open, currentCompany?.id]);
 
+  // Real payment state
+  const [realTransactionId, setRealTransactionId] = useState("");
+
   const handleClose = () => {
     stopProbePolling();
     setPixKeyType(null);
