@@ -53,6 +53,11 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setTransactionId("");
     setDescription("");
     setCompanyName("");
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSelectedTagId(null);
+    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+    setDescriptionRequired(true);
 
     (async () => {
       const info = await getQRCodeInfo({ qr_code: qrCode });
