@@ -58,7 +58,11 @@ export function useQuickTags(paymentType?: string) {
     fetchTags();
   }, [fetchTags]);
 
-  return { tags, isLoading, refetch: fetchTags };
+  const filteredTags = paymentType
+    ? tags.filter((t) => t.visible_in?.includes(paymentType))
+    : tags;
+
+  return { tags: filteredTags, isLoading, refetch: fetchTags };
 }
 
 export function useQuickTagsAdmin() {
