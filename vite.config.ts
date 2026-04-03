@@ -5,6 +5,7 @@ import { componentTagger } from "lovable-tagger";
 import fs from "fs";
 
 const versionFilePath = path.resolve(__dirname, "version.json");
+const distAssetsPath = path.resolve(__dirname, "dist", "assets");
 
 function readVersion() {
   const raw = fs.readFileSync(versionFilePath, "utf8");
@@ -28,22 +29,38 @@ function getNextVersion(version: string) {
   return parts.join(".");
 }
 
-function bumpVersionPlugin(): Plugin {
+function validateVersionPlugin(version: string): Plugin {
   return {
-    name: "bump-version",
-    buildStart() {
-      const currentVersion = readVersion();
-      const nextVersion = getNextVersion(currentVersion);
+    name: "validate-version",
+    closeBundle() {
+      if (!fs.existsSync(distAssetsPath)) {
+        throw new Error("[validate-version] ERRO CRÍTICO: diretório dist/assets não encontrado!");
+      }
 
-      fs.writeFileSync(versionFilePath, JSON.stringify({ version: nextVersion }, null, 2) + "\n");
-      console.log(`[bump-version] v${currentVersion} → v${nextVersion}`);
+      const versionString = `v${version}`;
+      const jsFiles = fs.readdirSync(distAssetsPath).filter((file) => file.endsWith(".js"));
+      const found = jsFiles.some((file) =>
+        fs.readFileSync(path.join(distAssetsPath, file), "utf8").includes(versionString),
+      );
+
+      if (!found) {
+        throw new Error(`[validate-version] ERRO CRÍTICO: \"${versionString}\" não encontrada no bundle dist/assets!`);
+      }
+
+      console.log(`[validate-version] ✅ Build válido — ${versionString} confirmada no bundle`);
     },
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(({ mode, command }) => {
+  const shouldBumpVersion = command === "build" && mode === "production";
   const currentVersion = readVersion();
-  const resolvedVersion = mode === "production" ? getNextVersion(currentVersion) : currentVersion;
+  const resolvedVersion = shouldBumpVersion ? getNextVersion(currentVersion) : currentVersion;
+
+  if (shouldBumpVersion) {
+    fs.writeFileSync(versionFilePath, JSON.stringify({ version: resolvedVersion }, null, 2) + "\n");
+    console.log(`[bump-version] v${currentVersion} → v${resolvedVersion}`);
+  }
 
   return {
     server: {
@@ -54,14 +71,13 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      __APP_VERSION__: JSON.stringify(`v${resolvedVersion}`),
       __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
       __BUILD_HASH__: JSON.stringify(Date.now().toString(36)),
     },
     plugins: [
       react(),
       mode === "development" && componentTagger(),
-      mode === "production" && bumpVersionPlugin(),
+      shouldBumpVersion && validateVersionPlugin(resolvedVersion),
     ].filter(Boolean),
     resolve: {
       alias: {
