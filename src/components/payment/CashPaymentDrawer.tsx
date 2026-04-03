@@ -34,18 +34,40 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
   const { currentCompany, user } = useAuth();
   const { tags: quickTags } = useQuickTags("cash");
 
+  const handleTagSelect = (tag: QuickTag | null) => {
+    if (!tag) {
+      setSelectedTagId(null);
+      setShowOrderInput(false);
+      setDescriptionPlaceholder("Observações do pagamento...");
+      setDescriptionRequired(false);
+    } else {
+      setSelectedTagId(tag.id);
+      setShowOrderInput(tag.request_order_number);
+      setDescriptionPlaceholder(tag.description_placeholder || "Observações do pagamento...");
+      setDescriptionRequired(tag.description_required);
+    }
+  };
+
   const handleSubmit = async () => {
     const parsedAmount = parseFloat(amount.replace(",", "."));
     if (!parsedAmount || parsedAmount <= 0) {
-      toast({ variant: "destructive", title: "Erro", description: "Informe um valor válido." });
+      toastHook({ variant: "destructive", title: "Erro", description: "Informe um valor válido." });
       return;
     }
     if (!beneficiary.trim()) {
-      toast({ variant: "destructive", title: "Erro", description: "Informe o nome do favorecido." });
+      toastHook({ variant: "destructive", title: "Erro", description: "Informe o nome do favorecido." });
+      return;
+    }
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
+      return;
+    }
+    if (descriptionRequired && !description.trim()) {
+      toast.error("Informe a descrição do pagamento");
       return;
     }
     if (!currentCompany?.id || !user?.id) {
-      toast({ variant: "destructive", title: "Erro", description: "Empresa ou usuário não identificado." });
+      toastHook({ variant: "destructive", title: "Erro", description: "Empresa ou usuário não identificado." });
       return;
     }
 
