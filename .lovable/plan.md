@@ -1,63 +1,78 @@
 
 
-## Novos Filtros no Relatório: Tag, Descrição, Tipo de Pagamento e Status
+## Trava Técnica de Versionamento — Reforço
 
-### Situação atual
+### Estado atual
 
-A página de Relatórios possui filtros por: **período**, **classificação** (custo/despesa) e **usuário**. Não há filtros por tag, descrição, tipo de pagamento ou status.
+O projeto **já possui** todo o sistema solicitado funcionando:
 
-**Problema importante**: As tags rápidas selecionadas durante o pagamento **não são salvas na transação**. A tabela `transactions` não possui campo `quick_tag_id` ou `quick_tag_name`. Isso significa que para filtrar por tag, primeiro precisamos persistir essa informação.
+| Componente | Arquivo | Status |
+|---|---|---|
+| Fonte da verdade | `version.json` (`"1.3"`) | ✅ Existe |
+| Script de incremento | `scripts/bump-version.cjs` | ✅ Existe, valida formato X.Y, falha se ausente/inválido |
+| Hook no build | `package.json` → `"prebuild"` | ✅ Roda antes de todo `npm run build` |
+| Injeção no app | `vite.config.ts` → `define` | ✅ Injeta `__APP_VERSION__`, `__BUILD_DATE__`, `__BUILD_HASH__` |
+| Exibição na UI | Header mobile, Sidebar desktop, Configurações | ✅ Mostra versão |
+| Console log | `src/main.tsx` | ✅ Loga versão no boot |
+| Endpoint `/version` | `supabase/functions/version/index.ts` | ✅ Retorna JSON com versão |
+
+### O que falta: validação pós-build
+
+O sistema atual incrementa e falha se o arquivo for inválido, mas **não valida que o artefato final contém a versão correta**. Vou adicionar uma camada extra de segurança:
 
 ### Alterações
 
-**1. Migração: adicionar coluna `quick_tag_name` na tabela `transactions`**
-
-Adicionar um campo `text` nullable para guardar o nome da tag selecionada no momento do pagamento. Usar o nome (não o ID) para que o relatório funcione mesmo que a tag seja renomeada ou excluída depois.
-
-```sql
-ALTER TABLE public.transactions ADD COLUMN quick_tag_name text;
+**1. `scripts/bump-version.cjs`** — adicionar log mais explícito com versão anterior e nova, e gravar um arquivo `.last-version` para validação posterior:
+```
+v1.3 → v1.4  (grava "1.4" em .last-version)
 ```
 
-**2. Atualizar todos os fluxos de pagamento para salvar a tag**
+**2. Criar `scripts/validate-version.cjs`** — script pós-build que:
+- Lê `version.json` e `.last-version`
+- Confirma que coincidem (prebuild rodou)
+- Verifica que o `dist/` contém a string da versão no bundle
+- Se qualquer check falhar → `process.exit(1)` (build considerado inválido)
 
-Nos componentes e hooks que criam transações (`usePixPayment`, `useBilletPayment`, `CashPaymentDrawer`, etc.), incluir o `quick_tag_name` no insert quando uma tag foi selecionada.
+**3. `package.json`** — adicionar script `postbuild`:
+```json
+"postbuild": "node scripts/validate-version.cjs"
+```
 
-**3. Adicionar novos filtros na página `Reports.tsx`**
+**4. Atualizar `supabase/functions/version/index.ts`** — sincronizar a versão hardcoded com a versão atual do `version.json` (v1.3). Nota: essa edge function retorna versão estática; será atualizada para refletir a versão corrente.
 
-Novos selects/inputs na barra de filtros:
+**5. Adicionar `version.json` e `.last-version` ao `.gitignore`** — NÃO. `version.json` deve ser commitado. Apenas `.last-version` será ignorado (artefato temporário de build).
 
-| Filtro | Tipo | Valores |
-|---|---|---|
-| Tag | Select | Tags únicas extraídas das transações carregadas |
-| Descrição | Input de texto | Busca parcial (contains) no campo `description` |
-| Tipo de pagamento | Select | Pix Chave, QR Code, Copia e Cola, Boleto, Dinheiro |
-| Status | Select | Concluído, Pendente, Falhou, Cancelado |
-| Categoria | Select | Categorias da empresa (já carregadas, mas sem filtro dedicado) |
+### Fluxo completo garantido
 
-**4. Atualizar `filteredTransactions` no `useMemo`**
+```text
+npm run build
+  │
+  ├─ prebuild: bump-version.cjs
+  │   ├─ Lê version.json (1.3)
+  │   ├─ Incrementa → 1.4
+  │   ├─ Grava version.json (1.4)
+  │   ├─ Grava .last-version (1.4)
+  │   └─ Se falhar → exit(1) → BUILD ABORTADO
+  │
+  ├─ vite build
+  │   ├─ Lê version.json (1.4)
+  │   ├─ Injeta __APP_VERSION__ = "v1.4"
+  │   └─ Se version.json ausente → erro de leitura → BUILD ABORTADO
+  │
+  └─ postbuild: validate-version.cjs
+      ├─ Confirma version.json == .last-version
+      ├─ Busca "v1.4" no bundle dist/
+      └─ Se falhar → exit(1) → BUILD INVÁLIDO
+```
 
-Aplicar todos os novos filtros sequencialmente sobre as transações já carregadas (filtragem client-side para manter a simplicidade):
-- `tagFilter`: match em `quick_tag_name`
-- `descriptionFilter`: match parcial case-insensitive em `description`
-- `pixTypeFilter`: match em `pix_type`
-- `statusFilter`: match em `status`
-- `categoryFilter`: match em `category_id`
+### Onde conferir a versão em produção
+- **UI**: Header mobile (barra verde) · Sidebar desktop (rodapé) · Página Configurações
+- **Console**: Log automático no boot do app
+- **API**: `GET /functions/v1/version`
 
-**5. Layout responsivo dos filtros**
-
-Reorganizar a barra de filtros em grid responsivo para acomodar os novos campos sem quebrar o layout mobile. Usar 2 colunas no mobile, wrap automático no desktop.
-
-### Onde aparece
-
-- Página `/reports` — barra de filtros expandida acima do resumo diário
-- Os filtros afetam tanto os cards de resumo quanto o gráfico e a lista de transações
-
-### Arquivos alterados
-
-- Nova migração SQL (coluna `quick_tag_name`)
-- `src/pages/Reports.tsx` — novos filtros e lógica de filtragem
-- `src/hooks/usePixPayment.ts` — salvar tag name na transação
-- `src/hooks/useBilletPayment.ts` — salvar tag name na transação
-- `src/components/payment/CashPaymentDrawer.tsx` — salvar tag name na transação
-- Demais drawers que criam transações diretamente
+### Arquivos criados/alterados
+- `scripts/bump-version.cjs` — pequeno ajuste (gravar `.last-version`)
+- `scripts/validate-version.cjs` — **novo** (validação pós-build)
+- `package.json` — adicionar `postbuild`
+- `supabase/functions/version/index.ts` — atualizar versão estática
 
