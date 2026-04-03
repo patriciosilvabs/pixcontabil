@@ -875,7 +875,8 @@ export default function NewPayment() {
               )}
 
               {/* Order Number Input */}
-              {pixData.type === "key" && showOrderInput && (
+              {/* Order Number Input */}
+              {showOrderInput && (
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Nº do Pedido
@@ -891,8 +892,8 @@ export default function NewPayment() {
                 </div>
               )}
 
-              {/* Description - for key payments */}
-              {pixData.type === "key" && (
+              {/* Description - when tags are selected or for key payments */}
+              {(selectedTagId || pixData.type === "key") && (
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Descrição {descriptionRequired ? "*" : "(opcional)"}
