@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSummary";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, FileText, Download, TrendingDown, DollarSign, CalendarIcon } from "lucide-react";
+import { Loader2, FileText, Download, TrendingDown, DollarSign, CalendarIcon, Search } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,21 @@ type ClassificationFilter = "all" | "cost" | "expense";
 
 const COLORS = ["hsl(270, 91%, 55%)", "hsl(158, 64%, 52%)", "hsl(43, 96%, 56%)", "hsl(0, 84%, 60%)", "hsl(200, 70%, 50%)"];
 
+const PIX_TYPE_LABELS: Record<string, string> = {
+  key: "Pix Chave",
+  qrcode: "QR Code",
+  copy_paste: "Copia e Cola",
+  boleto: "Boleto",
+  cash: "Dinheiro",
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  completed: "Concluído",
+  pending: "Pendente",
+  failed: "Falhou",
+  cancelled: "Cancelado",
+};
+
 export default function Reports() {
   const { currentCompany, isAdmin } = useAuth();
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -31,6 +47,10 @@ export default function Reports() {
   const [customDate, setCustomDate] = useState<Date>(new Date());
   const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
+  const [descriptionFilter, setDescriptionFilter] = useState("");
+  const [pixTypeFilter, setPixTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const dateRange = useMemo(() => {
     const now = new Date();
@@ -73,12 +93,31 @@ export default function Reports() {
     fetchData();
   }, [currentCompany, dateRange]);
 
+  // Extract unique tag names from loaded transactions
+  const uniqueTags = useMemo(() => {
+    const tags = new Set<string>();
+    transactions.forEach(t => {
+      if (t.quick_tag_name) tags.add(t.quick_tag_name);
+    });
+    return Array.from(tags).sort();
+  }, [transactions]);
+
   const filteredTransactions = useMemo(() => {
     let filtered = transactions;
     if (userFilter !== "all") filtered = filtered.filter(t => t.created_by === userFilter);
     if (classificationFilter !== "all") filtered = filtered.filter(t => t.categories?.classification === classificationFilter);
+    if (tagFilter !== "all") filtered = filtered.filter(t => t.quick_tag_name === tagFilter);
+    if (pixTypeFilter !== "all") filtered = filtered.filter(t => t.pix_type === pixTypeFilter);
+    if (statusFilter !== "all") filtered = filtered.filter(t => t.status === statusFilter);
+    if (descriptionFilter.trim()) {
+      const search = descriptionFilter.trim().toLowerCase();
+      filtered = filtered.filter(t =>
+        t.description?.toLowerCase().includes(search) ||
+        t.beneficiary_name?.toLowerCase().includes(search)
+      );
+    }
     return filtered;
-  }, [transactions, classificationFilter, userFilter]);
+  }, [transactions, classificationFilter, userFilter, tagFilter, pixTypeFilter, statusFilter, descriptionFilter]);
 
   const totalAmount = filteredTransactions.reduce((s, t) => s + Number(t.amount), 0);
   const totalCosts = filteredTransactions.filter((t) => t.categories?.classification === "cost").reduce((s, t) => s + Number(t.amount), 0);
@@ -215,8 +254,8 @@ export default function Reports() {
               </Card>
             </div>
 
-            {/* Filter Bar + Daily Summary */}
-            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-3 mb-4">
+            {/* Filter Bar */}
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-3 mb-4">
               <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
                 <SelectTrigger className="w-full sm:w-[160px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -243,23 +282,61 @@ export default function Reports() {
               <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
                 <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
+                  <SelectItem value="all">Classificação</SelectItem>
                   <SelectItem value="cost">Custos</SelectItem>
                   <SelectItem value="expense">Despesas</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={userFilter} onValueChange={setUserFilter}>
-                <SelectTrigger className="w-full sm:w-[200px]"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Todos os Usuários</SelectItem>
+                  <SelectItem value="all">Todos Usuários</SelectItem>
                   {Object.entries(profileMap).map(([uid, name]) => (
                     <SelectItem key={uid} value={uid}>{name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={pixTypeFilter} onValueChange={setPixTypeFilter}>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Tipo Pgto.</SelectItem>
+                  {Object.entries(PIX_TYPE_LABELS).map(([val, label]) => (
+                    <SelectItem key={val} value={val}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Status</SelectItem>
+                  {Object.entries(STATUS_LABELS).map(([val, label]) => (
+                    <SelectItem key={val} value={val}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {uniqueTags.length > 0 && (
+                <Select value={tagFilter} onValueChange={setTagFilter}>
+                  <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tag</SelectItem>
+                    {uniqueTags.map((tag) => (
+                      <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <div className="relative col-span-2 sm:col-span-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar descrição..."
+                  value={descriptionFilter}
+                  onChange={(e) => setDescriptionFilter(e.target.value)}
+                  className="pl-9 w-full sm:w-[200px]"
+                />
+              </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" disabled={transactions.length === 0}>
+                  <Button variant="outline" disabled={transactions.length === 0} className="col-span-2 sm:col-span-1">
                     <Download className="h-4 w-4 mr-2" /> Exportar
                   </Button>
                 </DropdownMenuTrigger>
