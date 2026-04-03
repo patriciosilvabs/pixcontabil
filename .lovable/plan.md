@@ -1,16 +1,21 @@
 
 
-## Fix: Botão "Continuar" escondido pela barra de navegação
+## Correção: Remover padding inferior excessivo (resíduo do layout `fixed`)
 
 ### Problema
-Na tela fullscreen do Step 1 (Pix com Chave), o botão "Continuar" fica atrás da BottomTabBar porque o `pb-6` não é suficiente para compensar a área ocupada pela barra fixa de navegação.
 
-### Solução
+Quando migramos para o Flexbox App Shell, a `BottomTabBar` deixou de ser `fixed` e passou a ser um filho direto do flex container. Porém, vários componentes ainda têm `pb-24` — um padding que existia para compensar a barra fixa. Agora esse padding cria espaço morto desnecessário, forçando o usuário a rolar para ver conteúdo que deveria caber na tela.
 
-**`src/components/pix/PixKeyDialog.tsx`** — Aumentar o padding inferior do container do botão:
+### Alterações
 
-- Linha 396: trocar `pb-6` por `pb-[calc(env(safe-area-inset-bottom,16px)+80px)]` para garantir que o botão fique acima da BottomTabBar (que tem ~64px de altura + padding)
-- Alternativa mais limpa: como a tela é fullscreen (`fixed inset-0 z-50`), a BottomTabBar não deveria aparecer. Verificar se o `z-50` está funcionando corretamente ou se precisa ser `z-[60]` para ficar acima de tudo.
+| Arquivo | De | Para |
+|---------|-----|------|
+| `src/components/dashboard/MobileDashboard.tsx` (L141) | `pb-24` | `pb-4` |
+| `src/pages/MobileMenu.tsx` (L46) | `pb-24` | `pb-4` |
+| `src/pages/BatchPayment.tsx` (L155, L239) | `pb-24` | `pb-4` |
+| `src/components/pix/PixKeyDialog.tsx` (L396) | `pb-24` | `pb-6` |
 
-Abordagem recomendada: aumentar o padding inferior para `pb-24` (96px), garantindo espaço suficiente independente do safe-area.
+### Por que funciona
+
+O container raiz (`h-dvh flex flex-col overflow-hidden`) já gerencia o espaço. Header e TabBar são `shrink-0` no fluxo flex, e `<main>` é `flex-1 overflow-y-auto`. O conteúdo dentro do `<main>` não precisa mais "fugir" de uma barra fixa — o flex já reserva o espaço correto. Reduzir o padding inferior faz o conteúdo caber melhor na viewport, eliminando scroll desnecessário.
 
