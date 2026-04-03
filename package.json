@@ -10,7 +10,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "prebuild": "node scripts/bump-version.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
