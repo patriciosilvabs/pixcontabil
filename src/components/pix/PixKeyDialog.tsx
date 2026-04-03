@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { Textarea } from "@/components/ui/textarea";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from "@/components/ui/drawer";
@@ -15,6 +15,16 @@ import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { useQuickTags } from "@/hooks/useQuickTags";
 import { detectPixKeyType, type PixKeyType } from "@/lib/pix-utils";
+import { Skeleton } from "@/components/ui/skeleton";
+
+interface Favorite {
+  beneficiary_name: string;
+  beneficiary_document: string | null;
+  pix_key: string;
+  pix_key_type: string | null;
+  initials: string;
+  count: number;
+}
 
 interface PixKeyDialogProps {
   open: boolean;
