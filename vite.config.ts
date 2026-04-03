@@ -71,6 +71,7 @@ export default defineConfig(({ mode, command }) => {
       },
     },
     define: {
+      __APP_VERSION__: JSON.stringify(`v${resolvedVersion}`),
       __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
       __BUILD_HASH__: JSON.stringify(Date.now().toString(36)),
     },
