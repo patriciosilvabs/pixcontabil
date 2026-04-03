@@ -182,15 +182,40 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     setStep(2);
   };
 
+  const handleTagSelect = (tag: QuickTag | null) => {
+    if (!tag) {
+      setSelectedTagId(null);
+      setShowOrderInput(false);
+      setDescriptionPlaceholder("Ex: Conta de luz");
+      setDescriptionRequired(false);
+    } else {
+      setSelectedTagId(tag.id);
+      setShowOrderInput(tag.request_order_number);
+      setDescriptionPlaceholder(tag.description_placeholder || "Ex: Conta de luz");
+      setDescriptionRequired(tag.description_required);
+    }
+  };
+
   const handleConfirm = async () => {
     if (!companyName.trim()) {
       toast.error("Informe o nome da empresa que está recebendo o pagamento");
       return;
     }
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
+      return;
+    }
+    if (descriptionRequired && !description.trim()) {
+      toast.error("Informe a descrição do pagamento");
+      return;
+    }
     const value = parseLocalizedNumber(amount);
+    const fullDescription = orderNumber.trim()
+      ? `${(description || "Pagamento de boleto").trim()} #${orderNumber.trim()}`
+      : description || "Pagamento de boleto";
     const result = await payBillet({
       digitable_code: barcode,
-      description: description || "Pagamento de boleto",
+      description: fullDescription,
       amount: value,
     });
 
