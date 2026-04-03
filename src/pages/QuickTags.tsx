@@ -43,6 +43,7 @@ export default function QuickTags() {
     setFormSortOrder(tags.length);
     setFormPlaceholder("");
     setFormDescriptionRequired(true);
+    setFormVisibleIn(["key", "qrcode", "copy_paste", "boleto", "cash"]);
     setDialogOpen(true);
   };
 
