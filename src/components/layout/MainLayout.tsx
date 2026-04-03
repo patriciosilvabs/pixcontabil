@@ -35,6 +35,7 @@ import { MobileHeader } from "@/components/layout/MobileHeader";
 import { BottomTabBar } from "@/components/layout/BottomTabBar";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import { usePendingReceipts } from "@/hooks/usePendingReceipts";
+import { useKeyboardVisible } from "@/hooks/useKeyboardVisible";
 
 interface MainLayoutProps {
   children: React.ReactNode;
