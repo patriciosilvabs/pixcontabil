@@ -321,6 +321,11 @@
   .font-mono-numbers {
     font-variant-numeric: tabular-nums;
   }
+
+  /* Dynamic viewport height */
+  .h-dvh {
+    height: 100dvh;
+  }
   
   /* Hide scrollbar but keep functionality */
   .no-scrollbar {
