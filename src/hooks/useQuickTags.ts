@@ -13,9 +13,18 @@ export interface QuickTag {
   sort_order: number;
   description_placeholder: string | null;
   description_required: boolean;
+  visible_in: string[];
   created_at: string;
   updated_at: string;
 }
+
+export const PAYMENT_TYPE_OPTIONS = [
+  { value: "key", label: "Pix por Chave" },
+  { value: "qrcode", label: "QR Code" },
+  { value: "copy_paste", label: "Copia e Cola" },
+  { value: "boleto", label: "Boleto" },
+  { value: "cash", label: "Dinheiro" },
+] as const;
 
 export function useQuickTags() {
   const { currentCompany } = useAuth();
