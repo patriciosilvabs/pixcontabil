@@ -128,7 +128,7 @@ export default function NewPayment() {
   const { blockingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
-  const { tags: quickTags } = useQuickTags();
+  const { tags: quickTags } = useQuickTags(pixData.type);
 
   // Quick tag state for key payments
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
