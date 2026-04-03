@@ -73,12 +73,16 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
 
     setIsLoading(true);
     try {
+      const fullDescription = orderNumber.trim()
+        ? `${(description.trim() || "Pagamento em dinheiro")} #${orderNumber.trim()}`
+        : description.trim() || "Pagamento em dinheiro";
+
       const { data, error } = await supabase.from("transactions").insert({
         company_id: currentCompany.id,
         created_by: user.id,
         amount: parsedAmount,
         beneficiary_name: beneficiary.trim(),
-        description: description.trim() || "Pagamento em dinheiro",
+        description: fullDescription,
         pix_type: "cash" as any,
         status: "completed",
         paid_at: new Date().toISOString(),
