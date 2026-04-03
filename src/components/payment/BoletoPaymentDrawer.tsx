@@ -11,6 +11,8 @@ import { useBilletPayment, BilletConsultResult } from "@/hooks/useBilletPayment"
 import { supabase } from "@/integrations/supabase/client";
 import { parseBoleto } from "@/utils/boletoParser";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
+import { useQuickTags, QuickTag } from "@/hooks/useQuickTags";
+import { QuickTagsSection } from "@/components/payment/QuickTagsSection";
 
 interface BoletoPaymentDrawerProps {
   open: boolean;
