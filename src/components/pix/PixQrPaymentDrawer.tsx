@@ -34,6 +34,12 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   const [transactionId, setTransactionId] = useState("");
   const [description, setDescription] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
+  const { tags: quickTags } = useQuickTags("qrcode");
 
   useEffect(() => {
     if (!open || !qrCode) return;
