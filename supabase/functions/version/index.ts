@@ -10,7 +10,7 @@ Deno.serve(async (req) => {
 
   return new Response(
     JSON.stringify({
-      version: "v1.3",
+      version: "v1.4",
       build_date: new Date().toISOString(),
       status: "ok",
     }),

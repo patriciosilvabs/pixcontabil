@@ -24,8 +24,14 @@ if (parts.length !== 2 || parts.some(isNaN)) {
   process.exit(1);
 }
 
+const oldVersion = data.version;
 parts[1] += 1;
 data.version = parts.join('.');
 
 fs.writeFileSync(versionFile, JSON.stringify(data, null, 2) + '\n');
-console.log(`[bump-version] v${data.version}`);
+
+// Gravar .last-version para validação pós-build
+const lastVersionFile = path.resolve(__dirname, '..', '.last-version');
+fs.writeFileSync(lastVersionFile, data.version);
+
+console.log(`[bump-version] v${oldVersion} → v${data.version}`);
