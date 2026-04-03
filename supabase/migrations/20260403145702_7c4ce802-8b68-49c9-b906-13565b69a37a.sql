@@ -1,0 +1,1 @@
+ALTER TABLE public.quick_tags ADD COLUMN visible_in text[] NOT NULL DEFAULT '{key,qrcode,copy_paste,boleto,cash}';

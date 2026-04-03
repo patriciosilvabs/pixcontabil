@@ -13,11 +13,20 @@ export interface QuickTag {
   sort_order: number;
   description_placeholder: string | null;
   description_required: boolean;
+  visible_in: string[];
   created_at: string;
   updated_at: string;
 }
 
-export function useQuickTags() {
+export const PAYMENT_TYPE_OPTIONS = [
+  { value: "key", label: "Pix por Chave" },
+  { value: "qrcode", label: "QR Code" },
+  { value: "copy_paste", label: "Copia e Cola" },
+  { value: "boleto", label: "Boleto" },
+  { value: "cash", label: "Dinheiro" },
+] as const;
+
+export function useQuickTags(paymentType?: string) {
   const { currentCompany } = useAuth();
   const [tags, setTags] = useState<QuickTag[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -49,7 +58,11 @@ export function useQuickTags() {
     fetchTags();
   }, [fetchTags]);
 
-  return { tags, isLoading, refetch: fetchTags };
+  const filteredTags = paymentType
+    ? tags.filter((t) => t.visible_in?.includes(paymentType))
+    : tags;
+
+  return { tags: filteredTags, isLoading, refetch: fetchTags };
 }
 
 export function useQuickTagsAdmin() {
@@ -83,7 +96,7 @@ export function useQuickTagsAdmin() {
     fetchAll();
   }, [fetchAll]);
 
-  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean }) => {
+  const createTag = async (tag: { name: string; suggested_classification?: string | null; request_order_number?: boolean; sort_order?: number; description_placeholder?: string | null; description_required?: boolean; visible_in?: string[] }) => {
     if (!currentCompany?.id) return;
     const { error } = await supabase
       .from("quick_tags" as any)
@@ -96,12 +109,13 @@ export function useQuickTagsAdmin() {
         sort_order: tag.sort_order ?? tags.length,
         description_placeholder: tag.description_placeholder || null,
         description_required: tag.description_required ?? true,
+        visible_in: tag.visible_in ?? ["key", "qrcode", "copy_paste", "boleto", "cash"],
       } as any);
     if (error) throw error;
     await fetchAll();
   };
 
-  const updateTag = async (id: string, updates: Partial<Pick<QuickTag, "name" | "suggested_classification" | "request_order_number" | "is_active" | "sort_order" | "description_placeholder" | "description_required">>) => {
+  const updateTag = async (id: string, updates: Partial<Pick<QuickTag, "name" | "suggested_classification" | "request_order_number" | "is_active" | "sort_order" | "description_placeholder" | "description_required" | "visible_in">>) => {
     const { error } = await supabase
       .from("quick_tags" as any)
       .update(updates as any)

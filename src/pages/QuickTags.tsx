@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { useQuickTagsAdmin, QuickTag } from "@/hooks/useQuickTags";
+import { useQuickTagsAdmin, QuickTag, PAYMENT_TYPE_OPTIONS } from "@/hooks/useQuickTags";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,6 +32,7 @@ export default function QuickTags() {
   const [formSortOrder, setFormSortOrder] = useState(0);
   const [formPlaceholder, setFormPlaceholder] = useState("");
   const [formDescriptionRequired, setFormDescriptionRequired] = useState(true);
+  const [formVisibleIn, setFormVisibleIn] = useState<string[]>(["key", "qrcode", "copy_paste", "boleto", "cash"]);
   const [saving, setSaving] = useState(false);
 
   const openCreate = () => {
@@ -42,6 +43,7 @@ export default function QuickTags() {
     setFormSortOrder(tags.length);
     setFormPlaceholder("");
     setFormDescriptionRequired(true);
+    setFormVisibleIn(["key", "qrcode", "copy_paste", "boleto", "cash"]);
     setDialogOpen(true);
   };
 
@@ -53,6 +55,7 @@ export default function QuickTags() {
     setFormSortOrder(tag.sort_order);
     setFormPlaceholder(tag.description_placeholder || "");
     setFormDescriptionRequired(tag.description_required);
+    setFormVisibleIn(tag.visible_in || ["key", "qrcode", "copy_paste", "boleto", "cash"]);
     setDialogOpen(true);
   };
 
@@ -73,6 +76,7 @@ export default function QuickTags() {
           sort_order: formSortOrder,
           description_placeholder: placeholder,
           description_required: formDescriptionRequired,
+          visible_in: formVisibleIn,
         });
         toast.success("Tag atualizada");
       } else {
@@ -83,6 +87,7 @@ export default function QuickTags() {
           sort_order: formSortOrder,
           description_placeholder: placeholder,
           description_required: formDescriptionRequired,
+          visible_in: formVisibleIn,
         });
         toast.success("Tag criada");
       }
@@ -117,6 +122,17 @@ export default function QuickTags() {
     if (val === "cost") return "Custo (Insumo)";
     if (val === "expense") return "Despesa";
     return "Nenhuma";
+  };
+
+  const visibilityLabel = (val: string) => {
+    const found = PAYMENT_TYPE_OPTIONS.find((o) => o.value === val);
+    return found?.label || val;
+  };
+
+  const toggleVisibleIn = (value: string) => {
+    setFormVisibleIn((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value]
+    );
   };
 
   return (
@@ -171,8 +187,13 @@ export default function QuickTags() {
                           <Badge variant={tag.suggested_classification ? "default" : "secondary"} className="text-xs">
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
-                          {tag.request_order_number && (
+                           {tag.request_order_number && (
                             <Badge variant="outline" className="text-xs">Nº Pedido</Badge>
+                          )}
+                          {tag.visible_in && tag.visible_in.length < 5 && (
+                            <Badge variant="outline" className="text-xs">
+                              {tag.visible_in.map(visibilityLabel).join(", ")}
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -212,6 +233,7 @@ export default function QuickTags() {
                       <TableHead className="w-10">#</TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>Classificação</TableHead>
+                      <TableHead>Visibilidade</TableHead>
                       <TableHead>Nº Pedido</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
@@ -228,6 +250,19 @@ export default function QuickTags() {
                           <Badge variant={tag.suggested_classification ? "default" : "secondary"}>
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {tag.visible_in && tag.visible_in.length === 5 ? (
+                              <Badge variant="secondary" className="text-xs">Todos</Badge>
+                            ) : (
+                              tag.visible_in?.map((v) => (
+                                <Badge key={v} variant="outline" className="text-xs">
+                                  {visibilityLabel(v)}
+                                </Badge>
+                              ))
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell>{tag.request_order_number ? "Sim" : "Não"}</TableCell>
                         <TableCell>
@@ -327,6 +362,27 @@ export default function QuickTags() {
                 />
                 <p className="text-xs text-muted-foreground">
                   Texto de orientação exibido no campo Descrição ao usar esta tag
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Exibir nos tipos de pagamento</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {PAYMENT_TYPE_OPTIONS.map((opt) => (
+                    <div key={opt.value} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`visible-${opt.value}`}
+                        checked={formVisibleIn.includes(opt.value)}
+                        onCheckedChange={() => toggleVisibleIn(opt.value)}
+                      />
+                      <Label htmlFor={`visible-${opt.value}`} className="cursor-pointer text-sm">
+                        {opt.label}
+                      </Label>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Escolha em quais tipos de pagamento esta tag aparecerá
                 </p>
               </div>
 

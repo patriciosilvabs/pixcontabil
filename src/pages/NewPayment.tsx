@@ -128,7 +128,7 @@ export default function NewPayment() {
   const { blockingReceipts, count: pendingCount } = usePendingReceipts();
   const { payByKey, payByQRCode, getQRCodeInfo, checkStatus, getTransactionBeneficiary, isProcessing: isPixProcessing } = usePixPayment();
   const { payBillet, startPolling: startBilletPolling, isProcessing: isBilletProcessing, consultBillet, isConsulting: isConsultingBillet, consultData: billetConsultData } = useBilletPayment();
-  const { tags: quickTags } = useQuickTags();
+  const { tags: quickTags } = useQuickTags(pixData.type);
 
   // Quick tag state for key payments
   const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
@@ -318,16 +318,14 @@ export default function NewPayment() {
         });
         return;
       }
-      // Validate quick tags for key payments
-      if (pixData.type === "key") {
-        if (quickTags.length > 0 && !selectedTagId) {
-          toast({ variant: "destructive", title: "Erro", description: "Selecione uma tag" });
-          return;
-        }
-        if (descriptionRequired && !pixData.description?.trim()) {
-          toast({ variant: "destructive", title: "Erro", description: "Informe a descrição do pagamento" });
-          return;
-        }
+      // Validate quick tags when available for this payment type
+      if (quickTags.length > 0 && !selectedTagId) {
+        toast({ variant: "destructive", title: "Erro", description: "Selecione uma tag" });
+        return;
+      }
+      if (selectedTagId && descriptionRequired && !pixData.description?.trim()) {
+        toast({ variant: "destructive", title: "Erro", description: "Informe a descrição do pagamento" });
+        return;
       }
     }
 
@@ -474,7 +472,13 @@ export default function NewPayment() {
             <CardContent className="space-y-6">
               <Tabs
                 value={pixData.type}
-                onValueChange={(v) => setPixData({ ...pixData, type: v as PaymentType })}
+                onValueChange={(v) => {
+                  setPixData({ ...pixData, type: v as PaymentType });
+                  setSelectedTagId(null);
+                  setShowOrderInput(false);
+                  setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+                  setDescriptionRequired(true);
+                }}
               >
                 <TabsList className="grid grid-cols-5 w-full">
                   <TabsTrigger value="key" className="gap-2">
@@ -837,8 +841,8 @@ export default function NewPayment() {
                 </div>
               </div>
 
-              {/* Quick Tags - only for key payments */}
-              {pixData.type === "key" && quickTags.length > 0 && (
+              {/* Quick Tags */}
+              {quickTags.length > 0 && (
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Tags Rápidas
@@ -877,7 +881,8 @@ export default function NewPayment() {
               )}
 
               {/* Order Number Input */}
-              {pixData.type === "key" && showOrderInput && (
+              {/* Order Number Input */}
+              {showOrderInput && (
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Nº do Pedido
@@ -893,8 +898,8 @@ export default function NewPayment() {
                 </div>
               )}
 
-              {/* Description - for key payments */}
-              {pixData.type === "key" && (
+              {/* Description - when tags are selected or for key payments */}
+              {(selectedTagId || pixData.type === "key") && (
                 <div className="space-y-2">
                   <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
                     Descrição {descriptionRequired ? "*" : "(opcional)"}

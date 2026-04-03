@@ -604,6 +604,7 @@ export type Database = {
           sort_order: number
           suggested_classification: string | null
           updated_at: string
+          visible_in: string[]
         }
         Insert: {
           company_id: string
@@ -618,6 +619,7 @@ export type Database = {
           sort_order?: number
           suggested_classification?: string | null
           updated_at?: string
+          visible_in?: string[]
         }
         Update: {
           company_id?: string
@@ -632,6 +634,7 @@ export type Database = {
           sort_order?: number
           suggested_classification?: string | null
           updated_at?: string
+          visible_in?: string[]
         }
         Relationships: [
           {
