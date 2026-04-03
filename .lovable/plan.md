@@ -1,49 +1,63 @@
 
 
-## Versionamento Automático v1.0, v1.1, v1.2...
+## Novos Filtros no Relatório: Tag, Descrição, Tipo de Pagamento e Status
 
-### Estado atual
+### Situação atual
 
-O projeto **já possui** um sistema de versionamento automático funcional:
-- `version.json` → fonte de verdade (`"1.1.3"`)
-- `scripts/bump-version.cjs` → incrementa automaticamente no `prebuild`
-- `vite.config.ts` → injeta `__APP_VERSION__` no build
-- `src/constants/app.ts` → exporta `APP_VERSION`
-- Exibido no header mobile, sidebar desktop e console log
+A página de Relatórios possui filtros por: **período**, **classificação** (custo/despesa) e **usuário**. Não há filtros por tag, descrição, tipo de pagamento ou status.
 
-### O que precisa mudar
-
-O formato atual é `v1.1.3` (3 segmentos). O usuário quer **2 segmentos**: `v1.0 → v1.1 → v1.2...`
+**Problema importante**: As tags rápidas selecionadas durante o pagamento **não são salvas na transação**. A tabela `transactions` não possui campo `quick_tag_id` ou `quick_tag_name`. Isso significa que para filtrar por tag, primeiro precisamos persistir essa informação.
 
 ### Alterações
 
-**1. `version.json`** — mudar para formato de 2 segmentos:
-```json
-{ "version": "1.3" }
+**1. Migração: adicionar coluna `quick_tag_name` na tabela `transactions`**
+
+Adicionar um campo `text` nullable para guardar o nome da tag selecionada no momento do pagamento. Usar o nome (não o ID) para que o relatório funcione mesmo que a tag seja renomeada ou excluída depois.
+
+```sql
+ALTER TABLE public.transactions ADD COLUMN quick_tag_name text;
 ```
 
-**2. `scripts/bump-version.cjs`** — já funciona com qualquer quantidade de segmentos (incrementa o último). Adicionar validação que **falha o build** se o arquivo não existir ou formato for inválido:
-```javascript
-if (parts.length !== 2) {
-  console.error('Formato inválido. Esperado: X.Y');
-  process.exit(1);
-}
-```
+**2. Atualizar todos os fluxos de pagamento para salvar a tag**
 
-**3. `src/constants/app.ts`** — atualizar fallback para `"v1.3"`
+Nos componentes e hooks que criam transações (`usePixPayment`, `useBilletPayment`, `CashPaymentDrawer`, etc.), incluir o `quick_tag_name` no insert quando uma tag foi selecionada.
 
-**4. Endpoint `/version`** — criar edge function `version` que retorna:
-```json
-{ "version": "v1.3", "build_date": "...", "build_hash": "..." }
-```
-Acessível via `/functions/v1/version`.
+**3. Adicionar novos filtros na página `Reports.tsx`**
 
-**5. Página Settings** — adicionar seção com versão, data do build e hash no final da página de Configurações para consulta fácil pelo admin.
+Novos selects/inputs na barra de filtros:
 
-### Onde a versão aparece em produção
-- Header mobile (barra verde)
-- Sidebar desktop (rodapé)
-- Console do navegador
-- Página de Configurações
-- Endpoint `/functions/v1/version`
+| Filtro | Tipo | Valores |
+|---|---|---|
+| Tag | Select | Tags únicas extraídas das transações carregadas |
+| Descrição | Input de texto | Busca parcial (contains) no campo `description` |
+| Tipo de pagamento | Select | Pix Chave, QR Code, Copia e Cola, Boleto, Dinheiro |
+| Status | Select | Concluído, Pendente, Falhou, Cancelado |
+| Categoria | Select | Categorias da empresa (já carregadas, mas sem filtro dedicado) |
+
+**4. Atualizar `filteredTransactions` no `useMemo`**
+
+Aplicar todos os novos filtros sequencialmente sobre as transações já carregadas (filtragem client-side para manter a simplicidade):
+- `tagFilter`: match em `quick_tag_name`
+- `descriptionFilter`: match parcial case-insensitive em `description`
+- `pixTypeFilter`: match em `pix_type`
+- `statusFilter`: match em `status`
+- `categoryFilter`: match em `category_id`
+
+**5. Layout responsivo dos filtros**
+
+Reorganizar a barra de filtros em grid responsivo para acomodar os novos campos sem quebrar o layout mobile. Usar 2 colunas no mobile, wrap automático no desktop.
+
+### Onde aparece
+
+- Página `/reports` — barra de filtros expandida acima do resumo diário
+- Os filtros afetam tanto os cards de resumo quanto o gráfico e a lista de transações
+
+### Arquivos alterados
+
+- Nova migração SQL (coluna `quick_tag_name`)
+- `src/pages/Reports.tsx` — novos filtros e lógica de filtragem
+- `src/hooks/usePixPayment.ts` — salvar tag name na transação
+- `src/hooks/useBilletPayment.ts` — salvar tag name na transação
+- `src/components/payment/CashPaymentDrawer.tsx` — salvar tag name na transação
+- Demais drawers que criam transações diretamente
 
