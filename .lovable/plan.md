@@ -1,42 +1,33 @@
 
 
-## Trocar a imagem de preview social (Open Graph) para a logo da empresa
+## Mostrar descrição do pagamento no relatório diário
 
 ### Problema
 
-As meta tags `og:image` e `twitter:image` no `index.html` apontam para `https://lovable.dev/opengraph-image-p98pqg.png` — a imagem padrão do Lovable. Por isso, ao compartilhar o link do site no WhatsApp, Telegram, etc., aparece o logo do Lovable.
+No componente `DailyTransactionSummary.tsx`, linha 269, a lógica atual é:
+```
+t.description || t.beneficiary_name || "Sem descrição"
+```
+Isso mostra **apenas um** dos dois campos. O usuário quer ver a descrição personalizada que informou durante o pagamento.
 
-### O que você precisa fazer
+### Alteração
 
-Você precisa me enviar uma **imagem** para usar como preview social. O ideal é:
-- Formato PNG ou JPG
-- Resolução recomendada: **1200×630 pixels** (padrão Open Graph)
-- Conteúdo: logo da Pix Contábil, nome e descrição curta sobre fundo roxo (ou o que preferir)
+**`src/components/reports/DailyTransactionSummary.tsx`** — reorganizar a seção de info (linhas 267-284) para:
 
-### O que eu vou alterar
+1. **Linha principal**: `beneficiary_name` (nome do favorecido)
+2. **Linha secundária**: `description` quando existir e for diferente do beneficiary_name (ex: "Pagamento de refeição produção japiim")
+3. Manter categoria, classificação e autor/hora como já estão
 
-**`index.html`** — atualizar 3 meta tags:
-
-```html
-<!-- Trocar estas linhas -->
-<meta property="og:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-<meta name="twitter:site" content="@Lovable" />
-<meta name="twitter:image" content="https://lovable.dev/opengraph-image-p98pqg.png" />
-
-<!-- Por estas -->
-<meta property="og:image" content="/og-image.png" />
-<meta property="og:url" content="https://pixmobile.com.br" />
-<meta name="twitter:site" content="@PixContabil" />
-<meta name="twitter:image" content="/og-image.png" />
+Layout resultante por transação:
+```text
+Pagamento 99moto               ← beneficiary_name
+Pagamento de 99moto.           ← description (se diferente)
+Manutenção · Despesa           ← categoria + classificação
+por AFRANIO ASSIS às 13:39     ← autor + hora
 ```
 
-A imagem será copiada para `public/og-image.png`.
+Se `description` for igual a `beneficiary_name` ou não existir, não duplica — mostra apenas o nome do beneficiário.
 
-### Importante
-
-Após a alteração, os caches do WhatsApp/Telegram podem demorar para atualizar. O WhatsApp, por exemplo, cacheia previews por dias. Você pode forçar uma atualização usando ferramentas como o [Facebook Sharing Debugger](https://developers.facebook.com/tools/debug/).
-
-### Próximo passo
-
-**Envie a imagem** que deseja usar como preview e eu faço a implementação.
+### Arquivo alterado
+- `src/components/reports/DailyTransactionSummary.tsx` — seção de info do card de transação
 
