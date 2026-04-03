@@ -48,6 +48,11 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     setPixKey("");
     setTransactionId("");
     setDescription("");
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSelectedTagId(null);
+    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+    setDescriptionRequired(true);
   };
 
   const handleClose = () => {
