@@ -139,6 +139,10 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     }
 
     const value = parseLocalizedNumber(amount);
+    const fullDescription = orderNumber.trim()
+      ? `${description.trim()} #${orderNumber.trim()}`
+      : description.trim();
+
     const result = await payByQRCode({
       qr_code: emvCode.trim(),
       valor: value,
@@ -148,7 +152,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
       try {
         await supabase
           .from("transactions")
-          .update({ description: description.trim() } as any)
+          .update({ description: fullDescription } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixCopyPasteDrawer] Failed to update transaction metadata:", e);
