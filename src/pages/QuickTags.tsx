@@ -187,8 +187,13 @@ export default function QuickTags() {
                           <Badge variant={tag.suggested_classification ? "default" : "secondary"} className="text-xs">
                             {classificationLabel(tag.suggested_classification)}
                           </Badge>
-                          {tag.request_order_number && (
+                           {tag.request_order_number && (
                             <Badge variant="outline" className="text-xs">Nº Pedido</Badge>
+                          )}
+                          {tag.visible_in && tag.visible_in.length < 5 && (
+                            <Badge variant="outline" className="text-xs">
+                              {tag.visible_in.map(visibilityLabel).join(", ")}
+                            </Badge>
                           )}
                         </div>
                       </div>
