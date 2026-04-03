@@ -59,6 +59,11 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     setStatusState("polling");
     setErrorMessage("");
     pollAttemptsRef.current = 0;
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSelectedTagId(null);
+    setDescriptionPlaceholder("Ex: Conta de luz");
+    setDescriptionRequired(false);
 
     const info = parseBoleto(barcode);
     if (info && info.amount > 0) {
