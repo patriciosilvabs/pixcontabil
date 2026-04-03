@@ -11,6 +11,8 @@ import { useBilletPayment, BilletConsultResult } from "@/hooks/useBilletPayment"
 import { supabase } from "@/integrations/supabase/client";
 import { parseBoleto } from "@/utils/boletoParser";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
+import { useQuickTags, QuickTag } from "@/hooks/useQuickTags";
+import { QuickTagsSection } from "@/components/payment/QuickTagsSection";
 
 interface BoletoPaymentDrawerProps {
   open: boolean;
@@ -30,6 +32,12 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
   const [companyName, setCompanyName] = useState("");
   const [consultInfo, setConsultInfo] = useState<BilletConsultResult | null>(null);
   const [transactionId, setTransactionId] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Conta de luz");
+  const [descriptionRequired, setDescriptionRequired] = useState(false);
+  const { tags: quickTags } = useQuickTags("boleto");
 
   // Status polling state
   const [statusState, setStatusState] = useState<StatusState>("polling");
@@ -50,6 +58,11 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     setStatusState("polling");
     setErrorMessage("");
     pollAttemptsRef.current = 0;
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSelectedTagId(null);
+    setDescriptionPlaceholder("Ex: Conta de luz");
+    setDescriptionRequired(false);
 
     const info = parseBoleto(barcode);
     if (info && info.amount > 0) {
@@ -168,15 +181,40 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
     setStep(2);
   };
 
+  const handleTagSelect = (tag: QuickTag | null) => {
+    if (!tag) {
+      setSelectedTagId(null);
+      setShowOrderInput(false);
+      setDescriptionPlaceholder("Ex: Conta de luz");
+      setDescriptionRequired(false);
+    } else {
+      setSelectedTagId(tag.id);
+      setShowOrderInput(tag.request_order_number);
+      setDescriptionPlaceholder(tag.description_placeholder || "Ex: Conta de luz");
+      setDescriptionRequired(tag.description_required);
+    }
+  };
+
   const handleConfirm = async () => {
     if (!companyName.trim()) {
       toast.error("Informe o nome da empresa que está recebendo o pagamento");
       return;
     }
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
+      return;
+    }
+    if (descriptionRequired && !description.trim()) {
+      toast.error("Informe a descrição do pagamento");
+      return;
+    }
     const value = parseLocalizedNumber(amount);
+    const fullDescription = orderNumber.trim()
+      ? `${(description || "Pagamento de boleto").trim()} #${orderNumber.trim()}`
+      : description || "Pagamento de boleto";
     const result = await payBillet({
       digitable_code: barcode,
-      description: description || "Pagamento de boleto",
+      description: fullDescription,
       amount: value,
     });
 
@@ -459,18 +497,19 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="boleto-desc" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição (opcional)
-                </Label>
-                <Input
-                  id="boleto-desc"
-                  type="text"
-                  placeholder="Ex: Conta de luz"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                />
-              </div>
+              {/* Quick Tags + Description */}
+              <QuickTagsSection
+                tags={quickTags}
+                selectedTagId={selectedTagId}
+                onSelectTag={handleTagSelect}
+                description={description}
+                onDescriptionChange={setDescription}
+                descriptionPlaceholder={descriptionPlaceholder}
+                descriptionRequired={descriptionRequired}
+                orderNumber={orderNumber}
+                onOrderNumberChange={setOrderNumber}
+                showOrderInput={showOrderInput}
+              />
 
               <Button
                 onClick={handleConfirm}

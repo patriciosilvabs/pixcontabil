@@ -11,6 +11,8 @@ import { usePixPayment } from "@/hooks/usePixPayment";
 import { parseLocalizedNumber } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuickTags, QuickTag } from "@/hooks/useQuickTags";
+import { QuickTagsSection } from "@/components/payment/QuickTagsSection";
 
 interface PixCopyPasteDrawerProps {
   open: boolean;
@@ -29,6 +31,12 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
   const [pixKey, setPixKey] = useState("");
   const [transactionId, setTransactionId] = useState("");
   const [description, setDescription] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
+  const { tags: quickTags } = useQuickTags("copy_paste");
 
   const reset = () => {
     setStep(1);
@@ -40,6 +48,11 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     setPixKey("");
     setTransactionId("");
     setDescription("");
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSelectedTagId(null);
+    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+    setDescriptionRequired(true);
   };
 
   const handleClose = () => {
@@ -101,13 +114,35 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
     }
   };
 
+  const handleTagSelect = (tag: QuickTag | null) => {
+    if (!tag) {
+      setSelectedTagId(null);
+      setShowOrderInput(false);
+      setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+      setDescriptionRequired(true);
+    } else {
+      setSelectedTagId(tag.id);
+      setShowOrderInput(tag.request_order_number);
+      setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+      setDescriptionRequired(tag.description_required);
+    }
+  };
+
   const handleConfirm = async () => {
-    if (!description.trim()) {
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
+      return;
+    }
+    if (descriptionRequired && !description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
 
     const value = parseLocalizedNumber(amount);
+    const fullDescription = orderNumber.trim()
+      ? `${description.trim()} #${orderNumber.trim()}`
+      : description.trim();
+
     const result = await payByQRCode({
       qr_code: emvCode.trim(),
       valor: value,
@@ -117,7 +152,7 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
       try {
         await supabase
           .from("transactions")
-          .update({ description: description.trim() } as any)
+          .update({ description: fullDescription } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixCopyPasteDrawer] Failed to update transaction metadata:", e);
@@ -254,19 +289,19 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
                 </div>
               </div>
 
-              {/* Description */}
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição *
-                </Label>
-                <Textarea
-                  placeholder="Ex: Pagamento fornecedor"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="min-h-[60px] text-sm"
-                  data-vaul-no-drag
-                />
-              </div>
+              {/* Quick Tags + Description */}
+              <QuickTagsSection
+                tags={quickTags}
+                selectedTagId={selectedTagId}
+                onSelectTag={handleTagSelect}
+                description={description}
+                onDescriptionChange={setDescription}
+                descriptionPlaceholder={descriptionPlaceholder}
+                descriptionRequired={descriptionRequired}
+                orderNumber={orderNumber}
+                onOrderNumberChange={setOrderNumber}
+                showOrderInput={showOrderInput}
+              />
 
               <Button
                 onClick={handleConfirm}

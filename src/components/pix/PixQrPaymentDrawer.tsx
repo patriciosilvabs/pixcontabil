@@ -12,6 +12,8 @@ import { usePixPayment } from "@/hooks/usePixPayment";
 import { parseLocalizedNumber, isValidPaymentAmount } from "@/lib/utils";
 import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { supabase } from "@/integrations/supabase/client";
+import { useQuickTags, QuickTag } from "@/hooks/useQuickTags";
+import { QuickTagsSection } from "@/components/payment/QuickTagsSection";
 
 interface PixQrPaymentDrawerProps {
   open: boolean;
@@ -32,6 +34,12 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
   const [transactionId, setTransactionId] = useState("");
   const [description, setDescription] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [orderNumber, setOrderNumber] = useState("");
+  const [showOrderInput, setShowOrderInput] = useState(false);
+  const [selectedTagId, setSelectedTagId] = useState<string | null>(null);
+  const [descriptionPlaceholder, setDescriptionPlaceholder] = useState("Ex: Pagamento fornecedor");
+  const [descriptionRequired, setDescriptionRequired] = useState(true);
+  const { tags: quickTags } = useQuickTags("qrcode");
 
   useEffect(() => {
     if (!open || !qrCode) return;
@@ -45,6 +53,11 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setTransactionId("");
     setDescription("");
     setCompanyName("");
+    setOrderNumber("");
+    setShowOrderInput(false);
+    setSelectedTagId(null);
+    setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+    setDescriptionRequired(true);
 
     (async () => {
       const info = await getQRCodeInfo({ qr_code: qrCode });
@@ -95,12 +108,30 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
     setStep(3);
   };
 
+  const handleTagSelect = (tag: QuickTag | null) => {
+    if (!tag) {
+      setSelectedTagId(null);
+      setShowOrderInput(false);
+      setDescriptionPlaceholder("Ex: Pagamento fornecedor");
+      setDescriptionRequired(true);
+    } else {
+      setSelectedTagId(tag.id);
+      setShowOrderInput(tag.request_order_number);
+      setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+      setDescriptionRequired(tag.description_required);
+    }
+  };
+
   const handleConfirm = async () => {
     if (!companyName.trim()) {
       toast.error("Informe o nome da empresa que está recebendo o pagamento");
       return;
     }
-    if (!description.trim()) {
+    if (quickTags.length > 0 && !selectedTagId) {
+      toast.error("Selecione uma tag");
+      return;
+    }
+    if (descriptionRequired && !description.trim()) {
       toast.error("Informe a descrição do pagamento");
       return;
     }
@@ -113,9 +144,12 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
 
     if (result?.transaction_id) {
       try {
+        const fullDescription = orderNumber.trim()
+          ? `${description.trim()} #${orderNumber.trim()}`
+          : description.trim();
         await supabase
           .from("transactions")
-          .update({ description: description.trim(), beneficiary_name: companyName.trim() } as any)
+          .update({ description: fullDescription, beneficiary_name: companyName.trim() } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixQrPaymentDrawer] Failed to update transaction metadata:", e);
@@ -266,19 +300,19 @@ export function PixQrPaymentDrawer({ open, qrCode, onOpenChange }: PixQrPaymentD
                 />
               </div>
 
-              {/* Description */}
-              <div className="space-y-2">
-                <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
-                  Descrição *
-                </Label>
-                <Textarea
-                  placeholder="Ex: Pagamento fornecedor"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  className="min-h-[60px] text-sm"
-                  data-vaul-no-drag
-                />
-              </div>
+              {/* Quick Tags + Description */}
+              <QuickTagsSection
+                tags={quickTags}
+                selectedTagId={selectedTagId}
+                onSelectTag={handleTagSelect}
+                description={description}
+                onDescriptionChange={setDescription}
+                descriptionPlaceholder={descriptionPlaceholder}
+                descriptionRequired={descriptionRequired}
+                orderNumber={orderNumber}
+                onOrderNumberChange={setOrderNumber}
+                showOrderInput={showOrderInput}
+              />
 
               <Button
                 onClick={handleConfirm}
