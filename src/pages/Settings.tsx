@@ -9,7 +9,8 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, User, Shield, Link2, ChevronRight, Save, Settings2 } from "lucide-react";
+import { Loader2, User, Shield, Link2, ChevronRight, Save, Settings2, Info } from "lucide-react";
+import { APP_VERSION, BUILD_DATE, BUILD_HASH } from "@/constants/app";
 
 export default function Settings() {
   const { user, profile, isAdmin, currentCompany, refreshProfile } = useAuth();
