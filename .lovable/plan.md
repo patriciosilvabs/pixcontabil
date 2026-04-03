@@ -1,23 +1,47 @@
 
 
-## Ajustes no Step 1 da Tela Pix por Chave
+## Funcionalidade: Visibilidade de Tags por Tipo de Pagamento
+
+### Resumo
+Adicionar um campo na tabela `quick_tags` que define em quais tipos de pagamento cada tag deve aparecer (Pix por Chave, QR Code, Copia e Cola, Boleto, Dinheiro). No formulário de criação/edição de tags, o admin escolhe os tipos. Na tela de pagamento, as tags são filtradas pelo tipo ativo.
 
 ### Alterações
 
-**`src/components/pix/PixKeyDialog.tsx`**
+**1. Migração de banco de dados**
 
-1. **Remover seção "Todos os seus contatos"** — Deletar o bloco de placeholder (linhas 383-391) com título e descrição
+Adicionar coluna `visible_in` (array de texto) à tabela `quick_tags`:
+```sql
+ALTER TABLE public.quick_tags 
+ADD COLUMN visible_in text[] NOT NULL DEFAULT '{key,qrcode,copy_paste,boleto,cash}';
+```
+O default inclui todos os tipos para manter compatibilidade com tags existentes.
 
-2. **Botão "Continuar" sempre visível** — Remover a condição `pixKey.trim().length > 0` para que o botão apareça sempre (desabilitado quando não há chave válida)
+**2. `src/hooks/useQuickTags.ts`**
+- Adicionar `visible_in: string[]` à interface `QuickTag`
+- No `useQuickTags()` (hook do operador): aceitar parâmetro opcional `paymentType` e filtrar localmente `tags.filter(t => t.visible_in.includes(paymentType))`
+- No `createTag` e `updateTag`: incluir `visible_in` nos campos aceitos
 
-3. **Favoritos reais em vez de mock** — Substituir `MOCK_FAVORITES` por uma query real na tabela `transactions` que busca os beneficiários mais frequentes do usuário:
-   - Query: agrupar transações com status `completed` por `beneficiary_name` + `beneficiary_document`, ordenar por contagem DESC, limitar a 5
-   - Usar `useAuth()` para obter `currentCompany.id` e filtrar por `company_id`
-   - Gerar iniciais a partir do `beneficiary_name`
-   - Ao clicar num favorito, preencher o campo `pixKey` com a `pix_key` da transação mais recente daquele beneficiário
-   - Mostrar skeleton ou nada enquanto carrega; esconder a seção se não houver resultados
+**3. `src/pages/QuickTags.tsx`** (admin)
+- Adicionar estado `formVisibleIn` (array de strings) com checkboxes para cada tipo de pagamento:
+  - Pix por Chave (`key`)
+  - QR Code (`qrcode`)
+  - Copia e Cola (`copy_paste`)
+  - Boleto (`boleto`)
+  - Dinheiro (`cash`)
+- Exibir os tipos selecionados como badges na listagem de tags
+- Passar `visible_in` no `createTag` e `updateTag`
 
-### Dados dos favoritos
+**4. `src/pages/NewPayment.tsx`**
+- Passar `pixData.type` para filtrar as tags: mostrar apenas tags onde `visible_in` inclui o tipo de pagamento atual
+- Atualmente as tags só aparecem para `key`; com essa mudança, elas poderão aparecer para qualquer tipo conforme configuração
 
-Não é necessário criar tabela nova. A tabela `transactions` já possui `beneficiary_name`, `beneficiary_document`, `pix_key` e `pix_key_type` — suficiente para montar a lista de beneficiários frequentes.
+### Tipos de pagamento mapeados
+
+| Label no formulário | Valor interno |
+|---|---|
+| Pix por Chave | `key` |
+| QR Code | `qrcode` |
+| Copia e Cola | `copy_paste` |
+| Boleto | `boleto` |
+| Dinheiro | `cash` |
 
