@@ -222,15 +222,16 @@ export function BoletoPaymentDrawer({ open, barcode, onOpenChange }: BoletoPayme
       invalidateDashboardCache();
       const txId = (result as any).transaction_id || (result as any).id;
       if (txId) {
-        // Save beneficiary_name
+        // Save beneficiary_name and tag
         try {
           const { supabase } = await import("@/integrations/supabase/client");
+          const selectedTag = quickTags.find(t => t.id === selectedTagId);
           await supabase
             .from("transactions")
-            .update({ beneficiary_name: companyName.trim() } as any)
+            .update({ beneficiary_name: companyName.trim(), quick_tag_name: selectedTag?.name || null } as any)
             .eq("id", txId);
         } catch (e) {
-          console.error("[BoletoPaymentDrawer] Failed to update beneficiary_name:", e);
+          console.error("[BoletoPaymentDrawer] Failed to update transaction metadata:", e);
         }
         setTransactionId(txId);
         setStep(3);

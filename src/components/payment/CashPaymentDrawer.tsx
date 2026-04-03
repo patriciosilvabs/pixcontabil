@@ -77,6 +77,7 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
         ? `${(description.trim() || "Pagamento em dinheiro")} #${orderNumber.trim()}`
         : description.trim() || "Pagamento em dinheiro";
 
+      const selectedTag = quickTags.find(t => t.id === selectedTagId);
       const { data, error } = await supabase.from("transactions").insert({
         company_id: currentCompany.id,
         created_by: user.id,
@@ -86,7 +87,8 @@ export function CashPaymentDrawer({ open, onOpenChange }: CashPaymentDrawerProps
         pix_type: "cash" as any,
         status: "completed",
         paid_at: new Date().toISOString(),
-      }).select("id").single();
+        quick_tag_name: selectedTag?.name || null,
+      } as any).select("id").single();
 
       if (error) throw error;
 

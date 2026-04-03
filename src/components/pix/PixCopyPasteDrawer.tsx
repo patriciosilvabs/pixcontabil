@@ -150,9 +150,10 @@ export function PixCopyPasteDrawer({ open, onOpenChange }: PixCopyPasteDrawerPro
 
     if (result?.transaction_id) {
       try {
+        const selectedTag = quickTags.find(t => t.id === selectedTagId);
         await supabase
           .from("transactions")
-          .update({ description: fullDescription } as any)
+          .update({ description: fullDescription, quick_tag_name: selectedTag?.name || null } as any)
           .eq("id", result.transaction_id);
       } catch (e) {
         console.error("[PixCopyPasteDrawer] Failed to update transaction metadata:", e);
