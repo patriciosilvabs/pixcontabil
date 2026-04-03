@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   ResponsiveDialog,
@@ -52,6 +53,11 @@ export default function Categories() {
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [form, setForm] = useState({ name: "", classification: "cost" as Classification, keywords: "" });
 
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [confirmBulkDeleteOpen, setConfirmBulkDeleteOpen] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
   const fetchCategories = async () => {
     if (!currentCompany) return;
     setIsLoading(true);
@@ -66,6 +72,45 @@ export default function Categories() {
   };
 
   useEffect(() => { fetchCategories(); }, [currentCompany]);
+
+  // Clear selection when filter changes
+  useEffect(() => { setSelectedIds(new Set()); }, [filter]);
+
+  const filtered = categories.filter((c) => filter === "all" || c.classification === filter);
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filtered.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filtered.map((c) => c.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setIsBulkDeleting(true);
+    const { error } = await supabase
+      .from("categories")
+      .delete()
+      .in("id", Array.from(selectedIds));
+    if (error) {
+      toast({ variant: "destructive", title: "Erro ao remover categorias", description: error.message });
+    } else {
+      toast({ title: `${selectedIds.size} categoria(s) removida(s)!` });
+      setSelectedIds(new Set());
+      fetchCategories();
+    }
+    setIsBulkDeleting(false);
+    setConfirmBulkDeleteOpen(false);
+  };
 
   const openCreate = () => {
     setEditingId(null);
@@ -138,8 +183,6 @@ export default function Categories() {
     setDeletingId(null);
   };
 
-  const filtered = categories.filter((c) => filter === "all" || c.classification === filter);
-
   return (
     <MainLayout>
       <div className="p-4 lg:p-8 max-w-5xl mx-auto">
@@ -156,13 +199,25 @@ export default function Categories() {
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="flex gap-2 mb-4">
-          {(["all", "cost", "expense"] as const).map((f) => (
-            <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)}>
-              {f === "all" ? "Todas" : f === "cost" ? "Custos" : "Despesas"}
+        {/* Filters + bulk action */}
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex gap-2">
+            {(["all", "cost", "expense"] as const).map((f) => (
+              <Button key={f} variant={filter === f ? "default" : "outline"} size="sm" onClick={() => setFilter(f)}>
+                {f === "all" ? "Todas" : f === "cost" ? "Custos" : "Despesas"}
+              </Button>
+            ))}
+          </div>
+          {selectedIds.size > 0 && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setConfirmBulkDeleteOpen(true)}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir {selectedIds.size} selecionada(s)
             </Button>
-          ))}
+          )}
         </div>
 
         <Card>
@@ -175,9 +230,17 @@ export default function Categories() {
               /* Mobile: Card list */
               <div className="p-3 space-y-3">
                 {filtered.map((cat) => (
-                  <div key={cat.id} className="rounded-lg border bg-card p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1.5 min-w-0">
+                  <div
+                    key={cat.id}
+                    className={`rounded-lg border bg-card p-4 space-y-3 transition-colors ${selectedIds.has(cat.id) ? "border-primary bg-primary/5" : ""}`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <Checkbox
+                        checked={selectedIds.has(cat.id)}
+                        onCheckedChange={() => toggleSelect(cat.id)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0 space-y-1.5">
                         <p className="font-medium">{cat.name}</p>
                         <div className="flex flex-wrap gap-1.5">
                           <Badge variant={cat.classification === "cost" ? "default" : "secondary"}>
@@ -214,6 +277,12 @@ export default function Categories() {
                 <Table>
                   <TableHeader>
                     <TableRow>
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                          onCheckedChange={toggleSelectAll}
+                        />
+                      </TableHead>
                       <TableHead>Nome</TableHead>
                       <TableHead>Classificação</TableHead>
                       <TableHead>Keywords</TableHead>
@@ -223,7 +292,13 @@ export default function Categories() {
                   </TableHeader>
                   <TableBody>
                     {filtered.map((cat) => (
-                      <TableRow key={cat.id}>
+                      <TableRow key={cat.id} className={selectedIds.has(cat.id) ? "bg-primary/5" : ""}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedIds.has(cat.id)}
+                            onCheckedChange={() => toggleSelect(cat.id)}
+                          />
+                        </TableCell>
                         <TableCell className="font-medium">{cat.name}</TableCell>
                         <TableCell>
                           <Badge variant={cat.classification === "cost" ? "default" : "secondary"}>
@@ -304,6 +379,7 @@ export default function Categories() {
           />
         )}
 
+        {/* Single delete confirm */}
         <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -316,6 +392,29 @@ export default function Categories() {
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
                 Remover
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* Bulk delete confirm */}
+        <AlertDialog open={confirmBulkDeleteOpen} onOpenChange={setConfirmBulkDeleteOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Remover {selectedIds.size} categoria(s)</AlertDialogTitle>
+              <AlertDialogDescription>
+                Tem certeza que deseja remover {selectedIds.size} categoria(s) permanentemente? Esta ação não pode ser desfeita.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={isBulkDeleting}>Cancelar</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={handleBulkDelete}
+                disabled={isBulkDeleting}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                {isBulkDeleting && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Remover todas
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>
