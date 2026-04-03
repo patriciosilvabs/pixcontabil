@@ -24,22 +24,12 @@ interface PixKeyDialogProps {
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
-type PixKeyType = "cpf" | "cnpj" | "email" | "phone" | "random";
-
 const keyTypePlaceholders: Record<PixKeyType, string> = {
   cpf: "000.000.000-00",
   cnpj: "00.000.000/0000-00",
   email: "exemplo@email.com",
   phone: "+5511999999999",
   random: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
-};
-
-const keyTypeLabels: Record<PixKeyType, string> = {
-  cpf: "CPF",
-  cnpj: "CNPJ",
-  email: "E-mail",
-  phone: "Telefone",
-  random: "Chave aleatória",
 };
 
 function maskDocument(doc: string | null): string {
