@@ -348,6 +348,9 @@ async function handleCashInWebhook(supabaseAdmin: any, data: any, ip_address: st
         status: 'completed', pix_type: 'key', pix_key: pixKey, pix_e2eid: e2eId,
         description: data.description || 'Recebimento Pix',
         paid_at: new Date().toISOString(), pix_provider_response: data,
+        direction: 'in',
+        beneficiary_name: data.payer_name || data.pagador?.nome || null,
+        beneficiary_document: data.payer_document || data.pagador?.cpf || data.pagador?.cnpj || null,
       });
     }
   }
