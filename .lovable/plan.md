@@ -1,48 +1,48 @@
 
 
-## Ticket Médio de Entrada e Saída no Relatório
+## Reorganizar Relatório: Filtros no topo + Total de transações + Ticket Médio configurável
 
-### Situação atual
+### Problema atual
 
-- A tabela `transactions` registra **apenas saídas** (pagamentos feitos).
-- O saldo (`pix-balance`) retorna um valor único, sem detalhamento de entradas.
-- Os webhooks PIX recebem notificações de entrada, mas ficam apenas em `webhook_events` como logs brutos — não são processados como transações de crédito.
+Os filtros de período e classificação ficam **abaixo** dos cards de resumo. O usuário quer primeiro escolher o período e depois ver os resultados. Além disso, falta mostrar o **total de transações** (quantidade) e os tickets médios devem responder ao período escolhido (já respondem, mas a UX precisa deixar isso claro).
 
-### O que precisa ser feito
+### Alterações em `src/pages/Reports.tsx`
 
-#### 1. Criar suporte a transações de entrada no banco
+#### 1. Mover filtros para ANTES dos cards
 
-- Adicionar coluna `direction` (tipo `text`, valores `in` / `out`, default `out`) na tabela `transactions`.
-- Migrar dados existentes: todas as transações atuais recebem `direction = 'out'`.
+Mover toda a barra de filtros (período, classificação, usuário, tag, tipo pgto, status, busca, exportar) — atualmente nas linhas 345-436 — para logo após o título (linha 178), antes do bloco de cards de resumo.
 
-#### 2. Processar webhooks de entrada como transações
+Isso permite ao usuário configurar o período e filtros antes de ver os números.
 
-- Atualizar a Edge Function `pix-webhook` para, ao receber um evento de PIX recebido (cash-in), criar automaticamente uma transação com `direction = 'in'` na tabela `transactions`, registrando valor, pagador, e2eid, etc.
+#### 2. Adicionar card "Total de Transações"
 
-#### 3. Atualizar o relatório com ticket médio de entrada e saída
+Novo card mostrando a quantidade total de transações no período, separada em entradas e saídas:
 
-- No `Reports.tsx`, separar transações por `direction`:
-  - **Saídas**: `direction = 'out'` — total e ticket médio (já existe, adaptar filtro)
-  - **Entradas**: `direction = 'in'` — total recebido e ticket médio
-- Adicionar 2 novos cards:
-  - **Total Entradas** — soma dos recebimentos no período
-  - **Ticket Médio Entrada** — total entradas / quantidade
-
-Layout dos cards:
 ```text
-| Total Saídas | Custos    | Despesas   |
-| TM Geral     | TM Custos | TM Despesas|
-| Total Entradas | TM Entrada |           |
+Total de Transações
+  152 transações
+  140 saídas · 12 entradas
 ```
 
-### Arquivos alterados
+Será adicionado como um card extra na primeira linha de resumo (grid passa de 3 para 4 colunas em desktop).
 
-- **Migração SQL**: adicionar coluna `direction` em `transactions`
-- **`supabase/functions/pix-webhook/index.ts`**: criar transação `in` ao receber PIX
-- **`src/pages/Reports.tsx`**: cards de entrada + ticket médio entrada
-- **`src/types/database.ts`**: adicionar campo `direction` ao tipo `Transaction`
+#### 3. Substituir período "custom" por seletor de intervalo (date range)
 
-### Observação importante
+Atualmente "Data Específica" permite escolher apenas **um dia**. Para ser realmente configurável, trocar por um seletor de intervalo com data início e data fim:
 
-Até que entradas comecem a ser registradas (via webhook), os cards de entrada aparecerão zerados. Dados históricos de entrada não existem no banco atual.
+- Adicionar novo tipo de período `"custom_range"` 
+- Usar dois date pickers: "De" e "Até"
+- Manter as opções rápidas (Hoje, Semana, Mês, 3 Meses) como atalhos
+
+#### 4. Layout final dos cards
+
+```text
+Linha 1: | Total Saídas | Custos | Despesas | Total Transações |
+Linha 2: | Total Entradas | TM Entrada |
+Linha 3: | TM Geral Saída | TM Custos | TM Despesas |
+```
+
+### Arquivo alterado
+
+- `src/pages/Reports.tsx` — mover filtros, adicionar card de total, substituir date picker por range
 
