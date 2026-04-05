@@ -119,14 +119,18 @@ export default function Reports() {
     return filtered;
   }, [transactions, classificationFilter, userFilter, tagFilter, pixTypeFilter, statusFilter, descriptionFilter]);
 
-  const totalAmount = filteredTransactions.reduce((s, t) => s + Number(t.amount), 0);
-  const costTxs = filteredTransactions.filter((t) => t.categories?.classification === "cost");
-  const expenseTxs = filteredTransactions.filter((t) => t.categories?.classification === "expense");
+  const outTxs = filteredTransactions.filter(t => t.direction !== 'in');
+  const inTxs = filteredTransactions.filter(t => t.direction === 'in');
+  const totalAmount = outTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const totalEntradas = inTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const costTxs = outTxs.filter((t) => t.categories?.classification === "cost");
+  const expenseTxs = outTxs.filter((t) => t.categories?.classification === "expense");
   const totalCosts = costTxs.reduce((s, t) => s + Number(t.amount), 0);
   const totalExpenses = expenseTxs.reduce((s, t) => s + Number(t.amount), 0);
-  const ticketMedioGeral = filteredTransactions.length > 0 ? totalAmount / filteredTransactions.length : 0;
+  const ticketMedioGeral = outTxs.length > 0 ? totalAmount / outTxs.length : 0;
   const ticketMedioCustos = costTxs.length > 0 ? totalCosts / costTxs.length : 0;
   const ticketMedioDespesas = expenseTxs.length > 0 ? totalExpenses / expenseTxs.length : 0;
+  const ticketMedioEntrada = inTxs.length > 0 ? totalEntradas / inTxs.length : 0;
 
   const byCategory = useMemo(() => {
     const map: Record<string, { name: string; value: number }> = {};
