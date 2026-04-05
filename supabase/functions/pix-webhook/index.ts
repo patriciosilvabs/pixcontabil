@@ -219,12 +219,15 @@ async function handleOnzWebhook(supabaseAdmin: any, type: string, data: any, ip_
         .from('pix_configs').select('company_id').eq('pix_key', pixKey).eq('is_active', true).limit(1);
 
       if (configs?.length) {
-        await supabaseAdmin.from('transactions').insert({
+      await supabaseAdmin.from('transactions').insert({
           company_id: configs[0].company_id,
           created_by: '00000000-0000-0000-0000-000000000000',
           amount, status: 'completed', pix_type: 'key', pix_key: pixKey,
           pix_e2eid: endToEndId, description: data.description || 'Recebimento Pix',
           paid_at: new Date().toISOString(), pix_provider_response: data,
+          direction: 'in',
+          beneficiary_name: data.debtorName || data.pagador?.nome || data.payer?.name || null,
+          beneficiary_document: data.debtorTaxId || data.pagador?.cpf || data.pagador?.cnpj || data.payer?.document || null,
         });
       }
     }
