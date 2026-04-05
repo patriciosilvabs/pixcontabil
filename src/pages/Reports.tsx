@@ -220,6 +220,52 @@ export default function Reports() {
               </Card>
             </div>
 
+            {/* Ticket Médio Cards */}
+            <div className="grid gap-4 md:grid-cols-3 mb-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                      <BarChart3 className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Ticket Médio Geral</p>
+                      <p className="text-xl font-bold font-mono-numbers">{formatCurrency(ticketMedioGeral)}</p>
+                      <p className="text-xs text-muted-foreground">{filteredTransactions.length} transações</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-destructive/10 flex items-center justify-center">
+                      <BarChart3 className="h-5 w-5 text-destructive" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Ticket Médio Custos</p>
+                      <p className="text-xl font-bold font-mono-numbers">{formatCurrency(ticketMedioCustos)}</p>
+                      <p className="text-xs text-muted-foreground">{costTxs.length} transações</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center">
+                      <BarChart3 className="h-5 w-5 text-warning" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Ticket Médio Despesas</p>
+                      <p className="text-xl font-bold font-mono-numbers">{formatCurrency(ticketMedioDespesas)}</p>
+                      <p className="text-xs text-muted-foreground">{expenseTxs.length} transações</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
             {/* Charts */}
             <div className="grid gap-6 md:grid-cols-2 mb-6">
               <Card>
