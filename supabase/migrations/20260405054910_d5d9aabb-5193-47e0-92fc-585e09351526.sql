@@ -1,0 +1,1 @@
+ALTER TABLE public.transactions ADD COLUMN direction text NOT NULL DEFAULT 'out';
