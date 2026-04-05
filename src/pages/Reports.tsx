@@ -8,7 +8,7 @@ import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSu
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, FileText, Download, TrendingDown, TrendingUp, DollarSign, CalendarIcon, Search, BarChart3 } from "lucide-react";
+import { Loader2, FileText, Download, TrendingDown, TrendingUp, DollarSign, CalendarIcon, Search, BarChart3, Hash } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -18,7 +18,7 @@ import { ptBR } from "date-fns/locale";
 import { exportCSV, exportXLSX, exportPDF } from "@/utils/reportExports";
 import { toast } from "sonner";
 
-type PeriodFilter = "today" | "week" | "month" | "last3months" | "custom";
+type PeriodFilter = "today" | "week" | "month" | "last3months" | "custom_range";
 type ClassificationFilter = "all" | "cost" | "expense";
 
 const COLORS = ["hsl(270, 91%, 55%)", "hsl(158, 64%, 52%)", "hsl(43, 96%, 56%)", "hsl(0, 84%, 60%)", "hsl(200, 70%, 50%)"];
@@ -44,7 +44,8 @@ export default function Reports() {
   const [categories, setCategories] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [period, setPeriod] = useState<PeriodFilter>("month");
-  const [customDate, setCustomDate] = useState<Date>(new Date());
+  const [customStart, setCustomStart] = useState<Date>(startOfMonth(new Date()));
+  const [customEnd, setCustomEnd] = useState<Date>(new Date());
   const [classificationFilter, setClassificationFilter] = useState<ClassificationFilter>("all");
   const [userFilter, setUserFilter] = useState<string>("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
@@ -59,9 +60,9 @@ export default function Reports() {
       case "week": return { start: startOfWeek(now, { locale: ptBR }), end: endOfWeek(now, { locale: ptBR }) };
       case "month": return { start: startOfMonth(now), end: endOfMonth(now) };
       case "last3months": return { start: startOfMonth(subMonths(now, 2)), end: endOfMonth(now) };
-      case "custom": return { start: startOfDay(customDate), end: endOfDay(customDate) };
+      case "custom_range": return { start: startOfDay(customStart), end: endOfDay(customEnd) };
     }
-  }, [period, customDate]);
+  }, [period, customStart, customEnd]);
 
   const [profileMap, setProfileMap] = useState<Record<string, string>>({});
 
@@ -93,7 +94,6 @@ export default function Reports() {
     fetchData();
   }, [currentCompany, dateRange]);
 
-  // Extract unique tag names from loaded transactions
   const uniqueTags = useMemo(() => {
     const tags = new Set<string>();
     transactions.forEach(t => {
@@ -150,17 +150,19 @@ export default function Reports() {
 
   const formatCurrency = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`;
 
-  const periodLabels: Record<PeriodFilter, string> = {
-    today: "Hoje",
-    week: "Esta Semana",
-    month: "Este Mês",
-    last3months: "Últimos 3 Meses",
-    custom: customDate ? format(customDate, "dd/MM/yyyy") : "Data Específica",
-  };
+  const periodLabel = useMemo(() => {
+    switch (period) {
+      case "today": return "Hoje";
+      case "week": return "Esta Semana";
+      case "month": return "Este Mês";
+      case "last3months": return "Últimos 3 Meses";
+      case "custom_range": return `${format(customStart, "dd/MM/yyyy")} — ${format(customEnd, "dd/MM/yyyy")}`;
+    }
+  }, [period, customStart, customEnd]);
 
   const handleExportPDF = async () => {
     toast.info("Gerando PDF com comprovantes…");
-    await exportPDF(transactions, { totalAmount, totalCosts, totalExpenses }, currentCompany?.name || "", periodLabels[period]);
+    await exportPDF(transactions, { totalAmount, totalCosts, totalExpenses }, currentCompany?.name || "", periodLabel);
     toast.success("PDF gerado!");
   };
 
@@ -174,15 +176,122 @@ export default function Reports() {
             </h1>
             <p className="text-muted-foreground">Resumo financeiro da empresa</p>
           </div>
-        
+        </div>
+
+        {/* Filter Bar — BEFORE cards */}
+        <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-3 mb-6">
+          <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
+            <SelectTrigger className="w-full sm:w-[160px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="today">Hoje</SelectItem>
+              <SelectItem value="week">Esta Semana</SelectItem>
+              <SelectItem value="month">Este Mês</SelectItem>
+              <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
+              <SelectItem value="custom_range">Período Personalizado</SelectItem>
+            </SelectContent>
+          </Select>
+          {period === "custom_range" && (
+            <>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-full sm:w-[160px] justify-start text-left font-normal")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(customStart, "dd/MM/yyyy")}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={customStart} onSelect={(d) => d && setCustomStart(d)} initialFocus className={cn("p-3 pointer-events-auto")} />
+                </PopoverContent>
+              </Popover>
+              <span className="hidden sm:flex items-center text-muted-foreground text-sm">até</span>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className={cn("w-full sm:w-[160px] justify-start text-left font-normal")}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(customEnd, "dd/MM/yyyy")}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar mode="single" selected={customEnd} onSelect={(d) => d && setCustomEnd(d)} initialFocus className={cn("p-3 pointer-events-auto")} />
+                </PopoverContent>
+              </Popover>
+            </>
+          )}
+          <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Classificação</SelectItem>
+              <SelectItem value="cost">Custos</SelectItem>
+              <SelectItem value="expense">Despesas</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={userFilter} onValueChange={setUserFilter}>
+            <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos Usuários</SelectItem>
+              {Object.entries(profileMap).map(([uid, name]) => (
+                <SelectItem key={uid} value={uid}>{name}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={pixTypeFilter} onValueChange={setPixTypeFilter}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tipo Pgto.</SelectItem>
+              {Object.entries(PIX_TYPE_LABELS).map(([val, label]) => (
+                <SelectItem key={val} value={val}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Status</SelectItem>
+              {Object.entries(STATUS_LABELS).map(([val, label]) => (
+                <SelectItem key={val} value={val}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {uniqueTags.length > 0 && (
+            <Select value={tagFilter} onValueChange={setTagFilter}>
+              <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tag</SelectItem>
+                {uniqueTags.map((tag) => (
+                  <SelectItem key={tag} value={tag}>{tag}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          <div className="relative col-span-2 sm:col-span-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Buscar descrição..."
+              value={descriptionFilter}
+              onChange={(e) => setDescriptionFilter(e.target.value)}
+              className="pl-9 w-full sm:w-[200px]"
+            />
+          </div>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" disabled={transactions.length === 0} className="col-span-2 sm:col-span-1">
+                <Download className="h-4 w-4 mr-2" /> Exportar
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent>
+              <DropdownMenuItem onClick={async () => { toast.info("Gerando CSV…"); await exportCSV(transactions); toast.success("CSV gerado!"); }}>CSV</DropdownMenuItem>
+              <DropdownMenuItem onClick={async () => { toast.info("Gerando XLSX…"); await exportXLSX(transactions); toast.success("XLSX gerado!"); }}>XLSX</DropdownMenuItem>
+              <DropdownMenuItem onClick={handleExportPDF}>PDF com Comprovantes</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         {isLoading ? (
           <div className="flex justify-center p-12"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
         ) : (
           <>
-            {/* Summary Cards */}
-            <div className="grid gap-4 md:grid-cols-3 mb-6">
+            {/* Summary Cards — Row 1: Saídas + Total Transações */}
+            <div className="grid gap-4 md:grid-cols-4 mb-6">
               <Card>
                 <CardContent className="pt-6">
                   <div className="flex items-center gap-3">
@@ -222,9 +331,23 @@ export default function Reports() {
                   </div>
                 </CardContent>
               </Card>
+              <Card className="border-dashed">
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                      <Hash className="h-5 w-5 text-foreground" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Transações</p>
+                      <p className="text-xl font-bold">{filteredTransactions.length}</p>
+                      <p className="text-xs text-muted-foreground">{outTxs.length} saídas · {inTxs.length} entradas</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
 
-            {/* Entradas Cards */}
+            {/* Row 2: Entradas */}
             <div className="grid gap-4 md:grid-cols-2 mb-6">
               <Card>
                 <CardContent className="pt-6">
@@ -256,7 +379,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            {/* Ticket Médio Saída Cards */}
+            {/* Row 3: Ticket Médio Saída */}
             <div className="grid gap-4 md:grid-cols-3 mb-6">
               <Card>
                 <CardContent className="pt-6">
@@ -341,99 +464,7 @@ export default function Reports() {
               </Card>
             </div>
 
-            {/* Filter Bar */}
-            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-stretch sm:items-center gap-3 mb-4">
-              <Select value={period} onValueChange={(v) => setPeriod(v as PeriodFilter)}>
-                <SelectTrigger className="w-full sm:w-[160px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="today">Hoje</SelectItem>
-                  <SelectItem value="week">Esta Semana</SelectItem>
-                  <SelectItem value="month">Este Mês</SelectItem>
-                  <SelectItem value="last3months">Últimos 3 Meses</SelectItem>
-                  <SelectItem value="custom">Data Específica</SelectItem>
-                </SelectContent>
-              </Select>
-              {period === "custom" && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className={cn("w-full sm:w-[180px] justify-start text-left font-normal", !customDate && "text-muted-foreground")}>
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {customDate ? format(customDate, "dd/MM/yyyy") : "Selecione a data"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
-                    <Calendar mode="single" selected={customDate} onSelect={(d) => d && setCustomDate(d)} initialFocus className={cn("p-3 pointer-events-auto")} />
-                  </PopoverContent>
-                </Popover>
-              )}
-              <Select value={classificationFilter} onValueChange={(v) => setClassificationFilter(v as ClassificationFilter)}>
-                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Classificação</SelectItem>
-                  <SelectItem value="cost">Custos</SelectItem>
-                  <SelectItem value="expense">Despesas</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={userFilter} onValueChange={setUserFilter}>
-                <SelectTrigger className="w-full sm:w-[180px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos Usuários</SelectItem>
-                  {Object.entries(profileMap).map(([uid, name]) => (
-                    <SelectItem key={uid} value={uid}>{name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={pixTypeFilter} onValueChange={setPixTypeFilter}>
-                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tipo Pgto.</SelectItem>
-                  {Object.entries(PIX_TYPE_LABELS).map(([val, label]) => (
-                    <SelectItem key={val} value={val}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Status</SelectItem>
-                  {Object.entries(STATUS_LABELS).map(([val, label]) => (
-                    <SelectItem key={val} value={val}>{label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {uniqueTags.length > 0 && (
-                <Select value={tagFilter} onValueChange={setTagFilter}>
-                  <SelectTrigger className="w-full sm:w-[150px]"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tag</SelectItem>
-                    {uniqueTags.map((tag) => (
-                      <SelectItem key={tag} value={tag}>{tag}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
-              <div className="relative col-span-2 sm:col-span-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar descrição..."
-                  value={descriptionFilter}
-                  onChange={(e) => setDescriptionFilter(e.target.value)}
-                  className="pl-9 w-full sm:w-[200px]"
-                />
-              </div>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" disabled={transactions.length === 0} className="col-span-2 sm:col-span-1">
-                    <Download className="h-4 w-4 mr-2" /> Exportar
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  <DropdownMenuItem onClick={async () => { toast.info("Gerando CSV…"); await exportCSV(transactions); toast.success("CSV gerado!"); }}>CSV</DropdownMenuItem>
-                  <DropdownMenuItem onClick={async () => { toast.info("Gerando XLSX…"); await exportXLSX(transactions); toast.success("XLSX gerado!"); }}>XLSX</DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleExportPDF}>PDF com Comprovantes</DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            {/* Daily Summary */}
             <DailyTransactionSummary transactions={filteredTransactions} profileMap={profileMap} isAdmin={isAdmin} onReceiptChange={fetchData} />
           </>
         )}
