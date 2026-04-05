@@ -94,6 +94,7 @@ export interface Transaction {
   external_id?: string;
   paid_at?: string;
   classified_at?: string;
+  direction: "in" | "out";
   created_at: string;
   updated_at: string;
   // New Pix integration fields

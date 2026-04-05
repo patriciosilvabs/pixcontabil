@@ -8,7 +8,7 @@ import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSu
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, FileText, Download, TrendingDown, DollarSign, CalendarIcon, Search, BarChart3 } from "lucide-react";
+import { Loader2, FileText, Download, TrendingDown, TrendingUp, DollarSign, CalendarIcon, Search, BarChart3 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
@@ -119,14 +119,18 @@ export default function Reports() {
     return filtered;
   }, [transactions, classificationFilter, userFilter, tagFilter, pixTypeFilter, statusFilter, descriptionFilter]);
 
-  const totalAmount = filteredTransactions.reduce((s, t) => s + Number(t.amount), 0);
-  const costTxs = filteredTransactions.filter((t) => t.categories?.classification === "cost");
-  const expenseTxs = filteredTransactions.filter((t) => t.categories?.classification === "expense");
+  const outTxs = filteredTransactions.filter(t => t.direction !== 'in');
+  const inTxs = filteredTransactions.filter(t => t.direction === 'in');
+  const totalAmount = outTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const totalEntradas = inTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const costTxs = outTxs.filter((t) => t.categories?.classification === "cost");
+  const expenseTxs = outTxs.filter((t) => t.categories?.classification === "expense");
   const totalCosts = costTxs.reduce((s, t) => s + Number(t.amount), 0);
   const totalExpenses = expenseTxs.reduce((s, t) => s + Number(t.amount), 0);
-  const ticketMedioGeral = filteredTransactions.length > 0 ? totalAmount / filteredTransactions.length : 0;
+  const ticketMedioGeral = outTxs.length > 0 ? totalAmount / outTxs.length : 0;
   const ticketMedioCustos = costTxs.length > 0 ? totalCosts / costTxs.length : 0;
   const ticketMedioDespesas = expenseTxs.length > 0 ? totalExpenses / expenseTxs.length : 0;
+  const ticketMedioEntrada = inTxs.length > 0 ? totalEntradas / inTxs.length : 0;
 
   const byCategory = useMemo(() => {
     const map: Record<string, { name: string; value: number }> = {};
@@ -220,7 +224,39 @@ export default function Reports() {
               </Card>
             </div>
 
-            {/* Ticket Médio Cards */}
+            {/* Entradas Cards */}
+            <div className="grid gap-4 md:grid-cols-2 mb-6">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <TrendingUp className="h-5 w-5 text-emerald-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Total Entradas</p>
+                      <p className="text-xl font-bold font-mono-numbers">{formatCurrency(totalEntradas)}</p>
+                      <p className="text-xs text-muted-foreground">{inTxs.length} recebimentos</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+                      <BarChart3 className="h-5 w-5 text-emerald-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground">Ticket Médio Entrada</p>
+                      <p className="text-xl font-bold font-mono-numbers">{formatCurrency(ticketMedioEntrada)}</p>
+                      <p className="text-xs text-muted-foreground">{inTxs.length} recebimentos</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Ticket Médio Saída Cards */}
             <div className="grid gap-4 md:grid-cols-3 mb-6">
               <Card>
                 <CardContent className="pt-6">
@@ -231,7 +267,7 @@ export default function Reports() {
                     <div>
                       <p className="text-sm text-muted-foreground">Ticket Médio Geral</p>
                       <p className="text-xl font-bold font-mono-numbers">{formatCurrency(ticketMedioGeral)}</p>
-                      <p className="text-xs text-muted-foreground">{filteredTransactions.length} transações</p>
+                      <p className="text-xs text-muted-foreground">{outTxs.length} saídas</p>
                     </div>
                   </div>
                 </CardContent>

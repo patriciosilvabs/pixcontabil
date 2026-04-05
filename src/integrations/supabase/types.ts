@@ -831,6 +831,7 @@ export type Database = {
           created_at: string
           created_by: string
           description: string | null
+          direction: string
           external_id: string | null
           id: string
           paid_at: string | null
@@ -863,6 +864,7 @@ export type Database = {
           created_at?: string
           created_by: string
           description?: string | null
+          direction?: string
           external_id?: string | null
           id?: string
           paid_at?: string | null
@@ -895,6 +897,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           description?: string | null
+          direction?: string
           external_id?: string | null
           id?: string
           paid_at?: string | null
