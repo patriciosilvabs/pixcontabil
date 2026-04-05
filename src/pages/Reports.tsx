@@ -8,7 +8,7 @@ import { DailyTransactionSummary } from "@/components/reports/DailyTransactionSu
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Loader2, FileText, Download, TrendingDown, DollarSign, CalendarIcon, Search, BarChart3 } from "lucide-react";
+import { Loader2, FileText, Download, TrendingDown, TrendingUp, DollarSign, CalendarIcon, Search, BarChart3 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
