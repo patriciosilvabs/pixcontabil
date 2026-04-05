@@ -1,33 +1,30 @@
 
 
-## Mostrar descrição do pagamento no relatório diário
+## Adicionar Ticket Médio ao Relatório
 
-### Problema
+### Contexto
 
-No componente `DailyTransactionSummary.tsx`, linha 269, a lógica atual é:
-```
-t.description || t.beneficiary_name || "Sem descrição"
-```
-Isso mostra **apenas um** dos dois campos. O usuário quer ver a descrição personalizada que informou durante o pagamento.
+Atualmente o relatório mostra apenas totais (Saídas, Custos, Despesas). O usuário quer ver o **ticket médio** — o valor médio por transação.
+
+Como o sistema registra apenas pagamentos (saídas), o ticket médio será calculado por classificação:
+
+- **Ticket Médio Geral**: total de saídas / quantidade de transações
+- **Ticket Médio Custos**: total custos / quantidade de transações de custo
+- **Ticket Médio Despesas**: total despesas / quantidade de transações de despesa
 
 ### Alteração
 
-**`src/components/reports/DailyTransactionSummary.tsx`** — reorganizar a seção de info (linhas 267-284) para:
+**`src/pages/Reports.tsx`** — adicionar uma segunda linha de cards abaixo dos totais existentes (linha ~216), com 3 novos cards mostrando os tickets médios.
 
-1. **Linha principal**: `beneficiary_name` (nome do favorecido)
-2. **Linha secundária**: `description` quando existir e for diferente do beneficiary_name (ex: "Pagamento de refeição produção japiim")
-3. Manter categoria, classificação e autor/hora como já estão
-
-Layout resultante por transação:
-```text
-Pagamento 99moto               ← beneficiary_name
-Pagamento de 99moto.           ← description (se diferente)
-Manutenção · Despesa           ← categoria + classificação
-por AFRANIO ASSIS às 13:39     ← autor + hora
+Cálculos a adicionar (após linha 124):
+```
+ticketMedioGeral = totalAmount / filteredTransactions.length
+ticketMedioCustos = totalCosts / qtdCustos
+ticketMedioDespesas = totalExpenses / qtdDespesas
 ```
 
-Se `description` for igual a `beneficiary_name` ou não existir, não duplica — mostra apenas o nome do beneficiário.
+Layout: grid de 3 cards com ícone, label "Ticket Médio [tipo]" e valor formatado em R$.
 
 ### Arquivo alterado
-- `src/components/reports/DailyTransactionSummary.tsx` — seção de info do card de transação
+- `src/pages/Reports.tsx`
 
