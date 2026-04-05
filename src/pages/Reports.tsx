@@ -120,8 +120,13 @@ export default function Reports() {
   }, [transactions, classificationFilter, userFilter, tagFilter, pixTypeFilter, statusFilter, descriptionFilter]);
 
   const totalAmount = filteredTransactions.reduce((s, t) => s + Number(t.amount), 0);
-  const totalCosts = filteredTransactions.filter((t) => t.categories?.classification === "cost").reduce((s, t) => s + Number(t.amount), 0);
-  const totalExpenses = filteredTransactions.filter((t) => t.categories?.classification === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const costTxs = filteredTransactions.filter((t) => t.categories?.classification === "cost");
+  const expenseTxs = filteredTransactions.filter((t) => t.categories?.classification === "expense");
+  const totalCosts = costTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const totalExpenses = expenseTxs.reduce((s, t) => s + Number(t.amount), 0);
+  const ticketMedioGeral = filteredTransactions.length > 0 ? totalAmount / filteredTransactions.length : 0;
+  const ticketMedioCustos = costTxs.length > 0 ? totalCosts / costTxs.length : 0;
+  const ticketMedioDespesas = expenseTxs.length > 0 ? totalExpenses / expenseTxs.length : 0;
 
   const byCategory = useMemo(() => {
     const map: Record<string, { name: string; value: number }> = {};
