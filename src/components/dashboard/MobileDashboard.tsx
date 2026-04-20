@@ -307,7 +307,14 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         </div>
       </div>
 
-      <PixKeyDialog open={pixKeyOpen} onOpenChange={setPixKeyOpen} />
+      <PixKeyDialog
+        open={pixKeyOpen}
+        onOpenChange={(o) => {
+          setPixKeyOpen(o);
+          if (!o) setPixKeyInitialPayment(null);
+        }}
+        initialPayment={pixKeyInitialPayment}
+      />
       <BarcodeScanner
         mode="qrcode"
         isOpen={qrScannerOpen}
@@ -327,6 +334,15 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
       <CashPaymentDrawer
         open={cashDrawerOpen}
         onOpenChange={setCashDrawerOpen}
+      />
+
+      {/* Repeat Payment shortcut */}
+      <RepeatPaymentSection
+        onSelect={(payment) => {
+          if (checkPendencyAndBlock()) return;
+          setPixKeyInitialPayment(payment);
+          setPixKeyOpen(true);
+        }}
       />
 
       {/* Recent Transactions */}
