@@ -17,6 +17,8 @@ import type { RecentTransaction, MissingReceiptTransaction } from "@/hooks/useDa
 import { useAuth } from "@/contexts/AuthContext";
 import { CashPaymentDrawer } from "@/components/payment/CashPaymentDrawer";
 import { usePendingReceipts } from "@/hooks/usePendingReceipts";
+import { RepeatPaymentSection } from "@/components/payment/RepeatPaymentSection";
+import type { RecentPayment } from "@/hooks/useRecentPayments";
 import { toast } from "sonner";
 
 interface MobileDashboardProps {
@@ -51,6 +53,7 @@ const todayLabel = format(new Date(), "dd 'DE' MMMM 'DE' yyyy", { locale: ptBR }
 
 export function MobileDashboard({ balanceVisible, onToggleBalance, balance, balanceLoading, balanceAvailable, provider, recentTransactions = [], missingReceipts = [], dataLoading, canViewBalance = false, onOpenBarcodeScanner, onRefreshBalance, balanceRefetching }: MobileDashboardProps) {
   const [pixKeyOpen, setPixKeyOpen] = useState(false);
+  const [pixKeyInitialPayment, setPixKeyInitialPayment] = useState<RecentPayment | null>(null);
   const [qrScannerOpen, setQrScannerOpen] = useState(false);
   const [scannedQrCode, setScannedQrCode] = useState("");
   const [qrPaymentOpen, setQrPaymentOpen] = useState(false);
@@ -304,7 +307,14 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
         </div>
       </div>
 
-      <PixKeyDialog open={pixKeyOpen} onOpenChange={setPixKeyOpen} />
+      <PixKeyDialog
+        open={pixKeyOpen}
+        onOpenChange={(o) => {
+          setPixKeyOpen(o);
+          if (!o) setPixKeyInitialPayment(null);
+        }}
+        initialPayment={pixKeyInitialPayment}
+      />
       <BarcodeScanner
         mode="qrcode"
         isOpen={qrScannerOpen}
@@ -324,6 +334,15 @@ export function MobileDashboard({ balanceVisible, onToggleBalance, balance, bala
       <CashPaymentDrawer
         open={cashDrawerOpen}
         onOpenChange={setCashDrawerOpen}
+      />
+
+      {/* Repeat Payment shortcut */}
+      <RepeatPaymentSection
+        onSelect={(payment) => {
+          if (checkPendencyAndBlock()) return;
+          setPixKeyInitialPayment(payment);
+          setPixKeyOpen(true);
+        }}
       />
 
       {/* Recent Transactions */}

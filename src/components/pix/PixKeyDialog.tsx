@@ -16,6 +16,7 @@ import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { useQuickTags } from "@/hooks/useQuickTags";
 import { detectPixKeyType, type PixKeyType } from "@/lib/pix-utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { RecentPayment } from "@/hooks/useRecentPayments";
 
 interface Favorite {
   beneficiary_name: string;
@@ -29,6 +30,7 @@ interface Favorite {
 interface PixKeyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialPayment?: RecentPayment | null;
 }
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
@@ -51,7 +53,7 @@ function getInitials(name: string): string {
   return (parts[0]?.[0] || "?").toUpperCase();
 }
 
-export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
+export function PixKeyDialog({ open, onOpenChange, initialPayment }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess, currentCompany } = useAuth();
@@ -136,6 +138,33 @@ export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
 
     return () => { cancelled = true; };
   }, [open, currentCompany?.id]);
+
+  // Pre-fill from initialPayment (Repeat Payment shortcut) and skip to Step 4
+  useEffect(() => {
+    if (!open || !initialPayment) return;
+    const detected = (initialPayment.pix_key_type as PixKeyType | null) ?? detectPixKeyType(initialPayment.pix_key);
+    setPixKey(initialPayment.pix_key);
+    setPixKeyType(detected);
+    setAmount(
+      initialPayment.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    );
+    setDescription(initialPayment.description || "");
+    setBeneficiaryName(initialPayment.beneficiary_name || null);
+    setBeneficiaryDocument(initialPayment.beneficiary_document || null);
+    // Pre-select tag if it still exists for this method
+    if (initialPayment.quick_tag_name) {
+      const tag = quickTags.find(t => t.name === initialPayment.quick_tag_name);
+      if (tag) {
+        setSelectedTagId(tag.id);
+        setSuggestedClassification(tag.suggested_classification || null);
+        setShowOrderInput(tag.request_order_number);
+        setReceiptRequired(false);
+        setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+        setDescriptionRequired(tag.description_required);
+      }
+    }
+    setStep(4);
+  }, [open, initialPayment, quickTags]);
 
   // Real payment state
   const [realTransactionId, setRealTransactionId] = useState("");
