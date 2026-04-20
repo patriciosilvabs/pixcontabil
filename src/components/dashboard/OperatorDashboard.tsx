@@ -41,6 +41,8 @@ export function OperatorDashboard() {
   const [scannedBarcode, setScannedBarcode] = React.useState("");
   const [boletoPaymentOpen, setBoletoPaymentOpen] = React.useState(false);
   const [manualBarcodeOpen, setManualBarcodeOpen] = React.useState(false);
+  const [pixKeyOpen, setPixKeyOpen] = React.useState(false);
+  const [pixKeyInitialPayment, setPixKeyInitialPayment] = React.useState<RecentPayment | null>(null);
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
 
   const acquireStreamAndOpenBarcode = async () => {
