@@ -12,6 +12,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import { ManualBarcodeDialog } from "@/components/payment/ManualBarcodeDialog";
+import { RepeatPaymentSection } from "@/components/payment/RepeatPaymentSection";
+import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
+import type { RecentPayment } from "@/hooks/useRecentPayments";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import {
   DollarSign,
@@ -39,6 +42,8 @@ export function AdminDashboard() {
   const [scannedBarcode, setScannedBarcode] = React.useState("");
   const [boletoPaymentOpen, setBoletoPaymentOpen] = React.useState(false);
   const [manualBarcodeOpen, setManualBarcodeOpen] = React.useState(false);
+  const [pixKeyOpen, setPixKeyOpen] = React.useState(false);
+  const [pixKeyInitialPayment, setPixKeyInitialPayment] = React.useState<RecentPayment | null>(null);
   const preAcquiredStreamRef = useRef<MediaStream | null>(null);
 
   const acquireStreamAndOpenBarcode = async () => {
@@ -243,6 +248,14 @@ export function AdminDashboard() {
         </Card>
       </div>
 
+      {/* Repeat payment shortcut */}
+      <RepeatPaymentSection
+        onSelect={(payment) => {
+          setPixKeyInitialPayment(payment);
+          setPixKeyOpen(true);
+        }}
+      />
+
       {/* Charts and transactions */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Category distribution */}
@@ -423,6 +436,14 @@ export function AdminDashboard() {
         open={boletoPaymentOpen}
         barcode={scannedBarcode}
         onOpenChange={setBoletoPaymentOpen}
+      />
+      <PixKeyDialog
+        open={pixKeyOpen}
+        onOpenChange={(o) => {
+          setPixKeyOpen(o);
+          if (!o) setPixKeyInitialPayment(null);
+        }}
+        initialPayment={pixKeyInitialPayment}
       />
     </>
   );
