@@ -139,16 +139,15 @@ export function PixKeyDialog({ open, onOpenChange, initialPayment }: PixKeyDialo
     return () => { cancelled = true; };
   }, [open, currentCompany?.id]);
 
-  // Pre-fill from initialPayment (Repeat Payment shortcut) and skip to Step 4
+  // Pre-fill chave from initialPayment (Repeat Payment shortcut) and jump to Step 2
+  // Valor e descrição ficam vazios para o usuário informar novos
   useEffect(() => {
     if (!open || !initialPayment) return;
     const detected = (initialPayment.pix_key_type as PixKeyType | null) ?? detectPixKeyType(initialPayment.pix_key);
     setPixKey(initialPayment.pix_key);
     setPixKeyType(detected);
-    setAmount(
-      initialPayment.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    );
-    setDescription(initialPayment.description || "");
+    setAmount("");
+    setDescription("");
     setBeneficiaryName(initialPayment.beneficiary_name || null);
     setBeneficiaryDocument(initialPayment.beneficiary_document || null);
     // Pre-select tag if it still exists for this method
@@ -163,7 +162,7 @@ export function PixKeyDialog({ open, onOpenChange, initialPayment }: PixKeyDialo
         setDescriptionRequired(tag.description_required);
       }
     }
-    setStep(4);
+    setStep(2);
   }, [open, initialPayment, quickTags]);
 
   // Real payment state
