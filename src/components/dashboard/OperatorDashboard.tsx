@@ -221,6 +221,14 @@ export function OperatorDashboard() {
         </Card>
       </div>
 
+      {/* Repeat payment shortcut */}
+      <RepeatPaymentSection
+        onSelect={(payment) => {
+          setPixKeyInitialPayment(payment);
+          setPixKeyOpen(true);
+        }}
+      />
+
       {/* My recent transactions */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between pb-4">
