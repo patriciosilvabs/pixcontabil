@@ -53,7 +53,7 @@ function getInitials(name: string): string {
   return (parts[0]?.[0] || "?").toUpperCase();
 }
 
-export function PixKeyDialog({ open, onOpenChange }: PixKeyDialogProps) {
+export function PixKeyDialog({ open, onOpenChange, initialPayment }: PixKeyDialogProps) {
   const navigate = useNavigate();
   const { payByKey, checkStatus, getTransactionBeneficiary, isProcessing } = usePixPayment();
   const { hasPageAccess, currentCompany } = useAuth();
