@@ -248,6 +248,14 @@ export function AdminDashboard() {
         </Card>
       </div>
 
+      {/* Repeat payment shortcut */}
+      <RepeatPaymentSection
+        onSelect={(payment) => {
+          setPixKeyInitialPayment(payment);
+          setPixKeyOpen(true);
+        }}
+      />
+
       {/* Charts and transactions */}
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Category distribution */}
