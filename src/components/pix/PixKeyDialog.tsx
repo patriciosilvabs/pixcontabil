@@ -16,6 +16,7 @@ import { PaymentStatusScreen } from "./PaymentStatusScreen";
 import { useQuickTags } from "@/hooks/useQuickTags";
 import { detectPixKeyType, type PixKeyType } from "@/lib/pix-utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { RecentPayment } from "@/hooks/useRecentPayments";
 
 interface Favorite {
   beneficiary_name: string;
@@ -29,6 +30,7 @@ interface Favorite {
 interface PixKeyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialPayment?: RecentPayment | null;
 }
 
 type Step = 1 | 2 | 3 | 4 | 5 | 6;
