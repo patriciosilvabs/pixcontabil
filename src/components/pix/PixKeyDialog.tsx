@@ -139,6 +139,33 @@ export function PixKeyDialog({ open, onOpenChange, initialPayment }: PixKeyDialo
     return () => { cancelled = true; };
   }, [open, currentCompany?.id]);
 
+  // Pre-fill from initialPayment (Repeat Payment shortcut) and skip to Step 4
+  useEffect(() => {
+    if (!open || !initialPayment) return;
+    const detected = (initialPayment.pix_key_type as PixKeyType | null) ?? detectPixKeyType(initialPayment.pix_key);
+    setPixKey(initialPayment.pix_key);
+    setPixKeyType(detected);
+    setAmount(
+      initialPayment.amount.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    );
+    setDescription(initialPayment.description || "");
+    setBeneficiaryName(initialPayment.beneficiary_name || null);
+    setBeneficiaryDocument(initialPayment.beneficiary_document || null);
+    // Pre-select tag if it still exists for this method
+    if (initialPayment.quick_tag_name) {
+      const tag = quickTags.find(t => t.name === initialPayment.quick_tag_name);
+      if (tag) {
+        setSelectedTagId(tag.id);
+        setSuggestedClassification(tag.suggested_classification || null);
+        setShowOrderInput(tag.request_order_number);
+        setReceiptRequired(false);
+        setDescriptionPlaceholder(tag.description_placeholder || "Ex: Pagamento fornecedor");
+        setDescriptionRequired(tag.description_required);
+      }
+    }
+    setStep(4);
+  }, [open, initialPayment, quickTags]);
+
   // Real payment state
   const [realTransactionId, setRealTransactionId] = useState("");
 
