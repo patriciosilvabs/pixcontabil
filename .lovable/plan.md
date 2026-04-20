@@ -1,48 +1,74 @@
 
 
-## Reorganizar Relatório: Filtros no topo + Total de transações + Ticket Médio configurável
+## Repetir Pagamento Pix com 1 Toque
 
-### Problema atual
+### Problema
 
-Os filtros de período e classificação ficam **abaixo** dos cards de resumo. O usuário quer primeiro escolher o período e depois ver os resultados. Além disso, falta mostrar o **total de transações** (quantidade) e os tickets médios devem responder ao período escolhido (já respondem, mas a UX precisa deixar isso claro).
+Hoje, mesmo usando favoritos no `PixKeyDialog`, o usuário precisa:
+1. Tocar no avatar do favorito (preenche só a chave)
+2. Digitar o valor novamente
+3. Digitar a descrição novamente
+4. Confirmar beneficiário
+5. Pagar
 
-### Alterações em `src/pages/Reports.tsx`
+Quer um atalho: **tocar uma vez e ir direto para a confirmação** com valor + descrição já preenchidos do último pagamento.
 
-#### 1. Mover filtros para ANTES dos cards
+### Solução
 
-Mover toda a barra de filtros (período, classificação, usuário, tag, tipo pgto, status, busca, exportar) — atualmente nas linhas 345-436 — para logo após o título (linha 178), antes do bloco de cards de resumo.
+Adicionar uma seção **"Repetir último pagamento"** no dashboard mobile e também dentro do fluxo Pix com Chave, listando os últimos pagamentos completos com valor, beneficiário e data. Ao tocar, pula direto para o **Step 4 (confirmação do beneficiário)** com tudo preenchido.
 
-Isso permite ao usuário configurar o período e filtros antes de ver os números.
+### Layout
 
-#### 2. Adicionar card "Total de Transações"
-
-Novo card mostrando a quantidade total de transações no período, separada em entradas e saídas:
-
-```text
-Total de Transações
-  152 transações
-  140 saídas · 12 entradas
-```
-
-Será adicionado como um card extra na primeira linha de resumo (grid passa de 3 para 4 colunas em desktop).
-
-#### 3. Substituir período "custom" por seletor de intervalo (date range)
-
-Atualmente "Data Específica" permite escolher apenas **um dia**. Para ser realmente configurável, trocar por um seletor de intervalo com data início e data fim:
-
-- Adicionar novo tipo de período `"custom_range"` 
-- Usar dois date pickers: "De" e "Até"
-- Manter as opções rápidas (Hoje, Semana, Mês, 3 Meses) como atalhos
-
-#### 4. Layout final dos cards
+**No `MobileDashboard` (acima de "Últimas Transações"):**
 
 ```text
-Linha 1: | Total Saídas | Custos | Despesas | Total Transações |
-Linha 2: | Total Entradas | TM Entrada |
-Linha 3: | TM Geral Saída | TM Custos | TM Despesas |
+┌─────────────────────────────────────────┐
+│ 🔄 Repetir Pagamento                    │
+├─────────────────────────────────────────┤
+│ [JS]  João Silva           R$ 150,00 ↻ │
+│       CPF ***456.789-** · ontem         │
+├─────────────────────────────────────────┤
+│ [MA]  Maria Andrade        R$ 89,50  ↻ │
+│       Pix · há 2 dias                   │
+├─────────────────────────────────────────┤
+│ [PE]  Pedro Empresa LTDA   R$ 1.200 ↻ │
+│       CNPJ · há 3 dias                  │
+└─────────────────────────────────────────┘
+         Ver todos os pagamentos →
 ```
 
-### Arquivo alterado
+- Mostra os **5 últimos pagamentos únicos** (deduplicados por chave Pix)
+- Botão circular `↻` à direita = "Repetir"
+- Toque em qualquer lugar do card = abre confirmação
 
-- `src/pages/Reports.tsx` — mover filtros, adicionar card de total, substituir date picker por range
+### Fluxo ao tocar em "Repetir"
+
+1. Abre o `PixKeyDialog` direto no **Step 4** (confirmação)
+2. Carrega: chave Pix, tipo, valor, descrição, nome do beneficiário do último pagamento
+3. Dispara um **probe de R$ 0,01** em background para revalidar o nome atual do beneficiário
+4. Usuário só toca em **"Confirmar e Pagar"**
+5. Se a tag rápida do método ainda existir, é pré-selecionada; se for obrigatória e não tiver, força seleção antes
+
+### Regras
+
+- Lista apenas transações com `status = 'completed'`, `pix_type` em `('key','copy_paste','qrcode')` e `pix_key` não nulo
+- Operadores veem só os próprios pagamentos; admins veem da empresa
+- Deduplica por `pix_key` mantendo o mais recente
+- Respeita o bloqueio por comprovante pendente (`block_on_pending_receipt`)
+- Se a empresa tiver Tags Rápidas obrigatórias, exibe Step 5 (tag) antes de pagar
+
+### Arquivos
+
+**Novos:**
+- `src/components/payment/RepeatPaymentSection.tsx` — card no dashboard com os 5 últimos pagamentos únicos
+- `src/hooks/useRecentPayments.ts` — extrai a query do `RecentPayments.tsx` para reuso
+
+**Alterados:**
+- `src/components/dashboard/MobileDashboard.tsx` — incluir `<RepeatPaymentSection />` antes da lista de transações; ao selecionar, abrir `PixKeyDialog` com `initialPayment` prop
+- `src/components/pix/PixKeyDialog.tsx` — aceitar prop opcional `initialPayment` que pré-popula chave/valor/descrição/beneficiário e inicia direto no Step 4
+- `src/components/payment/RecentPayments.tsx` — refatorar para consumir `useRecentPayments` (mantém uso desktop em `NewPayment.tsx`)
+
+### Observação
+
+Boletos e pagamentos em dinheiro **não** entram nesta lista (não fazem sentido repetir — código de barras e cédulas mudam). Apenas Pix com chave/QR/copia-cola.
 
