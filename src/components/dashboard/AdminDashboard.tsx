@@ -437,6 +437,14 @@ export function AdminDashboard() {
         barcode={scannedBarcode}
         onOpenChange={setBoletoPaymentOpen}
       />
+      <PixKeyDialog
+        open={pixKeyOpen}
+        onOpenChange={(o) => {
+          setPixKeyOpen(o);
+          if (!o) setPixKeyInitialPayment(null);
+        }}
+        initialPayment={pixKeyInitialPayment}
+      />
     </>
   );
 }
