@@ -12,6 +12,9 @@ import { usePixBalance } from "@/hooks/usePixBalance";
 import { BarcodeScanner } from "@/components/payment/BarcodeScanner";
 import { BoletoPaymentDrawer } from "@/components/payment/BoletoPaymentDrawer";
 import { ManualBarcodeDialog } from "@/components/payment/ManualBarcodeDialog";
+import { RepeatPaymentSection } from "@/components/payment/RepeatPaymentSection";
+import { PixKeyDialog } from "@/components/pix/PixKeyDialog";
+import type { RecentPayment } from "@/hooks/useRecentPayments";
 import { useBalanceVisibility } from "@/contexts/BalanceVisibilityContext";
 import {
   Send,
